@@ -1,4 +1,5 @@
-FROM node:18-alpine
+# Use platform-specific base image for M1 Macs
+FROM --platform=linux/amd64 node:18-alpine
 
 WORKDIR /app
 

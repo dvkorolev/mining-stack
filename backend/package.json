@@ -16,6 +16,7 @@
     "dotenv": "^16.1.4",
     "express": "^4.18.2",
     "helmet": "^7.0.0",
+    "js-yaml": "^4.1.0",
     "morgan": "^1.10.0",
     "systeminformation": "^5.21.7",
     "winston": "^3.9.0",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@types/cors": "^2.8.13",
+    "@types/js-yaml": "^4.0.5",
     "@types/morgan": "^1.9.4",
     "@types/ws": "^8.5.4",
     "ts-node": "^10.9.1",

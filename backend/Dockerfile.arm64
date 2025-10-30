@@ -1,12 +1,15 @@
-# Use platform-specific base image for M1 Macs
-FROM --platform=linux/amd64 node:18-alpine AS builder
+# Build stage
+FROM --platform=linux/arm64 node:18-alpine AS builder
 
 WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++
 
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies including devDependencies
+# Install dependencies
 RUN npm install
 
 # Copy source code
@@ -16,9 +19,12 @@ COPY . .
 RUN npm run build
 
 # Production image
-FROM node:18-alpine
+FROM --platform=linux/arm64 node:18-alpine
 
 WORKDIR /app
+
+# Install runtime dependencies
+RUN apk add --no-cache tini
 
 # Copy package files
 COPY package*.json ./
@@ -31,7 +37,7 @@ COPY --from=builder /app/dist ./dist
 
 # Copy necessary non-compiled files
 COPY --from=builder /app/src/config ./dist/config
-COPY --from=builder /app/package.json ./
+COPY --from=builder /app/package.json .
 COPY --from=builder /app/init.sh /app/init.sh
 
 # Create logs directory and set permissions
@@ -44,6 +50,9 @@ USER node
 
 # Expose port 5000
 EXPOSE 5000
+
+# Use tini as init process
+ENTRYPOINT ["/sbin/tini", "--"]
 
 # Start the application using the init script
 CMD ["/app/init.sh", "node", "dist/server.js"]
