@@ -23,8 +23,8 @@ A web-based dashboard for monitoring and controlling a small mining farm, built 
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
-   cd mining-dashboard
+   git clone https://github.com/dvkorolev/mining-stack.git
+   cd mining-stack
    ```
 
 2. Start the development environment:
