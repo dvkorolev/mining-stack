@@ -1,0 +1,8 @@
+# Example configuration for monitoring miners via TCP
+# Replace with your actual miner IPs and ports
+- targets:
+    - "192.168.1.100:4028"  # Example: BFGminer API port
+    - "192.168.1.101:4028"
+  labels:
+    location: "mining_room"
+    type: "asic_miner"
