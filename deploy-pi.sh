@@ -4,7 +4,7 @@ set -e
 # Configuration
 PI_USER=${1:-pi}
 PI_HOST=${2:-raspberrypi.local}
-REMOTE_DIR="/opt/mining-monitor"
+REMOTE_DIR="/opt/mining-stack"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -23,7 +23,7 @@ fi
 
 PI_USER=$1
 PI_HOST=$2
-REMOTE_DIR="/opt/mining-monitor"
+REMOTE_DIR="/opt/mining-stack"
 SKIP_INIT=false
 
 # Check for skip-init flag
@@ -45,9 +45,9 @@ ssh $PI_USER@$PI_HOST "
   sudo mkdir -p $REMOTE_DIR/{etc,logs,textfile,bin}
   sudo chown -R $PI_USER:$PI_USER $REMOTE_DIR
   chmod -R 755 $REMOTE_DIR
-  if [ ! -L "/opt/miner-monitor" ]; then
+  if [ ! -L "/opt/mining-stack" ]; then
     echo 'Creating symlink for backward compatibility...'
-    sudo ln -s $REMOTE_DIR /opt/miner-monitor
+    sudo ln -s $REMOTE_DIR /opt/mining-stack
   fi
 "
 
@@ -128,11 +128,28 @@ ssh $PI_USER@$PI_HOST "
   # Apply settings
   sudo sysctl -p
   
-  # Set up log rotation for Docker containers
-  mkdir -p /etc/docker
-  echo '{"log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "3"}}' | sudo tee /etc/docker/daemon.json
-  
+  # Set up log rotation for Docker containers safely
+  DAEMON_JSON="/etc/docker/daemon.json"
+  TEMP_JSON=$(mktemp)
+
+  # Define the settings we want to apply
+  LOG_SETTINGS='{"log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "3"}}'
+
+  # Check if the file exists and has content, otherwise start with an empty JSON object
+  if [ -s "$DAEMON_JSON" ]; then
+    cat "$DAEMON_JSON" > "$TEMP_JSON"
+  else
+    echo "{}" > "$TEMP_JSON"
+  fi
+
+  # Use jq to merge our settings into the existing config
+  # This adds/updates the keys without destroying others.
+  jq --argjson settings "$LOG_SETTINGS" '. * $settings' "$TEMP_JSON" | sudo tee "$DAEMON_JSON" > /dev/null
+
+  rm "$TEMP_JSON"
+
   # Restart Docker to apply changes
+  echo "Restarting Docker to apply log rotation settings..."
   sudo systemctl restart docker
 "
 exit_on_failure "Failed to install system packages"
