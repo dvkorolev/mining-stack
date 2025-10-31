@@ -16,6 +16,12 @@ echo ""
 # Navigate to project directory
 cd "$PROJECT_DIR" || exit 1
 
+# Check for local changes
+if ! git diff-index --quiet HEAD --; then
+    echo ">> Local changes detected, stashing..."
+    git stash push -m "Auto-stash before update $(date +%Y-%m-%d_%H:%M:%S)"
+fi
+
 # Pull latest changes
 echo ">> Pulling latest changes from git (branch: $BRANCH)..."
 git pull origin "$BRANCH"
