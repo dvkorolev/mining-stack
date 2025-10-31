@@ -42,12 +42,22 @@ copy_files() {
 # 1. Create necessary directories
 echo -e "📁 Creating directories in $REMOTE_DIR..."
 run_cmd "
+  # Create the target directory if it doesn't exist
+  if [ ! -d \"$REMOTE_DIR\" ]; then
+    sudo mkdir -p $REMOTE_DIR
+  fi
+  
+  # Create subdirectories
   sudo mkdir -p $REMOTE_DIR/{etc,logs,textfile,bin}
   sudo chown -R $PI_USER:$PI_USER $REMOTE_DIR
   chmod -R 755 $REMOTE_DIR
-  if [ ! -L \"/opt/mining-stack\" ]; then
+  
+  # Only create symlink if it doesn't exist and isn't already the correct directory
+  if [ ! -L \"/opt/mining-stack\" ] && [ \"$(readlink -f /opt/mining-stack 2>/dev/null)\" != \"$REMOTE_DIR\" ]; then
     echo 'Creating symlink for backward compatibility...'
     sudo ln -s $REMOTE_DIR /opt/mining-stack
+  elif [ -L \"/opt/mining-stack\" ]; then
+    echo 'Symlink already exists, skipping...'
   fi
 "
 
