@@ -1,0 +1,32 @@
+[
+  {
+    "id": "update-mining-stack",
+    "execute-command": "/opt/mining-stack/update-from-registry.sh",
+    "command-working-directory": "/opt/mining-stack",
+    "response-message": "Updating mining stack...",
+    "trigger-rule": {
+      "and": [
+        {
+          "match": {
+            "type": "payload-hash-sha1",
+            "secret": "YOUR_WEBHOOK_SECRET",
+            "parameter": {
+              "source": "header",
+              "name": "X-Hub-Signature"
+            }
+          }
+        },
+        {
+          "match": {
+            "type": "value",
+            "value": "refs/heads/main",
+            "parameter": {
+              "source": "payload",
+              "name": "ref"
+            }
+          }
+        }
+      ]
+    }
+  }
+]
