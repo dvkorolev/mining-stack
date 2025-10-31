@@ -70,22 +70,38 @@ echo -e "⚙️ Setting up environment..."
 run_cmd "
   cd $REMOTE_DIR
   
-  # Create .env file if it doesn't exist
-  if [ ! -f \".env\" ]; then
-    echo 'Creating .env file...'
-    cat > .env <<EOL
-# Environment Configuration
-NODE_ENV=production
-PORT=5000
-CORS_ORIGIN=*
-LOG_LEVEL=info
+  # Create init_miners.sh if it doesn't exist
+  if [ ! -f \"bin/init_miners.sh\" ]; then
+    echo 'Creating init_miners.sh...'
+    cat > bin/init_miners.sh << 'EOL'
+#!/bin/bash
+set -e
 
-# Mining Configuration
-MINING_UPDATE_INTERVAL=5000
-MINING_MAX_HISTORY=60
+# Activate virtual environment
+source $REMOTE_DIR/venv/bin/activate
 
-# Paths
-LOGS_DIR=$REMOTE_DIR/logs
+# Create required directories
+mkdir -p $REMOTE_DIR/{etc,logs,textfile}
+chmod 775 $REMOTE_DIR/textfile
+chmod 750 $REMOTE_DIR/{etc,logs}
+
+# Run miner discovery if farm_init.py exists
+if [ -f \"$REMOTE_DIR/bin/farm_init.py\" ]; then
+    echo 'Running miner discovery...'
+    cd $REMOTE_DIR
+    python3 bin/farm_init.py
+    
+    # Ensure miners.yaml has correct permissions
+    if [ -f \"etc/miners.yaml\" ]; then
+        chmod 640 etc/miners.yaml
+    fi
+fi
+
+# Set up cron job for metrics collection
+echo 'Setting up cron job for metrics collection...'
+(crontab -l 2>/dev/null | grep -v \"pyasic_textfile.py\"; echo \"* * * * * $REMOTE_DIR/venv/bin/python3 $REMOTE_DIR/bin/pyasic_textfile.py\") | crontab -
+
+echo 'Miner initialization completed successfully'
 EOL
   fi
 
@@ -93,19 +109,6 @@ EOL
   chmod 600 .env
   chmod 700 $REMOTE_DIR/bin/*.py
   chmod 700 $REMOTE_DIR/bin/init_miners.sh
-  
-  # Ensure proper ownership and permissions
-  sudo chown -R $PI_USER:$PI_USER $REMOTE_DIR
-  find $REMOTE_DIR -type d -exec chmod 755 {} \;
-  find $REMOTE_DIR -type f -exec chmod 644 {} \;
-  
-  # Make scripts executable
-  chmod +x $REMOTE_DIR/bin/*.py
-  chmod +x $REMOTE_DIR/bin/init_miners.sh
-  
-  # Set special permissions for textfile directory
-  chmod 775 $REMOTE_DIR/textfile
-  sudo chown -R $PI_USER:root $REMOTE_DIR/textfile
 "
 
 # 4. Install required system packages
