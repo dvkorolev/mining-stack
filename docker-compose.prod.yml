@@ -38,8 +38,10 @@ services:
       - PORT=5000
       - LOG_LEVEL=info
       - CORS_ORIGIN=*
+      - MINER_CONFIG_PATH=/opt/mining-stack/etc/miners.yaml
     volumes:
       - ./logs:/app/logs
+      - ./etc/miners.yaml:/opt/mining-stack/etc/miners.yaml:ro
     deploy:
       resources:
         limits:
