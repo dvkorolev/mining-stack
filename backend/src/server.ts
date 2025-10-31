@@ -31,6 +31,30 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+// Basic Prometheus metrics endpoint
+app.get('/metrics', (req, res) => {
+  const { getMiningStats } = require('./services/mining.service');
+  const stats = getMiningStats();
+  
+  // Simple Prometheus text format
+  const metrics = [
+    `# HELP mining_hashrate_total Total hashrate in TH/s`,
+    `# TYPE mining_hashrate_total gauge`,
+    `mining_hashrate_total ${stats.totalHashrate || 0}`,
+    ``,
+    `# HELP mining_active_miners Number of active miners`,
+    `# TYPE mining_active_miners gauge`,
+    `mining_active_miners ${stats.activeMiners || 0}`,
+    ``,
+    `# HELP mining_total_mined Total amount mined`,
+    `# TYPE mining_total_mined counter`,
+    `mining_total_mined ${stats.totalMined || 0}`,
+  ].join('\n');
+  
+  res.set('Content-Type', 'text/plain');
+  res.send(metrics);
+});
+
 // Error handling middleware
 app.use(errorHandler);
 
