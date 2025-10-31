@@ -1,0 +1,27 @@
+# This file is automatically loaded by docker-compose
+# Use it for local development overrides
+version: '3.8'
+
+services:
+  frontend:
+    # Skip build in development - use volume mounts
+    build:
+      target: build
+    command: npm start
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+
+  backend:
+    environment:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - /app/dist
+    command: npm run dev

@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies (no native build tools needed for pure TS/JS)
-RUN npm install
+RUN --mount=type=cache,target=/root/.npm npm install
 
 # Copy source code
 COPY . .
@@ -27,7 +27,7 @@ RUN apk add --no-cache tini
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm install --only=production
+RUN --mount=type=cache,target=/root/.npm npm install --only=production
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
