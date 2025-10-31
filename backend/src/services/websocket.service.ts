@@ -2,6 +2,7 @@ import { Server as HTTPServer } from 'http';
 import { Server, WebSocket } from 'ws';
 import { config } from '../config/config';
 import { getMiningStats } from './mining.service';
+import { logger } from '../utils/logger';
 
 interface Client extends WebSocket {
   id: string;
@@ -18,7 +19,7 @@ const setupWebSocket = (server: HTTPServer) => {
     ws.id = Math.random().toString(36).substr(2, 9);
     ws.isAlive = true;
 
-    console.log(`Client connected: ${ws.id}`);
+    logger.info(`WebSocket client connected: ${ws.id}`);
 
     // Handle pong messages
     ws.on('pong', () => {
@@ -27,7 +28,12 @@ const setupWebSocket = (server: HTTPServer) => {
 
     // Handle client disconnection
     ws.on('close', () => {
-      console.log(`Client disconnected: ${ws.id}`);
+      logger.info(`WebSocket client disconnected: ${ws.id}`);
+    });
+
+    // Handle errors
+    ws.on('error', (error) => {
+      logger.error(`WebSocket error for client ${ws.id}:`, error);
     });
   });
 
@@ -36,7 +42,7 @@ const setupWebSocket = (server: HTTPServer) => {
     wss.clients.forEach((ws) => {
       const client = ws as Client;
       if (!client.isAlive) {
-        console.log(`Terminating dead connection: ${client.id}`);
+        logger.info(`Terminating dead connection: ${client.id}`);
         return client.terminate();
       }
 
