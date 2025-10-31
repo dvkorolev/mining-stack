@@ -49,4 +49,53 @@ server.listen(PORT, async () => {
   }
 });
 
+// Graceful shutdown handler
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`Received ${signal} signal, shutting down gracefully...`);
+  
+  try {
+    // Stop accepting new connections
+    server.close(() => {
+      logger.info('HTTP server closed');
+    });
+    
+    // Stop mining simulation
+    const { stopMining } = require('./services/mining.service');
+    await stopMining();
+    logger.info('Mining simulation stopped');
+    
+    // Close WebSocket connections
+    const { closeWebSocket } = require('./services/websocket.service');
+    closeWebSocket();
+    logger.info('WebSocket connections closed');
+    
+    logger.info('Graceful shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during graceful shutdown:', error);
+    process.exit(1);
+  }
+  
+  // Force shutdown after 10 seconds
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+};
+
+// Handle shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception:', error);
+  gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('unhandledRejection');
+});
+
 export { app, server };

@@ -69,4 +69,21 @@ const broadcast = (data: any) => {
   });
 };
 
-export { setupWebSocket, broadcast };
+// Close all WebSocket connections gracefully
+const closeWebSocket = () => {
+  if (!wss) return;
+  
+  logger.info('Closing all WebSocket connections...');
+  
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.close(1000, 'Server shutting down');
+    }
+  });
+  
+  wss.close(() => {
+    logger.info('WebSocket server closed');
+  });
+};
+
+export { setupWebSocket, broadcast, closeWebSocket };

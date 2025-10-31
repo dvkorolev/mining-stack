@@ -11,10 +11,22 @@ services:
       - NODE_ENV=production
       - REACT_APP_API_URL=/api
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - mining-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   backend:
     image: ghcr.io/${GITHUB_REPOSITORY:-dvkorolev/mining-stack}/backend:${IMAGE_TAG:-latest}
@@ -36,6 +48,17 @@ services:
     restart: unless-stopped
     networks:
       - mining-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   prometheus:
     image: prom/prometheus:latest

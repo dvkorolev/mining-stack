@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Grid, Typography, Paper, Box, CircularProgress, Alert } from '@mui/material';
+import { Grid, Typography, Paper, Box, CircularProgress, Alert, Chip } from '@mui/material';
 import { Line } from 'react-chartjs-2';
 import { fetchMiningStats, MiningStatsResponse } from '../services/api';
+import { useWebSocket } from '../hooks/useWebSocket';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -31,7 +32,30 @@ const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<MiningStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [ws, setWs] = useState<WebSocket | null>(null);
+
+  // WebSocket with automatic reconnection
+  const { isConnected, reconnectCount } = useWebSocket({
+    url: WS_URL,
+    onMessage: (message) => {
+      if (message.type === 'mining-stats') {
+        setStats(message.data);
+        setError(null);
+      }
+    },
+    onOpen: () => {
+      console.log('WebSocket connected');
+      setError(null);
+    },
+    onClose: () => {
+      console.log('WebSocket disconnected');
+    },
+    onError: (error) => {
+      console.error('WebSocket error:', error);
+      setError('WebSocket connection error - attempting to reconnect...');
+    },
+    reconnectAttempts: 10,
+    reconnectInterval: 2000,
+  });
 
   useEffect(() => {
     // Initial data load
@@ -51,44 +75,11 @@ const Dashboard: React.FC = () => {
 
     loadData();
 
-    // Setup WebSocket connection for real-time updates
-    const websocket = new WebSocket(WS_URL);
-    
-    websocket.onopen = () => {
-      console.log('WebSocket connected');
-      setError(null);
-    };
-
-    websocket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === 'mining-stats') {
-          setStats(message.data);
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
-      }
-    };
-
-    websocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setError('WebSocket connection error');
-    };
-
-    websocket.onclose = () => {
-      console.log('WebSocket disconnected');
-    };
-
-    setWs(websocket);
-
     // Fallback polling if WebSocket fails
     const pollInterval = setInterval(loadData, UPDATE_INTERVAL);
 
     return () => {
       clearInterval(pollInterval);
-      if (websocket.readyState === WebSocket.OPEN) {
-        websocket.close();
-      }
     };
   }, []);
 
@@ -136,9 +127,16 @@ const Dashboard: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Mining Dashboard
-      </Typography>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+        <Typography variant="h4">
+          Mining Dashboard
+        </Typography>
+        <Chip 
+          label={isConnected ? 'Connected' : `Reconnecting... (${reconnectCount})`}
+          color={isConnected ? 'success' : 'warning'}
+          size="small"
+        />
+      </Box>
 
       {error && (
         <Alert severity="warning" sx={{ mb: 2 }}>
