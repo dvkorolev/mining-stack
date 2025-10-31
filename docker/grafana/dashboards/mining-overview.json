@@ -1,0 +1,195 @@
+{
+  "dashboard": {
+    "title": "Mining Farm Overview",
+    "tags": ["mining", "overview"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "type": "stat",
+        "title": "Total Hashrate",
+        "targets": [{
+          "expr": "sum(miner_hashrate_ths)",
+          "legendFormat": "Total"
+        }],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "TH/s",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 1000, "color": "yellow"},
+                {"value": 1500, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "type": "stat",
+        "title": "Active Miners",
+        "targets": [{
+          "expr": "count(miner_is_mining == 1)",
+          "legendFormat": "Active"
+        }],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "short",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 15, "color": "yellow"},
+                {"value": 20, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "type": "stat",
+        "title": "Total Power",
+        "targets": [{
+          "expr": "sum(miner_power_watts) / 1000",
+          "legendFormat": "Power"
+        }],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "kW",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 60, "color": "yellow"},
+                {"value": 70, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "type": "stat",
+        "title": "Avg Efficiency",
+        "targets": [{
+          "expr": "avg(miner_efficiency_j_th)",
+          "legendFormat": "Efficiency"
+        }],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "J/TH",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 30, "color": "yellow"},
+                {"value": 35, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "type": "graph",
+        "title": "Farm Hashrate Over Time",
+        "targets": [{
+          "expr": "sum(miner_hashrate_ths)",
+          "legendFormat": "Total Hashrate"
+        }],
+        "yaxes": [
+          {"format": "TH/s", "label": "Hashrate"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 6,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "type": "graph",
+        "title": "Power Consumption Over Time",
+        "targets": [{
+          "expr": "sum(miner_power_watts) / 1000",
+          "legendFormat": "Total Power"
+        }],
+        "yaxes": [
+          {"format": "kW", "label": "Power"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "gridPos": {"h": 10, "w": 24, "x": 0, "y": 12},
+        "type": "table",
+        "title": "Miner Status",
+        "targets": [{
+          "expr": "miner_hashrate_ths",
+          "format": "table",
+          "instant": true
+        }],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true, "__name__": true, "job": true},
+              "indexByName": {
+                "name": 0,
+                "ip": 1,
+                "model": 2,
+                "Value": 3
+              },
+              "renameByName": {
+                "name": "Miner",
+                "ip": "IP Address",
+                "model": "Model",
+                "Value": "Hashrate (TH/s)"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

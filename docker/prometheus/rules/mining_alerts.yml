@@ -1,0 +1,222 @@
+groups:
+  - name: mining_critical
+    interval: 30s
+    rules:
+      # Critical: Miner is offline
+      - alert: MinerOffline
+        expr: miner_scrape_success == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} is offline"
+          description: "Miner {{ $labels.name }} ({{ $labels.ip }}) has been unreachable for 5 minutes."
+          
+      # Critical: High temperature
+      - alert: MinerHighTemperature
+        expr: miner_temp_max_c > 85
+        for: 2m
+        labels:
+          severity: critical
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} temperature critical"
+          description: "Miner {{ $labels.name }} temperature is {{ $value }}°C (threshold: 85°C)"
+          
+      # Critical: Miner stopped mining
+      - alert: MinerNotMining
+        expr: miner_is_mining == 0 and miner_scrape_success == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} stopped mining"
+          description: "Miner {{ $labels.name }} is online but not mining for 5 minutes."
+          
+      # Critical: Hashrate dropped significantly
+      - alert: MinerHashrateDrop
+        expr: |
+          (
+            miner_hashrate_ths < 50
+            and miner_is_mining == 1
+          )
+        for: 10m
+        labels:
+          severity: critical
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} hashrate critically low"
+          description: "Miner {{ $labels.name }} hashrate is {{ $value }} TH/s (expected >50 TH/s)"
+
+  - name: mining_warning
+    interval: 30s
+    rules:
+      # Warning: Temperature elevated
+      - alert: MinerTemperatureHigh
+        expr: miner_temp_max_c > 75 and miner_temp_max_c <= 85
+        for: 5m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} temperature elevated"
+          description: "Miner {{ $labels.name }} temperature is {{ $value }}°C (warning threshold: 75°C)"
+          
+      # Warning: High rejection rate
+      - alert: MinerHighRejectionRate
+        expr: |
+          (
+            rate(miner_pool_rejected_total[5m]) / 
+            (rate(miner_pool_accepted_total[5m]) + rate(miner_pool_rejected_total[5m]))
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} high rejection rate"
+          description: "Miner {{ $labels.name }} rejection rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+          
+      # Warning: Fault light on
+      - alert: MinerFaultLight
+        expr: miner_fault_light_on == 1
+        for: 2m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} fault light active"
+          description: "Miner {{ $labels.name }} has fault light indicator on."
+          
+      # Warning: Errors detected
+      - alert: MinerErrors
+        expr: miner_errors_count > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} reporting errors"
+          description: "Miner {{ $labels.name }} has {{ $value }} error(s)."
+          
+      # Warning: Missing hashboards
+      - alert: MinerMissingChips
+        expr: miner_board_chips_count < miner_board_chips_expected
+        for: 10m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} missing chips on board {{ $labels.slot }}"
+          description: "Board {{ $labels.slot }} has {{ $value }} chips (expected: {{ $labels.expected }})"
+          
+      # Warning: Fan speed low
+      - alert: MinerFanSpeedLow
+        expr: miner_fan_speed_rpm < 2000 and miner_is_mining == 1
+        for: 5m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} fan speed low"
+          description: "Fan {{ $labels.fan_id }} speed is {{ $value }} RPM (threshold: 2000 RPM)"
+          
+      # Warning: Poor efficiency
+      - alert: MinerPoorEfficiency
+        expr: miner_efficiency_j_th > 35
+        for: 15m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} poor efficiency"
+          description: "Miner {{ $labels.name }} efficiency is {{ $value }} J/TH (threshold: 35 J/TH)"
+
+  - name: mining_farm
+    interval: 30s
+    rules:
+      # Farm-wide: Multiple miners offline
+      - alert: FarmMultipleMinersOffline
+        expr: count(miner_scrape_success == 0) > 3
+        for: 5m
+        labels:
+          severity: critical
+          component: farm
+        annotations:
+          summary: "Multiple miners offline"
+          description: "{{ $value }} miners are currently offline."
+          
+      # Farm-wide: Total hashrate drop
+      - alert: FarmHashrateDrop
+        expr: |
+          (
+            sum(miner_hashrate_ths) < 1500
+            and count(miner_is_mining == 1) > 10
+          )
+        for: 10m
+        labels:
+          severity: critical
+          component: farm
+        annotations:
+          summary: "Farm total hashrate critically low"
+          description: "Total farm hashrate is {{ $value }} TH/s (expected >1500 TH/s with 10+ miners)"
+          
+      # Farm-wide: High average temperature
+      - alert: FarmHighTemperature
+        expr: avg(miner_temp_max_c) > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: farm
+        annotations:
+          summary: "Farm average temperature high"
+          description: "Average temperature across all miners is {{ $value }}°C"
+          
+      # Farm-wide: High power consumption
+      - alert: FarmHighPowerConsumption
+        expr: sum(miner_power_watts) > 70000
+        for: 5m
+        labels:
+          severity: warning
+          component: farm
+        annotations:
+          summary: "Farm power consumption high"
+          description: "Total power consumption is {{ $value }}W (70kW threshold)"
+
+  - name: system
+    interval: 30s
+    rules:
+      # System: High CPU usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}%"
+          
+      # System: High memory usage
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}%"
+          
+      # System: Low disk space
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk space available: {{ $value }}%"
