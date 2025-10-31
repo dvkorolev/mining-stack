@@ -15,8 +15,15 @@ chmod 755 "$PROJECT_DIR/textfile"
 # Make pyasic script executable
 chmod +x "$PROJECT_DIR/bin/pyasic_textfile.py"
 
-# Add cron job (runs every 2 minutes)
-CRON_JOB="*/2 * * * * cd $PROJECT_DIR && /usr/bin/python3 bin/pyasic_textfile.py >> logs/pyasic_metrics.log 2>&1"
+# Check if virtual environment exists
+if [ ! -d "$PROJECT_DIR/venv" ]; then
+    echo "⚠️  Virtual environment not found!"
+    echo "Please run: ./bin/setup-pyasic-venv.sh first"
+    exit 1
+fi
+
+# Add cron job (runs every 2 minutes) using venv Python
+CRON_JOB="*/2 * * * * cd $PROJECT_DIR && $PROJECT_DIR/venv/bin/python3 bin/pyasic_textfile.py >> logs/pyasic_metrics.log 2>&1"
 
 # Check if cron job already exists
 if crontab -l 2>/dev/null | grep -q "pyasic_textfile.py"; then
@@ -29,7 +36,7 @@ fi
 
 # Run once immediately to create initial metrics
 echo "Running initial metrics collection..."
-cd "$PROJECT_DIR" && python3 bin/pyasic_textfile.py
+cd "$PROJECT_DIR" && "$PROJECT_DIR/venv/bin/python3" bin/pyasic_textfile.py
 
 echo ""
 echo "✅ Metrics collection setup complete!"

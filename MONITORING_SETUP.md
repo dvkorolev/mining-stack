@@ -52,23 +52,25 @@ Complete guide for Prometheus metrics and Grafana dashboards for your mining ope
 
 ## 🚀 **Quick Setup**
 
-### **1. Install Dependencies**
+### **1. Setup Python Virtual Environment**
 
 ```bash
 # On Raspberry Pi
-sudo apt-get update
-sudo apt-get install -y python3-pip
+cd /opt/mining-stack
 
-# Install pyasic
-pip3 install pyasic pyyaml
+# Create venv and install pyasic
+./bin/setup-pyasic-venv.sh
 ```
+
+This will:
+- Install system dependencies (python3-full, python3-venv)
+- Create virtual environment in `venv/`
+- Install pyasic and pyyaml
 
 ### **2. Setup Metrics Collection**
 
 ```bash
-cd /opt/mining-stack
-
-# Run setup script
+# Setup cron job for automatic collection
 ./bin/setup-metrics-cron.sh
 ```
 
