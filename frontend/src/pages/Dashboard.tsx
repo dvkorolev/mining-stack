@@ -26,7 +26,8 @@ ChartJS.register(
 );
 
 const UPDATE_INTERVAL = parseInt(process.env.REACT_APP_UPDATE_INTERVAL || '5000', 10);
-const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:5000/ws';
+// Use relative WebSocket URL to work with nginx proxy
+const WS_URL = process.env.REACT_APP_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<MiningStatsResponse | null>(null);

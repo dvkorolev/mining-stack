@@ -28,18 +28,8 @@ scrape_configs:
     params:
       collect[]: ["textfile"]
 
-  # TCP connectivity checks for miners
-  - job_name: "miners-tcp"
-    metrics_path: /probe
-    params:
-      module: [tcp_connect]
-    file_sd_configs:
-      - files:
-        - /etc/prometheus/miners_list.yml
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: __param_target
-      - source_labels: [__param_target]
-        target_label: instance
-      - target_label: __address__
-        replacement: "blackbox:9115"
+  # Backend API metrics
+  - job_name: "backend"
+    static_configs:
+      - targets: ["backend:5000"]
+    metrics_path: /metrics
