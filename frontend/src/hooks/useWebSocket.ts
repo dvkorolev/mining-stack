@@ -17,18 +17,21 @@ export const useWebSocket = ({
   onClose,
   onError,
   reconnectAttempts = 5,
-  reconnectInterval = 1000,
+  reconnectInterval = 3000,
 }: UseWebSocketOptions) => {
   const [isConnected, setIsConnected] = useState(false);
   const [reconnectCount, setReconnectCount] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
   const shouldReconnectRef = useRef(true);
+  const isConnectingRef = useRef(false);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState === WebSocket.OPEN || isConnectingRef.current) {
       return;
     }
+
+    isConnectingRef.current = true;
 
     try {
       const ws = new WebSocket(url);
@@ -38,6 +41,7 @@ export const useWebSocket = ({
         console.log('WebSocket connected');
         setIsConnected(true);
         setReconnectCount(0);
+        isConnectingRef.current = false;
         onOpen?.();
       };
 
@@ -54,6 +58,7 @@ export const useWebSocket = ({
         console.log('WebSocket disconnected:', event.code, event.reason);
         setIsConnected(false);
         wsRef.current = null;
+        isConnectingRef.current = false;
         onClose?.();
 
         // Attempt to reconnect
@@ -76,6 +81,7 @@ export const useWebSocket = ({
 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
+        isConnectingRef.current = false;
         onError?.(error);
       };
     } catch (error) {
