@@ -70,12 +70,31 @@ Open in browser:
 
 Every time you push to `main`, GitHub Actions builds new images.
 
-To update your Raspberry Pi:
+To update your Raspberry Pi (pulls both code and Docker images):
 
 ```bash
 ssh pi@raspberrypi.local
 cd /opt/mining-stack
 ./update-from-registry.sh latest
+```
+
+**What it does:**
+1. ✅ Pulls latest files from GitHub (scripts, configs, docs)
+2. ✅ Backs up your `.env` and `miners.yaml`
+3. ✅ Pulls latest Docker images from registry
+4. ✅ Restarts services with zero downtime
+5. ✅ Runs health check automatically
+
+**Options:**
+```bash
+# Update everything (default)
+./update-from-registry.sh latest
+
+# Skip GitHub sync, only update Docker images
+./update-from-registry.sh latest --skip-git
+
+# Use specific image tag
+./update-from-registry.sh v1.2.3
 ```
 
 ### Set Up Auto-Updates
