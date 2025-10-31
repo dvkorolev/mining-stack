@@ -6,9 +6,10 @@ import { logger } from '../utils/logger';
 
 export interface MinerConfig {
   ip: string;
-  name: string;
+  name?: string;  // Optional - will be auto-generated from IP if not provided
   model: string;
   alias?: string;
+  owner?: string;  // Support for owner field
   status?: 'online' | 'offline' | 'error';
   lastSeen?: Date;
   // Add more miner-specific configuration as needed
@@ -34,8 +35,12 @@ export const loadMinersConfig = (): MinerConfig[] => {
     if (config && Array.isArray(config.miners)) {
       const currentTime = new Date();
       miners = config.miners.map(miner => {
+        // Auto-generate name from IP if not provided
+        const name = miner.name || `miner-${miner.ip.replace(/\./g, '-')}`;
+        
         return ({
           ...miner,
+          name,
           status: 'offline',
           lastSeen: currentTime
         });

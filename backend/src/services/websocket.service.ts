@@ -21,6 +21,16 @@ const setupWebSocket = (server: HTTPServer) => {
 
     logger.info(`WebSocket client connected: ${ws.id}`);
 
+    // Send current mining stats immediately upon connection
+    try {
+      const currentStats = getMiningStats();
+      const message = JSON.stringify({ type: 'mining-stats', data: currentStats });
+      ws.send(message);
+      logger.info(`Sent initial stats to client ${ws.id}`);
+    } catch (error) {
+      logger.error(`Error sending initial stats to client ${ws.id}:`, error);
+    }
+
     // Handle pong messages
     ws.on('pong', () => {
       ws.isAlive = true;
