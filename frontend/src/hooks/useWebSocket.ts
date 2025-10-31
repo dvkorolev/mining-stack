@@ -81,7 +81,7 @@ export const useWebSocket = ({
     } catch (error) {
       console.error('Error creating WebSocket:', error);
     }
-  }, [url, onMessage, onOpen, onClose, onError, reconnectCount, reconnectAttempts, reconnectInterval]);
+  }, [url, onMessage, onOpen, onClose, onError, reconnectAttempts, reconnectInterval]);
 
   const disconnect = useCallback(() => {
     shouldReconnectRef.current = false;
