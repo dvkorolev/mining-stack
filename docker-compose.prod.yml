@@ -1,6 +1,5 @@
 # Production docker-compose for Raspberry Pi
 # Uses pre-built images from GitHub Container Registry
-version: '3.8'
 
 services:
   frontend:
