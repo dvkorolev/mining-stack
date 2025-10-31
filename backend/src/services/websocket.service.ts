@@ -30,7 +30,7 @@ const setupWebSocket = (server: Server) => {
     });
   });
 
-  // Ping all clients every 30 seconds to check connection status
+  // Ping all clients periodically to check connection status
   const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
       if (!ws.isAlive) {
@@ -41,7 +41,7 @@ const setupWebSocket = (server: Server) => {
       ws.isAlive = false;
       ws.ping();
     });
-  }, 30000);
+  }, config.websocket.pingInterval);
 
   // Clean up interval on server shutdown
   wss.on('close', () => {

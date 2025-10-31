@@ -1,147 +1,76 @@
-# Mining Stack
+# Mining Stack Monitor 🚀
 
-A comprehensive monitoring and control system for mining operations, built with React, Node.js, and Docker. Designed to run on a Raspberry Pi or any Linux system.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker](https://img.shields.io/badge/Docker-2CA5E0?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB)](https://reactjs.org/)
 
-## Features
+A comprehensive monitoring and control system for cryptocurrency mining operations, built with React, Node.js, and Docker. Designed to run on a Raspberry Pi or any Linux system with real-time monitoring, advanced analytics, and automated miner discovery.
 
-- Real-time monitoring of mining statistics (hashrate, active miners, total mined)
-- Historical data visualization with charts
-- WebSocket support for real-time updates
-- Responsive design with Material-UI
-- Containerized with Docker for easy deployment
-- Integrated with Prometheus and Grafana for advanced monitoring
+## ✨ Features
 
-## Prerequisites
+- **Real-time Monitoring**: Track mining statistics (hashrate, active miners, total mined)
+- **Historical Data**: Beautiful charts and graphs for performance analysis
+- **WebSocket Support**: Real-time updates without page refreshes
+- **Responsive Design**: Material-UI based interface that works on desktop and mobile
+- **Dockerized**: Easy deployment with Docker Compose
+- **Advanced Monitoring**: Integrated with Prometheus and Grafana for metrics and alerting
+- **Miner Discovery**: Automatically detect miners on your network using pyasic
+- **Multi-Platform**: Supports x86_64 and ARM64 (Raspberry Pi)
+
+## 📋 Prerequisites
 
 - Docker (v20.10+)
 - Docker Compose (v2.0+)
 - Node.js (v16+) - Only needed for local development without Docker
+- Python 3.8+ (for miner discovery scripts)
 
-## Getting Started
+## 🚀 Quick Start
 
-### Development with Docker (Recommended)
+### Development with Docker
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/dvkorolev/mining-stack.git
-   cd mining-stack
-   ```
+```bash
+# 1. Clone the repository
+git clone https://github.com/dvkorolev/mining-stack.git
+cd mining-stack
 
-2. Start the development environment:
-   ```bash
-   docker compose -f docker-compose.dev.yml up --build
-   ```
+# 2. Start development environment
+docker compose -f docker-compose.dev.yml up --build
+```
 
-3. Access the application:
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:5000
-   - Prometheus: http://localhost:9090
-   - Grafana: http://localhost:3001 (admin/mining123)
+**Access the services:**
+- 🌐 **Frontend**: http://localhost:3000
+- ⚙️ **Backend API**: http://localhost:5000
+- 📊 **Prometheus**: http://localhost:9090
+- 📈 **Grafana**: http://localhost:3001 (admin/mining123)
 
-### Raspberry Pi One‑Box Deployment (Local Network)
+### Raspberry Pi Deployment
 
-Deploy everything on a Raspberry Pi under a single root and access it over your tailnet.
+For detailed Raspberry Pi deployment instructions, see [RASPBERRY_PI_DEPLOYMENT.md](./RASPBERRY_PI_DEPLOYMENT.md).
 
-**Canonical path (pick one and stick to it):** `/opt/mining-monitor`
+**Quick deployment:**
 
-**What this gives you**
-- One directory tree for **code**, **configs**, and **data**.
-- Prometheus, Grafana, exporters, and the mining dashboard in **one compose**.
-- Services reachable on your Pi’s LAN IP (e.g., `192.168.1.66`).
-
-**Steps**
-1. On the Pi, prepare the root:
-   ```bash
-   sudo mkdir -p /opt/mining-monitor && sudo chown -R "$USER":"$USER" /opt/mining-monitor
-   cd /opt/mining-monitor
-   git clone https://github.com/dvkorolev/mining-stack.git .
-   ```
-   > If you previously used `/opt/miner-monitor`, create a temporary symlink during migration:
-   > `sudo ln -s /opt/mining-monitor /opt/miner-monitor`
-
-2. Make sure your **compose file** exposes services on the Pi’s LAN IP (examples):
-   ```yaml
-   # Replace 192.168.1.66 with your Pi's IP; or use "0.0.0.0" to listen on all interfaces
-   ports:
-     - "192.168.1.66:9090:9090"   # Prometheus
-     - "192.168.1.66:3001:3000"   # Grafana (container 3000 → host 3001)
-     - "192.168.1.66:9093:9093"   # Alertmanager
-     - "192.168.1.66:3100:3100"   # Loki
-   ```
-   Keep `node-exporter` with the textfile collector mounted **read-only**, and run your `pyasic` collector as a separate service that writes to the shared `./textfile` directory.
-
-3. Start the stack:
-   ```bash
-   docker compose up -d
-   ```
-
-4. Access over LAN:
-   - Grafana → http://<Pi-IP>:3001 (default admin/mining123 — change this in Grafana env)
-   - Prometheus → http://<Pi-IP>:9090
-   - Alertmanager → http://<Pi-IP>:9093
-
-**Notes**
-- Store Prometheus and Grafana data on SSD/USB if possible (avoid SD card wear).
-- Keep friendly miner names **out of Prometheus labels**; use stable IDs in labels and show friendly names only in the UI.
-- Emit `miner_scrape_success{reason="..."}` on failures; avoid writing zeros for unknown values.
-
-#### Raspberry Pi One-Box Deployment (Local Network)
-
-Deploy everything on a Raspberry Pi under a single root and access it over your tailnet.
-
-**Canonical path (pick one and stick to it):** `/opt/mining-monitor`
-
-**What this gives you**
-- One directory tree for **code**, **configs**, and **data**.
-- Prometheus, Grafana, exporters, and the mining dashboard in **one compose**.
-- Services reachable on your Pi's LAN IP (e.g., `192.168.1.66`).
-
-**Steps**
-1. On the Pi, prepare the root:
-   ```bash
-   sudo mkdir -p /opt/mining-monitor && sudo chown -R "$USER":"$USER" /opt/mining-monitor
-   cd /opt/mining-monitor
-   git clone https://github.com/dvkorolev/mining-stack.git .
-   ```
-   > If you previously used `/opt/miner-monitor`, create a temporary symlink during migration:
-   > `sudo ln -s /opt/mining-monitor /opt/miner-monitor`
-
-2. Make sure your **compose file** exposes services on the Pi's LAN IP (examples):
-   ```yaml
-   # Replace 192.168.1.66 with your Pi's IP; or use "0.0.0.0" to listen on all interfaces
-   ports:
-     - "192.168.1.66:9090:9090"   # Prometheus
-     - "192.168.1.66:3001:3000"   # Grafana (container 3000 → host 3001)
-     - "192.168.1.66:9093:9093"   # Alertmanager
-     - "192.168.1.66:3100:3100"   # Loki
-   ```
-   Keep `node-exporter` with the textfile collector mounted **read-only**, and run your `pyasic` collector as a separate service that writes to the shared `./textfile` directory.
-
-3. Start the stack:
-   ```bash
-   docker compose up -d
-   ```
-
-4. Access over LAN:
-   - Grafana → http://<Pi-IP>:3001 (default admin/mining123 — change this in Grafana env)
-   - Prometheus → http://<Pi-IP>:9090
-   - Alertmanager → http://<Pi-IP>:9093
-
-**Notes**
-- Store Prometheus and Grafana data on SSD/USB if possible (avoid SD card wear).
-- Keep friendly miner names **out of Prometheus labels**; use stable IDs in labels and show friendly names only in the UI.
-- Emit `miner_scrape_success{reason="..."}` on failures; avoid writing zeros for unknown values.
+```bash
+chmod +x deploy-pi.sh
+./deploy-pi.sh pi raspberrypi.local
+```
 
 ### Production Deployment
 
-1. Create a `.env` file in the backend directory with your production settings.
+1. **Configure environment variables**:
+   ```bash
+   cp backend/.env.example backend/.env
+   # Edit backend/.env with your production settings
+   ```
 
-2. Build and start the containers:
+2. **Build and start the containers**:
    ```bash
    docker compose up -d --build
    ```
 
-3. The application will be available at http://your-server-ip:80
+3. **Access the application**:
+   - Frontend: http://your-server-ip:3000
+   - Grafana: http://your-server-ip:3001
 
 ## Project Structure
 
@@ -205,14 +134,30 @@ The application uses WebSockets for real-time updates. The following events are 
 
 ## Monitoring
 
-The application includes Prometheus and Grafana for monitoring:
+The application includes Prometheus and Grafana for advanced monitoring:
 
-- Prometheus is available at http://localhost:9090
-- Grafana is available at http://localhost:3001 (admin/mining123)
+- **Prometheus**: http://localhost:9090
+- **Grafana**: http://localhost:3001 (admin/mining123)
 
 When deployed on the Pi in a local network, expose ports on the Pi's LAN IP (or restrict access via your router/firewall).
 
-When deployed on the Pi in a local network, expose ports on the Pi’s LAN IP (or restrict access via your router/firewall).
+## Documentation
+
+For detailed documentation, please refer to:
+
+- [API Documentation](./docs/API.md) - Complete API reference
+- [Configuration Guide](./docs/CONFIGURATION.md) - Environment variables and settings
+- [Troubleshooting](./docs/TROUBLESHOOTING.md) - Common issues and solutions
+- [Raspberry Pi Deployment](./RASPBERRY_PI_DEPLOYMENT.md) - Detailed Pi deployment guide
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](./CONTRIBUTING.md) for details on:
+
+- Code style guidelines
+- Development workflow
+- Pull request process
+- Issue reporting
 
 ## License
 

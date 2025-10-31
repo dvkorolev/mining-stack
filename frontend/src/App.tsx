@@ -4,8 +4,12 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box } from '@mui/material';
 import Dashboard from './pages/Dashboard';
+import Miners from './pages/Miners';
+import Analytics from './pages/Analytics';
+import Settings from './pages/Settings';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
+import ErrorBoundary from './components/ErrorBoundary';
 import { Provider } from 'react-redux';
 import { store } from './store';
 
@@ -29,23 +33,42 @@ const theme = createTheme({
 });
 
 const App: React.FC = () => {
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+
+  const toggleDrawer = () => {
+    setDrawerOpen(!drawerOpen);
+  };
+
   return (
     <Provider store={store}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Router>
-          <Box sx={{ display: 'flex' }}>
-            <Navbar />
-            <Sidebar />
-            <Box component="main" sx={{ flexGrow: 1, p: 3, marginTop: '64px' }}>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                {/* Add more routes as needed */}
-              </Routes>
+        <ErrorBoundary>
+          <Router>
+            <Box sx={{ display: 'flex' }}>
+              <Navbar open={drawerOpen} toggleDrawer={toggleDrawer} />
+              <Sidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+              <Box 
+                component="main" 
+                sx={{ 
+                  flexGrow: 1, 
+                  p: 3, 
+                  marginTop: '64px',
+                  marginLeft: drawerOpen ? `${240}px` : 0,
+                  transition: 'margin 225ms cubic-bezier(0, 0, 0.2, 1) 0ms',
+                }}
+              >
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/miners" element={<Miners />} />
+                  <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/settings" element={<Settings />} />
+                </Routes>
+              </Box>
             </Box>
-          </Box>
-        </Router>
+          </Router>
+        </ErrorBoundary>
       </ThemeProvider>
     </Provider>
   );

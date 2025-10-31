@@ -21,10 +21,13 @@ let miners: MinerConfig[] = [];
  */
 export const loadMinersConfig = (): MinerConfig[] => {
   try {
-    // Look for config in /opt/mining-monitor/etc first, then fall back to local etc directory
-    const configPath = fs.existsSync('/opt/mining-monitor/etc/miners.yaml')
-      ? '/opt/mining-monitor/etc/miners.yaml'
-      : path.join(process.cwd(), 'etc', 'miners.yaml');
+    // Import config here to avoid circular dependency
+    const { config: appConfig } = require('./config');
+    
+    // Look for config in configured path first, then fall back to local etc directory
+    const configPath = fs.existsSync(appConfig.paths.minerConfig)
+      ? appConfig.paths.minerConfig
+      : appConfig.paths.minerConfigFallback;
     const fileContents = fs.readFileSync(configPath, 'utf8');
     const config = yaml.load(fileContents) as { miners: MinerConfig[] };
     

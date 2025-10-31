@@ -9,11 +9,38 @@ const api = axios.create({
   },
 });
 
-export interface MiningStatsResponse {
+export interface MinerStats {
+  minerId: string;
+  name: string;
+  model: string;
+  ip: string;
+  status: 'online' | 'offline' | 'error';
+  lastSeen: string;
   currentHashrate: number;
+  averageHashrate: number;
+  shares: {
+    accepted: number;
+    rejected: number;
+  };
+  hardware: {
+    temperature: number;
+    fanSpeed: number;
+    powerUsage: number;
+  };
+  uptime: number;
+  errors: string[];
+}
+
+export interface MiningStatsResponse {
+  totalHashrate: number;
   activeMiners: number;
   totalMined: number;
-  hashrateHistory: number[];
+  miners: MinerStats[];
+  timestamp: number;
+  statsHistory: {
+    timestamp: number;
+    hashrate: number;
+  }[];
 }
 
 export const fetchMiningStats = async (): Promise<MiningStatsResponse> => {

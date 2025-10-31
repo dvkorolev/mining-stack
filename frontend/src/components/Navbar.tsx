@@ -49,8 +49,8 @@ const Navbar: React.FC<NavbarProps> = ({ open, toggleDrawer }) => {
         >
           Mining Dashboard
         </Typography>
-        <IconButton color="inherit">
-          <Badge badgeContent={4} color="secondary">
+        <IconButton color="inherit" aria-label="notifications">
+          <Badge badgeContent={0} color="secondary">
             <NotificationsIcon />
           </Badge>
         </IconButton>

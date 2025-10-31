@@ -1,9 +1,7 @@
-import React, { useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { Grid, Typography, Paper, Box } from '@mui/material';
+import React, { useEffect, useState } from 'react';
+import { Grid, Typography, Paper, Box, CircularProgress, Alert } from '@mui/material';
 import { Line } from 'react-chartjs-2';
-import { fetchMiningStats } from '../services/api';
-import { setStats, selectMiningStats } from '../features/mining/miningSlice';
+import { fetchMiningStats, MiningStatsResponse } from '../services/api';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -26,35 +24,86 @@ ChartJS.register(
   Legend
 );
 
+const UPDATE_INTERVAL = parseInt(process.env.REACT_APP_UPDATE_INTERVAL || '5000', 10);
+const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:5000/ws';
+
 const Dashboard: React.FC = () => {
-  const dispatch = useDispatch();
-  const stats = useSelector(selectMiningStats);
+  const [stats, setStats] = useState<MiningStatsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [ws, setWs] = useState<WebSocket | null>(null);
 
   useEffect(() => {
+    // Initial data load
     const loadData = async () => {
       try {
+        setLoading(true);
         const data = await fetchMiningStats();
-        dispatch(setStats(data));
+        setStats(data);
+        setError(null);
       } catch (error) {
         console.error('Error fetching mining stats:', error);
+        setError('Failed to load mining statistics');
+      } finally {
+        setLoading(false);
       }
     };
 
     loadData();
-    const interval = setInterval(loadData, 30000); // Refresh every 30 seconds
 
-    return () => clearInterval(interval);
-  }, [dispatch]);
+    // Setup WebSocket connection for real-time updates
+    const websocket = new WebSocket(WS_URL);
+    
+    websocket.onopen = () => {
+      console.log('WebSocket connected');
+      setError(null);
+    };
 
-  // Sample data for the chart
+    websocket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'mining-stats') {
+          setStats(message.data);
+        }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+
+    websocket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setError('WebSocket connection error');
+    };
+
+    websocket.onclose = () => {
+      console.log('WebSocket disconnected');
+    };
+
+    setWs(websocket);
+
+    // Fallback polling if WebSocket fails
+    const pollInterval = setInterval(loadData, UPDATE_INTERVAL);
+
+    return () => {
+      clearInterval(pollInterval);
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket.close();
+      }
+    };
+  }, []);
+
+  // Chart data from stats history
   const chartData = {
-    labels: stats.hashrateHistory?.map((_, index) => `Min ${index + 1}`) || [],
+    labels: stats?.statsHistory?.map((item) => 
+      new Date(item.timestamp).toLocaleTimeString()
+    ) || [],
     datasets: [
       {
-        label: 'Hashrate (MH/s)',
-        data: stats.hashrateHistory || [],
+        label: 'Hashrate (TH/s)',
+        data: stats?.statsHistory?.map((item) => item.hashrate) || [],
         borderColor: 'rgb(75, 192, 192)',
-        tension: 0.1,
+        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+        tension: 0.4,
       },
     ],
   };
@@ -77,11 +126,25 @@ const Dashboard: React.FC = () => {
     },
   };
 
+  if (loading && !stats) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
         Mining Dashboard
       </Typography>
+
+      {error && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
       
       <Grid container spacing={3}>
         {/* Hashrate Card */}

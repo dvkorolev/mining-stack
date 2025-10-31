@@ -1,3 +1,15 @@
+/**
+ * Mining Service
+ * 
+ * Handles all mining-related operations including:
+ * - Starting/stopping mining simulation
+ * - Managing miner statistics
+ * - Broadcasting updates via WebSocket
+ * - Miner configuration management
+ * 
+ * @module services/mining
+ */
+
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { config } from '../config/config';
@@ -5,11 +17,12 @@ import { broadcast } from './websocket.service';
 import { getMiners, updateMinerStatus, getMinerById } from '../config/miners.config';
 import { logger } from '../utils/logger';
 
-declare const setInterval: (handler: TimerHandler, timeout?: number, ...args: any[]) => number;
-declare const clearInterval: (handle?: number) => void;
-
 const execAsync = promisify(exec);
 
+/**
+ * Interface representing statistics for a single miner
+ * @interface MinerStats
+ */
 export interface MinerStats {
   minerId: string;
   name: string;
@@ -57,10 +70,13 @@ let miningStats: MiningStats = {
 // Track mining simulation intervals
 let simulationInterval: NodeJS.Timeout | null = null;
 
-// Simulate miner stats for a single miner
+/**
+ * Simulate miner stats for a single miner
+ * Uses configuration values for realistic simulation
+ */
 const simulateMinerStats = (miner: any): MinerStats => {
-  const isOnline = Math.random() > 0.1; // 90% chance of being online
-  const hasError = isOnline && Math.random() < 0.2; // 20% chance of error if online
+  const isOnline = Math.random() > (1 - config.simulation.onlineProbability);
+  const hasError = isOnline && Math.random() < config.simulation.errorProbability;
   
   const status = !isOnline ? 'offline' : hasError ? 'error' : 'online';
   const lastSeen = new Date();
@@ -69,8 +85,9 @@ const simulateMinerStats = (miner: any): MinerStats => {
   updateMinerStatus(miner.name, status);
   
   // Generate realistic stats based on miner status
-  const baseHashrate = miner.model.includes('S19') ? 100 : 50; // Different base hashrate based on model
-  const hashrateVariance = Math.random() * 20 - 10; // ±10% variance
+  const baseHashrate = miner.model.includes('S19') ? 100 : 50;
+  const varianceRange = baseHashrate * config.simulation.hashrateVariance * 2;
+  const hashrateVariance = Math.random() * varianceRange - (varianceRange / 2);
   const currentHashrate = status === 'online' ? Math.max(0, baseHashrate + hashrateVariance) : 0;
   
   return {
@@ -81,17 +98,17 @@ const simulateMinerStats = (miner: any): MinerStats => {
     status,
     lastSeen,
     currentHashrate,
-    averageHashrate: currentHashrate * (0.9 + Math.random() * 0.2), // Slight variation for average
+    averageHashrate: currentHashrate * (0.9 + Math.random() * 0.2),
     shares: {
       accepted: Math.floor(Math.random() * 1000),
       rejected: Math.floor(Math.random() * 10)
     },
     hardware: {
-      temperature: 60 + Math.random() * 30, // 60-90°C
-      fanSpeed: 3000 + Math.random() * 2000, // 3000-5000 RPM
-      powerUsage: 2000 + Math.random() * 1000 // 2000-3000W
+      temperature: config.simulation.tempMin + Math.random() * (config.simulation.tempMax - config.simulation.tempMin),
+      fanSpeed: config.simulation.fanMin + Math.random() * (config.simulation.fanMax - config.simulation.fanMin),
+      powerUsage: config.simulation.powerMin + Math.random() * (config.simulation.powerMax - config.simulation.powerMin)
     },
-    uptime: status === 'online' ? 3600 + Math.floor(Math.random() * 86400) : 0, // 1h-1d if online
+    uptime: status === 'online' ? 3600 + Math.floor(Math.random() * 86400) : 0,
     errors: status === 'error' ? ['High temperature warning'] : []
   };
 };
@@ -272,8 +289,6 @@ const getMinerStats = (minerId: string) => {
     errors: []
   };
 };
-
-export type { MiningStats, MinerStats };
 
 export {
   getMiningStats,
