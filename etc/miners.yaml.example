@@ -1,0 +1,44 @@
+# Miners Configuration Template
+# Copy this file to miners.yaml and customize for your setup
+#
+# Usage:
+#   cp etc/miners.yaml.example etc/miners.yaml
+#   nano etc/miners.yaml
+#
+# Or use auto-discovery:
+#   python3 bin/farm_init.py
+
+miners:
+  # Example miner configuration
+  - ip: "192.168.1.100"
+    name: "miner-01"
+    model: "Antminer S19j Pro"
+    alias: "Main Mining Rig 1"
+    
+  - ip: "192.168.1.101"
+    name: "miner-02"
+    model: "Antminer S19"
+    alias: "Main Mining Rig 2"
+    
+  - ip: "192.168.1.102"
+    name: "miner-03"
+    model: "Whatsminer M30S"
+    alias: "Backup Rig"
+
+# Configuration Fields:
+# - ip: IP address of the miner (required)
+# - name: Unique identifier for the miner (required)
+# - model: Model name of the miner (required)
+# - alias: Friendly display name (optional)
+
+# Supported Models:
+# - Antminer S19j Pro
+# - Antminer S19
+# - Antminer S19 XP
+# - Whatsminer M30S
+# - Whatsminer M30S+
+# - And more...
+
+# Auto-Discovery:
+# Run 'python3 bin/farm_init.py' to automatically scan your network
+# and create miners.yaml with all detected miners.

@@ -4,6 +4,10 @@ node_modules/
 # Environment variables
 .env
 
+# Configuration files (user-specific)
+etc/miners.yaml
+*.backup
+
 # Build output
 dist/
 build/
