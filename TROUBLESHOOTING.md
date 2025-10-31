@@ -32,22 +32,25 @@ Created from the example template with 3 sample miners.
 
 ### Deployment Steps (Run on Raspberry Pi)
 
+**Note**: Since we're using GHCR (GitHub Container Registry), you don't need source code on the Pi. Just pull the latest images:
+
 ```bash
 # Navigate to the project directory
 cd /opt/mining-stack
 
-# Pull the latest changes (if using git)
-git pull
+# Pull latest images from registry and restart
+./update-from-registry.sh
 
-# Rebuild and restart the backend container
-docker compose down backend
-docker compose up -d --build backend
+# OR manually:
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml down backend
+docker compose -f docker-compose.prod.yml up -d backend
 
 # Verify backend is running
-docker compose logs -f backend
+docker compose -f docker-compose.prod.yml logs -f backend
 
 # Check that miners are loaded
-docker compose exec backend cat /app/etc/miners.yaml
+docker compose -f docker-compose.prod.yml exec backend cat /app/etc/miners.yaml
 ```
 
 ### Verification

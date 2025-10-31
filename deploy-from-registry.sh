@@ -1,6 +1,25 @@
 #!/bin/bash
 # Deploy Mining Stack from GitHub Container Registry to Raspberry Pi
+# 
+# This script copies ONLY configuration files (no source code) and pulls
+# pre-built Docker images from GHCR. The Raspberry Pi doesn't need any
+# source code - everything runs from Docker images.
+#
 # Usage: ./deploy-from-registry.sh [pi_user] [pi_host] [github_repo] [image_tag]
+#
+# What gets copied:
+#   ✓ docker-compose.prod.yml
+#   ✓ .env configuration
+#   ✓ etc/miners.yaml (if exists)
+#   ✓ bin/ Python scripts
+#   ✓ docker/ configurations
+#   ✓ Helper scripts (health-check, update)
+#
+# What does NOT get copied:
+#   ✗ backend/src/ (in Docker image)
+#   ✗ frontend/src/ (in Docker image)
+#   ✗ node_modules/ (in Docker image)
+#   ✗ .git/ repository
 
 set -e
 

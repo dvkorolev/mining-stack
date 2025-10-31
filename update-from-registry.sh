@@ -1,7 +1,27 @@
 #!/bin/bash
-# Update Mining Stack on Raspberry Pi by pulling latest images from registry
-# This script should be run ON the Raspberry Pi
+# Update Mining Stack on Raspberry Pi by pulling latest images from GHCR
+# 
+# This script should be run ON the Raspberry Pi (not from your local machine).
+# It pulls pre-built Docker images from GitHub Container Registry.
+#
 # Usage: ./update-from-registry.sh [image_tag] [--skip-git]
+#
+# What this script does:
+#   1. ✓ Optionally syncs configuration files from GitHub (docker-compose, scripts)
+#   2. ✓ Pulls latest Docker images from GHCR
+#   3. ✓ Restarts containers with new images
+#   4. ✓ Preserves your miners.yaml and .env configuration
+#   5. ✓ Runs health checks
+#
+# What this script does NOT do:
+#   ✗ Does not build images (they're pre-built in CI/CD)
+#   ✗ Does not modify your miners.yaml
+#   ✗ Does not require source code on the Pi
+#
+# Examples:
+#   ./update-from-registry.sh              # Update to 'latest' tag
+#   ./update-from-registry.sh v1.2.3       # Update to specific version
+#   ./update-from-registry.sh --skip-git   # Only update Docker images, skip file sync
 
 set -e
 
@@ -27,8 +47,9 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}Mining Stack Update (Registry)${NC}"
+echo -e "${BLUE}Mining Stack Update (GHCR Registry)${NC}"
 echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}Pulling pre-built images - no source code needed${NC}"
 echo ""
 
 # Navigate to project directory
@@ -48,7 +69,8 @@ echo ""
 
 # Check if git repository exists
 if [ -d ".git" ] && [ "$SKIP_GIT" = false ]; then
-    echo -e "${BLUE}📦 Pulling latest files from GitHub...${NC}"
+    echo -e "${BLUE}📦 Syncing configuration files from GitHub...${NC}"
+    echo -e "${BLUE}   (Only docker-compose, scripts - no source code)${NC}"
     
     # Backup current configuration files
     echo -e "${BLUE}💾 Backing up configuration...${NC}"
