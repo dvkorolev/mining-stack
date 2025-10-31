@@ -11,7 +11,7 @@ interface Client extends WebSocket {
 let wss: Server;
 
 const setupWebSocket = (server: HTTPServer) => {
-  wss = new Server({ server });
+  wss = new Server({ server, path: '/ws' });
 
   // Handle new connections
   wss.on('connection', (ws: Client) => {

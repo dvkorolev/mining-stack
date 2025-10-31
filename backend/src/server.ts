@@ -1,6 +1,5 @@
 import express from 'express';
 import http from 'http';
-import { Server } from 'ws';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -14,9 +13,8 @@ import { config } from './config/config';
 const app = express();
 const server = http.createServer(app);
 
-// WebSocket Server
-const wss = new Server({ server, path: '/ws' });
-setupWebSocket(wss);
+// Setup WebSocket Server
+setupWebSocket(server);
 
 // Configure Winston logger
 const logger = createLogger({
