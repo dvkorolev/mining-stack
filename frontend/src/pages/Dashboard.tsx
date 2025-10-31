@@ -154,7 +154,7 @@ const Dashboard: React.FC = () => {
               Current Hashrate
             </Typography>
             <Typography variant="h4">
-              {stats.currentHashrate ? `${stats.currentHashrate} MH/s` : 'N/A'}
+              {stats?.totalHashrate ? `${stats.totalHashrate} TH/s` : 'N/A'}
             </Typography>
           </Paper>
         </Grid>
@@ -166,7 +166,7 @@ const Dashboard: React.FC = () => {
               Active Miners
             </Typography>
             <Typography variant="h4">
-              {stats.activeMiners !== undefined ? stats.activeMiners : 'N/A'}
+              {stats?.activeMiners !== undefined ? stats.activeMiners : 'N/A'}
             </Typography>
           </Paper>
         </Grid>
@@ -178,7 +178,7 @@ const Dashboard: React.FC = () => {
               Total Mined (24h)
             </Typography>
             <Typography variant="h4">
-              {stats.totalMined ? `${stats.totalMined} ETH` : 'N/A'}
+              {stats?.totalMined ? `${stats.totalMined} BTC` : 'N/A'}
             </Typography>
           </Paper>
         </Grid>

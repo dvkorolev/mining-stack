@@ -6,7 +6,9 @@ import { styled } from '@mui/material/styles';
 
 const drawerWidth = 240;
 
-const StyledAppBar = styled(AppBar)(({ theme }) => ({
+const StyledAppBar = styled(AppBar, {
+  shouldForwardProp: (prop) => prop !== 'open',
+})<{ open?: boolean }>(({ theme }) => ({
   zIndex: theme.zIndex.drawer + 1,
   transition: theme.transitions.create(['width', 'margin'], {
     easing: theme.transitions.easing.sharp,
