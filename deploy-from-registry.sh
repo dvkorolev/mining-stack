@@ -71,6 +71,8 @@ run_cmd "
 echo -e "${BLUE}📤 Copying configuration files...${NC}"
 copy_files "./docker" "$REMOTE_DIR/"
 copy_files "./docker-compose.prod.yml" "$REMOTE_DIR/"
+copy_files "./health-check.sh" "$REMOTE_DIR/"
+copy_files "./update-from-registry.sh" "$REMOTE_DIR/"
 copy_files "./.env" "$REMOTE_DIR/" 2>/dev/null || echo "No .env file to copy"
 
 # 3. Create .env file with registry configuration
@@ -161,3 +163,8 @@ echo ""
 echo -e "${BLUE}To view logs:${NC}"
 echo "  cd $REMOTE_DIR && docker compose -f docker-compose.prod.yml logs -f"
 echo ""
+
+# Run health check
+echo -e "${BLUE}🏥 Running health check...${NC}"
+echo ""
+run_cmd "cd $REMOTE_DIR && bash health-check.sh"

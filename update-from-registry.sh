@@ -69,3 +69,8 @@ echo -e "${BLUE}Dashboard: http://$(hostname -I | awk '{print $1}'):3000${NC}"
 echo ""
 echo -e "${BLUE}To view logs:${NC} docker compose -f docker-compose.prod.yml logs -f"
 echo ""
+
+# Run health check
+echo -e "${BLUE}🏥 Running health check...${NC}"
+echo ""
+bash health-check.sh
