@@ -78,15 +78,17 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:buildcache,mode=max
 
-  notify-deployment:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-      - name: Repository Dispatch
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: images-published
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
+  # Optional: Add notify-deployment job if you want webhook-based auto-deployment
+  # Requires a Personal Access Token with 'repo' scope
+  # notify-deployment:
+  #   needs: build-and-push
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main'
+  #   
+  #   steps:
+  #     - name: Repository Dispatch
+  #       uses: peter-evans/repository-dispatch@v2
+  #       with:
+  #         token: ${{ secrets.PAT_TOKEN }}  # Create a PAT and add as repository secret
+  #         event-type: images-published
+  #         client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
