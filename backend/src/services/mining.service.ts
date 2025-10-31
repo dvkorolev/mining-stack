@@ -82,7 +82,9 @@ const simulateMinerStats = (miner: any): MinerStats => {
   const lastSeen = new Date();
   
   // Update miner status
-  updateMinerStatus(miner.name, status);
+  if (miner.name) {
+    updateMinerStatus(miner.name, status);
+  }
   
   // Generate realistic stats based on miner status
   const baseHashrate = miner.model.includes('S19') ? 100 : 50;
@@ -91,8 +93,8 @@ const simulateMinerStats = (miner: any): MinerStats => {
   const currentHashrate = status === 'online' ? Math.max(0, baseHashrate + hashrateVariance) : 0;
   
   return {
-    minerId: miner.name,
-    name: miner.alias || miner.name,
+    minerId: miner.name || miner.ip,
+    name: miner.alias || miner.name || miner.ip,
     model: miner.model,
     ip: miner.ip,
     status,
@@ -191,7 +193,11 @@ const stopMining = async () => {
     
     // Update all miners to offline status
     const miners = getMiners();
-    miners.forEach(miner => updateMinerStatus(miner.name, 'offline'));
+    miners.forEach(miner => {
+      if (miner.name) {
+        updateMinerStatus(miner.name, 'offline');
+      }
+    });
     
     return { 
       success: true, 
@@ -275,8 +281,8 @@ const getMinerStats = (minerId: string) => {
   
   // Otherwise return basic info
   return {
-    minerId: miner.name,
-    name: miner.alias || miner.name,
+    minerId: miner.name || miner.ip,
+    name: miner.alias || miner.name || miner.ip,
     model: miner.model,
     ip: miner.ip,
     status: miner.status || 'offline',
