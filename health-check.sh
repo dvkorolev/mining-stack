@@ -3,7 +3,8 @@
 # Verifies all services are running correctly after deployment
 # Usage: ./health-check.sh
 
-set -e
+# Don't exit on errors - we want to collect all health info
+set +e
 
 # Colors
 RED='\033[0;31m'
