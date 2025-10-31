@@ -52,12 +52,12 @@ run_cmd "
   sudo chown -R $PI_USER:$PI_USER $REMOTE_DIR
   chmod -R 755 $REMOTE_DIR
   
-  # Only create symlink if it doesn't exist and isn't already the correct directory
-  if [ ! -L \"/opt/mining-stack\" ] && [ \"$(readlink -f /opt/mining-stack 2>/dev/null)\" != \"$REMOTE_DIR\" ]; then
+  # Create symlink for backward compatibility (old path -> new path)
+  if [ ! -L \"/opt/mining-monitor\" ]; then
     echo 'Creating symlink for backward compatibility...'
-    sudo ln -s $REMOTE_DIR /opt/mining-stack
-  elif [ -L \"/opt/mining-stack\" ]; then
-    echo 'Symlink already exists, skipping...'
+    sudo ln -sf $REMOTE_DIR /opt/mining-monitor
+  else
+    echo 'Symlink /opt/mining-monitor already exists, skipping...'
   fi
 "
 
@@ -106,9 +106,11 @@ EOL
   fi
 
   # Set secure permissions
-  chmod 600 .env
-  chmod 700 $REMOTE_DIR/bin/*.py
-  chmod 700 $REMOTE_DIR/bin/init_miners.sh
+  if [ -f .env ]; then
+    chmod 600 .env
+  fi
+  chmod 700 $REMOTE_DIR/bin/*.py 2>/dev/null || true
+  chmod 700 $REMOTE_DIR/bin/init_miners.sh 2>/dev/null || true
 "
 
 # 4. Install required system packages
@@ -124,8 +126,8 @@ run_cmd "
   python3 -m venv $REMOTE_DIR/venv
   source $REMOTE_DIR/venv/bin/activate
   
-  # Install pyasic
-  pip install pyasic pyyaml
+  # Install pyasic and dependencies
+  pip install pyasic pyyaml netifaces
   
   # Install network tools for miner discovery
   sudo apt-get install -y net-tools

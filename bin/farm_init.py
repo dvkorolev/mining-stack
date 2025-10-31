@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 import ipaddress
+import os
 import socket
 import sys
 import yaml
@@ -13,7 +14,7 @@ from pyasic import get_miner
 SCAN_PORTS = [4028, 80]  # Common ports for mining software
 SCAN_TIMEOUT = 0.2  # Shorter timeout for faster scanning
 CONCURRENCY = 100  # Number of concurrent port scans
-INVENTORY_FILE = "/opt/mining-monitor/etc/miners.yaml"
+INVENTORY_FILE = "/opt/mining-stack/etc/miners.yaml"
 # Add known IPs that might not respond to standard ports
 EXTRA_IPS = ["192.168.1.78"]
 

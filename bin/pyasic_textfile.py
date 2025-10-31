@@ -6,8 +6,8 @@ import yaml
 from pyasic import get_miner
 
 # --- Configuration ---
-INVENTORY_PATH = "/opt/mining-monitor/etc/miners.yaml"
-OUT_PATH = "/opt/mining-monitor/textfile/pyasic_metrics.prom"
+INVENTORY_PATH = "/opt/mining-stack/etc/miners.yaml"
+OUT_PATH = "/opt/mining-stack/textfile/pyasic_metrics.prom"
 MAX_CONCURRENT_REQUESTS = 5
 # ---------------------
 
