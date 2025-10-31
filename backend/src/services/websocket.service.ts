@@ -1,3 +1,4 @@
+import { Server as HTTPServer } from 'http';
 import { Server, WebSocket } from 'ws';
 import { config } from '../config/config';
 import { getMiningStats } from './mining.service';
@@ -7,10 +8,10 @@ interface Client extends WebSocket {
   isAlive: boolean;
 }
 
-let wss: Server<Client>;
+let wss: Server;
 
-const setupWebSocket = (server: Server) => {
-  wss = server as Server<Client>;
+const setupWebSocket = (server: HTTPServer) => {
+  wss = new Server({ server });
 
   // Handle new connections
   wss.on('connection', (ws: Client) => {
@@ -33,13 +34,14 @@ const setupWebSocket = (server: Server) => {
   // Ping all clients periodically to check connection status
   const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
-      if (!ws.isAlive) {
-        console.log(`Terminating dead connection: ${ws.id}`);
-        return ws.terminate();
+      const client = ws as Client;
+      if (!client.isAlive) {
+        console.log(`Terminating dead connection: ${client.id}`);
+        return client.terminate();
       }
 
-      ws.isAlive = false;
-      ws.ping();
+      client.isAlive = false;
+      client.ping();
     });
   }, config.websocket.pingInterval);
 
