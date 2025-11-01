@@ -21,7 +21,7 @@ const format = winston.format.combine(
 
 // Create the logger
 const logger = winston.createLogger({
-  level: 'info',
+  level: process.env.LOG_LEVEL || 'info',
   levels,
   format,
   transports: [
@@ -33,6 +33,22 @@ const logger = winston.createLogger({
     // Write all logs with level `info` and below to `combined.log`
     new winston.transports.File({ 
       filename: path.join(config.paths.logs, 'combined.log') 
+    }),
+    // Write Telegram-specific logs
+    new winston.transports.File({
+      filename: path.join(config.paths.logs, 'telegram.log'),
+      format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.printf((info) => {
+          const { timestamp, level, message, ...meta } = info;
+          const msgStr = String(message);
+          // Only log messages with telegram context
+          if (meta.service === 'telegram' || msgStr.toLowerCase().includes('telegram')) {
+            return `${timestamp} [${level}]: ${msgStr} ${Object.keys(meta).length ? JSON.stringify(meta) : ''}`;
+          }
+          return '';
+        })
+      ),
     }),
   ],
 });

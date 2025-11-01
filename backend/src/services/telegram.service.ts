@@ -26,7 +26,7 @@ let authorizedChatId: string | null = null;
 export const initTelegramBot = (token: string, chatId: string): void => {
   try {
     if (!token || !chatId) {
-      logger.warn('Telegram bot token or chat ID not provided. Bot disabled.');
+      logger.warn('Telegram bot token or chat ID not provided. Bot disabled.', { service: 'telegram' });
       return;
     }
 
@@ -34,7 +34,10 @@ export const initTelegramBot = (token: string, chatId: string): void => {
     bot = new TelegramBot(token, { polling: true });
     isEnabled = true;
 
-    logger.info('Telegram bot initialized successfully');
+    logger.info('Telegram bot initialized successfully', { 
+      service: 'telegram', 
+      chatId: chatId.substring(0, 4) + '***' // Partial chatId for security
+    });
 
     // Setup command handlers
     setupCommandHandlers();
@@ -42,8 +45,9 @@ export const initTelegramBot = (token: string, chatId: string): void => {
 
     // Send startup notification
     sendMessage('🚀 Mining Stack Bot is online and ready!');
+    logger.info('Telegram startup notification sent', { service: 'telegram' });
   } catch (error) {
-    logger.error('Failed to initialize Telegram bot:', error);
+    logger.error('Failed to initialize Telegram bot:', { service: 'telegram', error });
     isEnabled = false;
   }
 };
@@ -225,6 +229,7 @@ const setupCallbackHandlers = (): void => {
  */
 const sendFarmStatus = async (chatId: number): Promise<void> => {
   try {
+    logger.info('Telegram: Sending farm status', { service: 'telegram', chatId });
     const stats = getMiningStats();
     
     const statusMessage = `
@@ -239,8 +244,9 @@ const sendFarmStatus = async (chatId: number): Promise<void> => {
     `.trim();
 
     await bot?.sendMessage(chatId, statusMessage, { parse_mode: 'Markdown' });
+    logger.info('Telegram: Farm status sent successfully', { service: 'telegram', chatId });
   } catch (error) {
-    logger.error('Error sending farm status:', error);
+    logger.error('Telegram: Error sending farm status', { service: 'telegram', chatId, error });
     await bot?.sendMessage(chatId, '❌ Error fetching farm status');
   }
 };
@@ -250,6 +256,7 @@ const sendFarmStatus = async (chatId: number): Promise<void> => {
  */
 const sendMinersList = async (chatId: number): Promise<void> => {
   try {
+    logger.info('Telegram: Sending miners list', { service: 'telegram', chatId });
     const miners = getMiners();
     const stats = getMiningStats();
 
@@ -282,8 +289,9 @@ const sendMinersList = async (chatId: number): Promise<void> => {
         inline_keyboard: buttons,
       },
     });
+    logger.info('Telegram: Miners list sent', { service: 'telegram', chatId, minerCount: miners.length });
   } catch (error) {
-    logger.error('Error sending miners list:', error);
+    logger.error('Telegram: Error sending miners list', { service: 'telegram', chatId, error });
     await bot?.sendMessage(chatId, '❌ Error fetching miners list');
   }
 };
@@ -293,6 +301,7 @@ const sendMinersList = async (chatId: number): Promise<void> => {
  */
 const sendMinerDetails = async (chatId: number, minerName: string): Promise<void> => {
   try {
+    logger.info('Telegram: Sending miner details', { service: 'telegram', chatId, minerName });
     const miner = getMinerById(minerName);
     if (!miner) {
       await bot?.sendMessage(chatId, `❌ Miner "${minerName}" not found`);
@@ -340,8 +349,9 @@ Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
       parse_mode: 'Markdown',
       reply_markup: keyboard,
     });
+    logger.info('Telegram: Miner details sent', { service: 'telegram', chatId, minerName });
   } catch (error) {
-    logger.error('Error sending miner details:', error);
+    logger.error('Telegram: Error sending miner details', { service: 'telegram', chatId, minerName, error });
     await bot?.sendMessage(chatId, `❌ Error fetching details for "${minerName}"`);
   }
 };
@@ -351,6 +361,7 @@ Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
  */
 const handleRebootRequest = async (chatId: number, minerName: string): Promise<void> => {
   try {
+    logger.info('Telegram: Reboot request received', { service: 'telegram', chatId, minerName });
     const miner = getMinerById(minerName);
     if (!miner) {
       await bot?.sendMessage(chatId, `❌ Miner "${minerName}" not found`);
@@ -383,17 +394,20 @@ const handleRebootRequest = async (chatId: number, minerName: string): Promise<v
  */
 const executeReboot = async (chatId: number, minerName: string): Promise<void> => {
   try {
+    logger.info('Telegram: Executing reboot', { service: 'telegram', chatId, minerName });
     await bot?.sendMessage(chatId, `🔄 Rebooting ${minerName}...`);
     
     const result = await rebootMiner(minerName);
     
     if (result.success) {
       await bot?.sendMessage(chatId, `✅ ${result.message}`);
+      logger.info('Telegram: Reboot successful', { service: 'telegram', chatId, minerName });
     } else {
       await bot?.sendMessage(chatId, `❌ ${result.message}`);
+      logger.warn('Telegram: Reboot failed', { service: 'telegram', chatId, minerName, message: result.message });
     }
   } catch (error) {
-    logger.error('Error executing reboot:', error);
+    logger.error('Telegram: Error executing reboot', { service: 'telegram', chatId, minerName, error });
     await bot?.sendMessage(chatId, `❌ Error rebooting ${minerName}`);
   }
 };
@@ -403,6 +417,7 @@ const executeReboot = async (chatId: number, minerName: string): Promise<void> =
  */
 const sendMinerPools = async (chatId: number, minerName: string): Promise<void> => {
   try {
+    logger.info('Telegram: Fetching pool configuration', { service: 'telegram', chatId, minerName });
     const miner = getMinerById(minerName);
     if (!miner) {
       await bot?.sendMessage(chatId, `❌ Miner "${minerName}" not found`);
@@ -428,8 +443,9 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
     });
 
     await bot?.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    logger.info('Telegram: Pool configuration sent', { service: 'telegram', chatId, minerName, poolCount: result.pools!.length });
   } catch (error) {
-    logger.error('Error sending pool configuration:', error);
+    logger.error('Telegram: Error sending pool configuration', { service: 'telegram', chatId, minerName, error });
     await bot?.sendMessage(chatId, `❌ Error fetching pool configuration for "${minerName}"`);
   }
 };
@@ -461,14 +477,15 @@ No active alerts at the moment.
  */
 export const sendMessage = async (message: string, options?: any): Promise<void> => {
   if (!bot || !isEnabled || !authorizedChatId) {
-    logger.warn('Telegram bot not initialized or disabled');
+    logger.warn('Telegram bot not initialized or disabled', { service: 'telegram' });
     return;
   }
 
   try {
     await bot.sendMessage(authorizedChatId, message, options);
+    logger.info('Telegram: Message sent', { service: 'telegram', messagePreview: message.substring(0, 50) });
   } catch (error) {
-    logger.error('Error sending Telegram message:', error);
+    logger.error('Telegram: Error sending message', { service: 'telegram', error });
   }
 };
 
@@ -482,6 +499,13 @@ export const sendAlert = async (alert: {
   miner?: string;
 }): Promise<void> => {
   if (!bot || !isEnabled || !authorizedChatId) return;
+
+  logger.info('Telegram: Sending alert', { 
+    service: 'telegram', 
+    severity: alert.severity, 
+    title: alert.title, 
+    miner: alert.miner 
+  });
 
   const emoji = alert.severity === 'critical' ? '🔥' : 
                 alert.severity === 'warning' ? '⚠️' : 'ℹ️';
@@ -497,8 +521,9 @@ Time: ${new Date().toLocaleString()}
 
   try {
     await bot.sendMessage(authorizedChatId, message, { parse_mode: 'Markdown' });
+    logger.info('Telegram: Alert sent successfully', { service: 'telegram', severity: alert.severity });
   } catch (error) {
-    logger.error('Error sending alert notification:', error);
+    logger.error('Telegram: Error sending alert notification', { service: 'telegram', alert, error });
   }
 };
 
@@ -507,18 +532,21 @@ Time: ${new Date().toLocaleString()}
  */
 export const testConnection = async (): Promise<{ success: boolean; message: string }> => {
   if (!bot || !isEnabled) {
+    logger.warn('Telegram: Test connection failed - bot not initialized', { service: 'telegram' });
     return { success: false, message: 'Bot not initialized' };
   }
 
   try {
+    logger.info('Telegram: Testing connection', { service: 'telegram' });
     const me = await bot.getMe();
     await sendMessage('✅ Test message: Bot is working correctly!');
+    logger.info('Telegram: Connection test successful', { service: 'telegram', username: me.username });
     return { 
       success: true, 
       message: `Connected as @${me.username}` 
     };
   } catch (error) {
-    logger.error('Bot connection test failed:', error);
+    logger.error('Telegram: Connection test failed', { service: 'telegram', error });
     return { 
       success: false, 
       message: error instanceof Error ? error.message : 'Unknown error' 
@@ -544,7 +572,7 @@ export const stopBot = (): void => {
     bot.stopPolling();
     bot = null;
     isEnabled = false;
-    logger.info('Telegram bot stopped');
+    logger.info('Telegram bot stopped', { service: 'telegram' });
   }
 };
 
