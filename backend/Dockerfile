@@ -20,16 +20,6 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install Python, build dependencies, and pyasic
-RUN apk add --no-cache \
-    python3 \
-    py3-pip \
-    python3-dev \
-    gcc \
-    musl-dev \
-    linux-headers && \
-    pip3 install --no-cache-dir --break-system-packages pyasic pyyaml netifaces aiohttp
-
 # Copy package files
 COPY package*.json ./
 

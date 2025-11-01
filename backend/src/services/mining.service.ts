@@ -812,64 +812,25 @@ const backupDatabase = (backupPath: string) => {
   }
 };
 
-// Trigger network scan for miners
+/**
+ * Auto-discovery is NOT implemented in the Node.js backend.
+ * 
+ * Architecture Decision:
+ * - Hardware discovery belongs in the dedicated Python scraper service
+ * - The Python service (bin/farm_init.py) runs on the host with pyasic
+ * - Backend's responsibility is to read from Prometheus, not scrape hardware
+ * 
+ * To discover miners:
+ * 1. SSH to the Raspberry Pi
+ * 2. Run: /opt/mining-stack/bin/farm_init.py
+ * 3. Miners will be added to etc/miners.yaml
+ * 4. Backend will automatically load the updated config
+ */
 const discoverMiners = async (): Promise<{ success: boolean; message: string; miners: any[] }> => {
-  try {
-    logger.info('Starting miner auto-discovery...');
-    
-    // Use system Python (installed in container via Dockerfile)
-    // In production: python3 is installed in container with pyasic
-    // In development: use venv if available, otherwise system python3
-    const pythonPath = process.env.NODE_ENV === 'production'
-      ? 'python3'
-      : (fs.existsSync(path.join(process.cwd(), 'venv', 'bin', 'python3'))
-          ? path.join(process.cwd(), 'venv', 'bin', 'python3')
-          : 'python3');
-    
-    // Run the Python discovery script
-    const scriptPath = process.env.NODE_ENV === 'production' 
-      ? '/opt/mining-stack/bin/farm_init.py'
-      : path.join(process.cwd(), 'bin', 'farm_init.py');
-    
-    if (!fs.existsSync(scriptPath)) {
-      throw new Error(`Discovery script not found at ${scriptPath}`);
-    }
-    
-    logger.info(`Running discovery: ${pythonPath} ${scriptPath}`);
-    
-    const { stdout, stderr } = await execAsync(`${pythonPath} ${scriptPath}`, {
-      timeout: 120000, // 2 minutes timeout
-    });
-    
-    if (stderr && !stderr.includes('Found network')) {
-      logger.warn('Discovery script warnings:', stderr);
-    }
-    
-    if (stdout) {
-      logger.info('Discovery output:', stdout);
-    }
-    
-    // Reload miners configuration
-    const newMiners = loadMinersConfig();
-    
-    return {
-      success: true,
-      message: `Discovered ${newMiners.length} miners`,
-      miners: newMiners,
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error('Error during auto-discovery:', errorMessage);
-    
-    // Provide helpful error messages
-    if (errorMessage.includes('not found')) {
-      throw new Error('Python virtual environment or pyasic not installed. Please run setup.');
-    } else if (errorMessage.includes('timeout')) {
-      throw new Error('Discovery timed out. Network might be slow or unreachable.');
-    } else {
-      throw new Error(`Failed to discover miners: ${errorMessage}`);
-    }
-  }
+  throw new Error(
+    'Auto-discovery must be run on the host system. ' +
+    'SSH to your Raspberry Pi and run: /opt/mining-stack/bin/farm_init.py'
+  );
 };
 
 export {
@@ -878,7 +839,7 @@ export {
   getHistoricalStats,
   getDatabaseInfo,
   backupDatabase,
-  discoverMiners,
+  discoverMiners, // Disabled - see function comment
   startMining,
   stopMining,
   restartMiner,
