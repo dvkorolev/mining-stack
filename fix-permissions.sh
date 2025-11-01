@@ -5,17 +5,20 @@ set -e
 
 echo "🔧 Fixing Mining Stack permissions and directories..."
 
-# Create required directories
+# Get current user
+CURRENT_USER=$(whoami)
+
+# Create required directories with sudo if needed
 echo "📁 Creating required directories..."
-mkdir -p ./data
-mkdir -p ./logs
-mkdir -p ./etc
+sudo mkdir -p ./data ./logs ./etc
+
+# Fix ownership FIRST (before setting permissions)
+echo "👤 Fixing ownership..."
+sudo chown -R $CURRENT_USER:$CURRENT_USER ./data ./logs ./etc
 
 # Set proper permissions
 echo "🔐 Setting permissions..."
-chmod -R 755 ./data
-chmod -R 755 ./logs
-chmod -R 755 ./etc
+chmod -R 755 ./data ./logs ./etc
 
 # Create miners.yaml if it doesn't exist
 if [ ! -f ./etc/miners.yaml ]; then
@@ -35,10 +38,6 @@ miners:
 EOF
     chmod 644 ./etc/miners.yaml
 fi
-
-# Fix ownership (run as current user)
-echo "👤 Fixing ownership..."
-sudo chown -R $(id -u):$(id -g) ./data ./logs ./etc 2>/dev/null || true
 
 echo "✅ Permissions fixed!"
 echo ""

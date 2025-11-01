@@ -22,6 +22,18 @@ import { getDatabase, StatsRecord } from './database.service';
 const execAsync = promisify(exec);
 
 /**
+ * Interface for detailed error information
+ */
+export interface MinerError {
+  code: string;
+  message: string;
+  description: string;
+  severity: 'critical' | 'warning' | 'info';
+  timestamp: number;
+  details?: Record<string, any>;
+}
+
+/**
  * Interface representing statistics for a single miner
  * @interface MinerStats
  */
@@ -31,6 +43,7 @@ export interface MinerStats {
   model: string;
   ip: string;
   status: 'online' | 'offline' | 'error';
+  statusMessage?: string; // Human-readable status message
   lastSeen: Date;
   currentHashrate: number;
   averageHashrate: number;
@@ -44,7 +57,9 @@ export interface MinerStats {
     powerUsage: number;
   };
   uptime: number;
-  errors: string[];
+  errors: MinerError[]; // Changed from string[] to MinerError[]
+  errorCount: number; // Total number of errors
+  lastError?: MinerError; // Most recent error for quick access
 }
 
 export interface MiningStats {
@@ -88,6 +103,106 @@ const minerPersistentState = new Map<string, {
 
 // Minimum time between status changes (5 minutes)
 const MIN_STATUS_CHANGE_INTERVAL = 5 * 60 * 1000;
+
+/**
+ * Error code definitions with descriptions
+ */
+const ERROR_CODES = {
+  HIGH_TEMP: {
+    code: 'HIGH_TEMP',
+    message: 'High Temperature',
+    description: 'Miner temperature exceeds safe operating threshold (>85°C)',
+    severity: 'critical' as const,
+  },
+  FAN_FAILURE: {
+    code: 'FAN_FAILURE',
+    message: 'Fan Failure',
+    description: 'One or more cooling fans are not operating correctly',
+    severity: 'critical' as const,
+  },
+  LOW_HASHRATE: {
+    code: 'LOW_HASHRATE',
+    message: 'Low Hashrate',
+    description: 'Hashrate is significantly below expected performance',
+    severity: 'warning' as const,
+  },
+  HIGH_REJECTION: {
+    code: 'HIGH_REJECTION',
+    message: 'High Share Rejection',
+    description: 'Share rejection rate exceeds 5%',
+    severity: 'warning' as const,
+  },
+  POWER_ISSUE: {
+    code: 'POWER_ISSUE',
+    message: 'Power Fluctuation',
+    description: 'Unstable power supply detected',
+    severity: 'warning' as const,
+  },
+  NETWORK_ERROR: {
+    code: 'NETWORK_ERROR',
+    message: 'Network Connection Issue',
+    description: 'Unable to maintain stable connection to mining pool',
+    severity: 'critical' as const,
+  },
+  CHIP_ERROR: {
+    code: 'CHIP_ERROR',
+    message: 'ASIC Chip Error',
+    description: 'One or more ASIC chips are not responding',
+    severity: 'critical' as const,
+  },
+};
+
+/**
+ * Generate random error for simulation
+ */
+const generateRandomError = (temperature: number, rejectionRate: number): MinerError | null => {
+  const errors: MinerError[] = [];
+  
+  // High temperature error
+  if (temperature > 85) {
+    errors.push({
+      ...ERROR_CODES.HIGH_TEMP,
+      timestamp: Date.now(),
+      details: { temperature: temperature.toFixed(1) },
+    });
+  }
+  
+  // High rejection rate
+  if (rejectionRate > 5) {
+    errors.push({
+      ...ERROR_CODES.HIGH_REJECTION,
+      timestamp: Date.now(),
+      details: { rejectionRate: rejectionRate.toFixed(2) },
+    });
+  }
+  
+  // Random errors (simulate various issues)
+  const randomValue = Math.random();
+  if (randomValue < 0.3) {
+    errors.push({
+      ...ERROR_CODES.FAN_FAILURE,
+      timestamp: Date.now(),
+    });
+  } else if (randomValue < 0.5) {
+    errors.push({
+      ...ERROR_CODES.CHIP_ERROR,
+      timestamp: Date.now(),
+      details: { affectedChips: Math.floor(Math.random() * 3) + 1 },
+    });
+  } else if (randomValue < 0.7) {
+    errors.push({
+      ...ERROR_CODES.NETWORK_ERROR,
+      timestamp: Date.now(),
+    });
+  } else {
+    errors.push({
+      ...ERROR_CODES.POWER_ISSUE,
+      timestamp: Date.now(),
+    });
+  }
+  
+  return errors.length > 0 ? errors[0] : null;
+};
 
 /**
  * Simulate miner stats for a single miner
@@ -159,26 +274,57 @@ const simulateMinerStats = (miner: any): MinerStats => {
     state.lastHashrate = 0;
   }
   
+  // Generate hardware stats
+  const temperature = config.simulation.tempMin + Math.random() * (config.simulation.tempMax - config.simulation.tempMin);
+  const acceptedShares = Math.floor(Math.random() * 1000);
+  const rejectedShares = Math.floor(Math.random() * 10);
+  const rejectionRate = acceptedShares > 0 ? (rejectedShares / (acceptedShares + rejectedShares)) * 100 : 0;
+  
+  // Generate errors if status is error
+  const errors: MinerError[] = [];
+  let statusMessage = status.toUpperCase();
+  
+  if (status === 'error') {
+    const error = generateRandomError(temperature, rejectionRate);
+    if (error) {
+      errors.push(error);
+      statusMessage = error.message;
+      
+      // Log error to console and file
+      logger.warn(`Miner ${minerId} error: ${error.message} - ${error.description}`, {
+        miner: minerId,
+        errorCode: error.code,
+        severity: error.severity,
+        details: error.details,
+      });
+    }
+  }
+  
+  const lastError = errors.length > 0 ? errors[errors.length - 1] : undefined;
+
   return {
     minerId,
     name: miner.alias || miner.name || miner.ip,
     model: miner.model,
     ip: miner.ip,
     status,
+    statusMessage,
     lastSeen,
     currentHashrate,
     averageHashrate: currentHashrate * 0.98, // Slightly lower average
     shares: {
-      accepted: Math.floor(Math.random() * 1000),
-      rejected: Math.floor(Math.random() * 10)
+      accepted: acceptedShares,
+      rejected: rejectedShares
     },
     hardware: {
-      temperature: config.simulation.tempMin + Math.random() * (config.simulation.tempMax - config.simulation.tempMin),
+      temperature,
       fanSpeed: config.simulation.fanMin + Math.random() * (config.simulation.fanMax - config.simulation.fanMin),
       powerUsage: config.simulation.powerMin + Math.random() * (config.simulation.powerMax - config.simulation.powerMin)
     },
     uptime: status === 'online' ? 3600 + Math.floor(Math.random() * 86400) : 0,
-    errors: status === 'error' ? ['High temperature warning'] : []
+    errors,
+    errorCount: errors.length,
+    lastError,
   };
 };
 

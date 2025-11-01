@@ -27,7 +27,17 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
+import WarningIcon from '@mui/icons-material/Warning';
 import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, discoverMiners as discoverMinersAPI } from '../services/api';
+
+interface MinerError {
+  code: string;
+  message: string;
+  description: string;
+  severity: 'critical' | 'warning' | 'info';
+  timestamp: number;
+  details?: Record<string, any>;
+}
 
 interface Miner {
   minerId: string;
@@ -37,12 +47,16 @@ interface Miner {
   alias?: string;
   owner?: string;
   status: 'online' | 'offline' | 'error';
+  statusMessage?: string;
   lastSeen: Date;
   currentHashrate?: number;
   hardware?: {
     temperature?: number;
     powerUsage?: number;
   };
+  errors?: MinerError[];
+  errorCount?: number;
+  lastError?: MinerError;
 }
 
 const Miners: React.FC = () => {
@@ -270,11 +284,40 @@ const Miners: React.FC = () => {
                 miners.map((miner) => (
                   <TableRow key={miner.minerId}>
                     <TableCell>
-                      <Chip
-                        label={miner.status.toUpperCase()}
-                        color={getStatusColor(miner.status)}
-                        size="small"
-                      />
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <Chip
+                          label={miner.statusMessage || miner.status.toUpperCase()}
+                          color={getStatusColor(miner.status)}
+                          size="small"
+                        />
+                        {miner.lastError && (
+                          <Tooltip 
+                            title={
+                              <Box>
+                                <Typography variant="body2" fontWeight="bold">
+                                  {miner.lastError.message}
+                                </Typography>
+                                <Typography variant="caption">
+                                  {miner.lastError.description}
+                                </Typography>
+                                {miner.lastError.details && (
+                                  <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                                    Details: {JSON.stringify(miner.lastError.details)}
+                                  </Typography>
+                                )}
+                                <Typography variant="caption" display="block" sx={{ mt: 0.5, opacity: 0.7 }}>
+                                  {new Date(miner.lastError.timestamp).toLocaleString()}
+                                </Typography>
+                              </Box>
+                            }
+                            arrow
+                          >
+                            <IconButton size="small" color="error">
+                              <WarningIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Box>
                     </TableCell>
                     <TableCell>{miner.name}</TableCell>
                     <TableCell>{miner.ip}</TableCell>

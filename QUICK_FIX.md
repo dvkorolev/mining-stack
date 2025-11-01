@@ -29,8 +29,11 @@ docker compose -f docker-compose.prod.yml restart backend
 ```bash
 cd /opt/mining-stack
 
-# Create required directories
-mkdir -p ./data ./logs ./etc
+# Create required directories (with sudo if needed)
+sudo mkdir -p ./data ./logs ./etc
+
+# Fix ownership (replace 'admin' with your username if different)
+sudo chown -R $(whoami):$(whoami) ./data ./logs ./etc
 
 # Set permissions
 chmod -R 755 ./data ./logs ./etc
