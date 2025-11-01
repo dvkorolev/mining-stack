@@ -18,6 +18,7 @@ import { broadcast } from './websocket.service';
 import { getMiners, updateMinerStatus, getMinerById, loadMinersConfig } from '../config/miners.config';
 import { logger } from '../utils/logger';
 import { getDatabase, StatsRecord } from './database.service';
+import * as prometheusService from './prometheus.service';
 
 const execAsync = promisify(exec);
 
@@ -202,6 +203,102 @@ const generateRandomError = (temperature: number, rejectionRate: number): MinerE
   }
   
   return errors.length > 0 ? errors[0] : null;
+};
+
+/**
+ * Get real miner stats from Prometheus
+ * Uses actual data from pyasic metrics
+ */
+const getRealMinerStats = async (
+  miner: any,
+  metrics: {
+    hashrates: Map<string, number>;
+    temperatures: Map<string, number>;
+    power: Map<string, number>;
+    status: Map<string, boolean>;
+    uptime: Map<string, number>;
+    fanSpeeds: Map<string, number[]>;
+  }
+): Promise<MinerStats> => {
+  const minerId = miner.name || miner.ip;
+  const ip = miner.ip;
+  
+  // Get real metrics from Prometheus
+  const isOnline = metrics.status.get(ip) ?? false;
+  const currentHashrate = metrics.hashrates.get(ip) ?? 0;
+  const temperature = metrics.temperatures.get(ip) ?? 0;
+  const powerUsage = metrics.power.get(ip) ?? 0;
+  const uptime = metrics.uptime.get(ip) ?? 0;
+  const fans = metrics.fanSpeeds.get(ip) ?? [];
+  const avgFanSpeed = fans.length > 0 ? fans.reduce((a, b) => a + b, 0) / fans.length : 0;
+  
+  // Determine status
+  let status: 'online' | 'offline' | 'error' = isOnline ? 'online' : 'offline';
+  let statusMessage = status.toUpperCase();
+  const errors: MinerError[] = [];
+  
+  // Check for error conditions
+  if (isOnline) {
+    if (temperature > 85) {
+      status = 'error';
+      const error: MinerError = {
+        ...ERROR_CODES.HIGH_TEMP,
+        timestamp: Date.now(),
+        details: { temperature: temperature.toFixed(1) },
+      };
+      errors.push(error);
+      statusMessage = error.message;
+      
+      logger.warn(`Miner ${minerId} error: ${error.message}`, {
+        miner: minerId,
+        errorCode: error.code,
+        severity: error.severity,
+        details: error.details,
+      });
+    } else if (currentHashrate < 10 && currentHashrate > 0) {
+      // Very low hashrate might indicate an issue
+      status = 'error';
+      const error: MinerError = {
+        ...ERROR_CODES.LOW_HASHRATE,
+        timestamp: Date.now(),
+        details: { hashrate: currentHashrate.toFixed(2) },
+      };
+      errors.push(error);
+      statusMessage = error.message;
+    }
+  }
+  
+  // Update miner status in config
+  if (miner.name) {
+    updateMinerStatus(miner.name, status);
+  }
+  
+  const lastError = errors.length > 0 ? errors[errors.length - 1] : undefined;
+  
+  return {
+    minerId,
+    name: miner.alias || miner.name || miner.ip,
+    model: miner.model,
+    ip: miner.ip,
+    status,
+    statusMessage,
+    lastSeen: new Date(),
+    currentHashrate,
+    averageHashrate: currentHashrate * 0.98, // Slightly lower average
+    shares: {
+      accepted: 0, // Would need pool data from Prometheus
+      rejected: 0,
+    },
+    hardware: {
+      temperature,
+      fanSpeed: avgFanSpeed,
+      powerUsage,
+    },
+    uptime,
+    errors,
+    errorCount: errors.length,
+    lastError,
+  };
 };
 
 /**
@@ -401,6 +498,83 @@ const simulateMiningStats = (): MiningStats => {
   return stats;
 };
 
+/**
+ * Get real mining stats from Prometheus
+ * Uses actual data from pyasic metrics
+ */
+const getRealMiningStats = async (): Promise<MiningStats> => {
+  try {
+    // Fetch real metrics from Prometheus
+    const metrics = await prometheusService.getAllMinerMetrics();
+    const miners = getMiners();
+    
+    // Get stats for each miner using real data
+    const minerStatsPromises = miners.map(miner => getRealMinerStats(miner, metrics));
+    const minerStats = await Promise.all(minerStatsPromises);
+    
+    const totalHashrate = minerStats.reduce((sum, miner) => sum + miner.currentHashrate, 0);
+    const activeMiners = minerStats.filter(m => m.status === 'online').length;
+    
+    // Calculate 24h average hashrate from history
+    const statsHistory = [
+      ...miningStats.statsHistory,
+      { timestamp: Date.now(), hashrate: totalHashrate }
+    ].slice(-config.mining.maxHistoryPoints);
+    
+    const averageHashrate24h = statsHistory.length > 0
+      ? statsHistory.reduce((sum, stat) => sum + stat.hashrate, 0) / statsHistory.length
+      : totalHashrate;
+    
+    // Realistic BTC mining calculation
+    const networkHashrate = 600000000; // 600 EH/s in TH/s
+    const dailyBTC = 450;
+    const updateIntervalSeconds = config.mining.updateInterval / 1000;
+    const timeFraction = updateIntervalSeconds / 86400;
+    const btcMined = (totalHashrate / networkHashrate) * dailyBTC * timeFraction;
+    
+    // Calculate additional metrics
+    const avgTemperature = minerStats.length > 0
+      ? minerStats.reduce((sum, m) => sum + (m.hardware?.temperature || 0), 0) / minerStats.length
+      : 0;
+    
+    const avgPower = minerStats.reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0);
+    
+    const stats: MiningStats = {
+      totalHashrate,
+      averageHashrate24h,
+      activeMiners,
+      totalMined: miningStats.totalMined + btcMined,
+      miners: minerStats,
+      timestamp: Date.now(),
+      statsHistory
+    };
+
+    // Save to database
+    try {
+      const dbRecord: StatsRecord = {
+        timestamp: stats.timestamp,
+        totalHashrate: stats.totalHashrate,
+        averageHashrate24h: stats.averageHashrate24h,
+        activeMiners: stats.activeMiners,
+        totalMiners: miners.length,
+        totalMined: stats.totalMined,
+        avgTemperature,
+        avgPower,
+        rejectionRate: 0, // Would need pool data
+      };
+      db.insertStats(dbRecord);
+    } catch (error) {
+      logger.error('Error saving stats to database:', error);
+    }
+
+    return stats;
+  } catch (error) {
+    logger.error('Error fetching real mining stats:', error);
+    // Fall back to simulation if Prometheus is unavailable
+    return simulateMiningStats();
+  }
+};
+
 // Get current mining stats
 const getMiningStats = (): MiningStats => {
   return miningStats;
@@ -409,7 +583,8 @@ const getMiningStats = (): MiningStats => {
 // Start the mining process
 const startMining = async (minerConfig: any = {}) => {
   try {
-    logger.info('Starting mining simulation');
+    const useRealData = config.mining.useRealData && config.prometheus.enabled;
+    logger.info(`Starting mining ${useRealData ? 'with real Prometheus data' : 'simulation'}`);
     
     // Clear any existing intervals
     if (simulationInterval) {
@@ -422,14 +597,14 @@ const startMining = async (minerConfig: any = {}) => {
       clearInterval(cleanupInterval);
     }
     
-    // Start simulation
-    simulationInterval = setInterval(() => {
+    // Start stats update interval (real data or simulation)
+    simulationInterval = setInterval(async () => {
       try {
-        const stats = simulateMiningStats();
+        const stats = useRealData ? await getRealMiningStats() : simulateMiningStats();
         miningStats = stats; // Update in-memory stats
         broadcast({ type: 'mining-stats', data: stats });
       } catch (error) {
-        logger.error('Error in mining simulation:', error);
+        logger.error('Error updating mining stats:', error);
       }
     }, config.mining.updateInterval);
 

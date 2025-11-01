@@ -18,8 +18,15 @@ const config = {
   
   // Mining configuration
   mining: {
-    updateInterval: parseInt(process.env.MINING_UPDATE_INTERVAL || '5000', 10), // 5 seconds
+    updateInterval: parseInt(process.env.MINING_UPDATE_INTERVAL || '30000', 10), // 30 seconds
     maxHistoryPoints: parseInt(process.env.MINING_MAX_HISTORY || '60', 10), // 60 data points
+    useRealData: process.env.USE_REAL_DATA !== 'false', // Use real Prometheus data by default
+  },
+  
+  // Prometheus configuration
+  prometheus: {
+    url: process.env.PROMETHEUS_URL || 'http://prometheus:9090',
+    enabled: process.env.PROMETHEUS_ENABLED !== 'false',
   },
   
   // Simulation configuration (for demo/testing)
