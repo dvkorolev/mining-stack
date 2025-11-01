@@ -6,70 +6,43 @@
 ✅ **Bot Username:** `@pimineralerterbot`  
 ✅ **Chat ID:** `-1001234567890` (Group chat)
 
-## Setup on Raspberry Pi
+## Setup via Web UI (Recommended)
 
-### 1. Create/Update .env File
+### 1. Open Settings Page
 
-```bash
-cd /opt/mining-stack
-
-# Create .env file if it doesn't exist
-cat > .env << 'EOF'
-# GitHub Container Registry Configuration
-GITHUB_REPOSITORY=dvkorolev/mining-stack
-IMAGE_TAG=latest
-
-# Application Configuration
-NODE_ENV=production
-PORT=5000
-LOG_LEVEL=info
-CORS_ORIGIN=*
-
-# Grafana Configuration
-GF_SECURITY_ADMIN_PASSWORD=mining123
-GF_USERS_ALLOW_SIGN_UP=false
-
-# Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=8347489072:AAExNTHdS4IWhwKsYRaN4seSG1_rrN05XZw
-TELEGRAM_CHAT_ID=-1001234567890
-TELEGRAM_ENABLED=true
-EOF
+```
+http://raspberrypi:3000/settings
 ```
 
-### 2. Restart Services
+Or click **Settings** in the navigation menu.
 
-```bash
-# Restart backend to load new environment variables
-docker compose -f docker-compose.prod.yml restart backend
+### 2. Configure Telegram Bot
 
-# Restart alertmanager (also uses Telegram)
-docker compose -f docker-compose.prod.yml restart alertmanager
-```
+In the **Telegram Bot Configuration** section:
 
-### 3. Verify Setup
+1. **Bot Token:** Paste your token
+   ```
+   8347489072:AAExNTHdS4IWhwKsYRaN4seSG1_rrN05XZw
+   ```
 
-```bash
-# Check backend logs for Telegram initialization
-docker logs mining-stack-backend-1 --tail 50 | grep -i telegram
+2. **Chat ID:** Enter your chat ID
+   ```
+   -1001234567890
+   ```
 
-# Expected output:
-# [info]: Telegram bot initialized successfully
-# [info]: Telegram startup notification sent
-```
+3. Click **"Save Configuration"**
 
-### 4. Test Telegram Bot
+4. Click **"Test Connection"** to verify
 
-```bash
-# Test connection via API
-curl -X POST http://localhost:5000/api/telegram/test
+### 3. Verify in Telegram
 
-# Expected response:
-# {"success": true, "message": "Test message sent successfully"}
-```
+You should receive:
+- ✅ Startup notification in your Telegram group
+- ✅ Test message when you click "Test Connection"
 
-### 5. Send Test Message from Telegram
+### 4. Test Bot Commands
 
-Open Telegram and send to your bot:
+Open your Telegram group and send:
 ```
 /start
 /status
