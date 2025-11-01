@@ -93,8 +93,11 @@ class MinerAPI:
             
             return self._parse_cgminer_response(response, summary)
             
+        except asyncio.TimeoutError:
+            logger.warning(f"cgminer API timeout for {self.ip} after 10s")
+            return None
         except Exception as e:
-            logger.debug(f"cgminer API failed for {self.ip}: {e}")
+            logger.warning(f"cgminer API failed for {self.ip}: {type(e).__name__}: {e}")
             return None
     
     async def _get_cgminer_summary(self) -> Optional[Dict[str, Any]]:
