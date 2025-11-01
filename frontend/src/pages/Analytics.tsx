@@ -334,8 +334,6 @@ const Analytics: React.FC = () => {
                     <TableCell align="right">Hashrate (TH/s)</TableCell>
                     <TableCell align="right">Efficiency (GH/W)</TableCell>
                     <TableCell align="right">Temperature (°C)</TableCell>
-                    <TableCell align="right">Power (W)</TableCell>
-                    <TableCell align="right">Shares (A/R)</TableCell>
                     <TableCell align="right">Rejection %</TableCell>
                   </TableRow>
                 </TableHead>
@@ -372,10 +370,6 @@ const Analytics: React.FC = () => {
                           >
                             {miner.hardware?.temperature.toFixed(1)}
                           </Typography>
-                        </TableCell>
-                        <TableCell align="right">{miner.hardware?.powerUsage.toFixed(0)}</TableCell>
-                        <TableCell align="right">
-                          {miner.shares.accepted}/{miner.shares.rejected}
                         </TableCell>
                         <TableCell align="right">
                           <Typography
