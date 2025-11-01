@@ -25,6 +25,13 @@ import {
   getMinerAlerts,
   getAlertStats 
 } from '../services/alert.service';
+import {
+  rebootMiner,
+  rebootMiners,
+  getMinerPools,
+  updateMinerPools,
+  bulkUpdatePools,
+} from '../services/miner-control.service';
 
 const router = Router();
 
@@ -193,6 +200,83 @@ router.delete('/mining/miners/:minerId', async (req, res, next) => {
 router.post('/mining/discover', async (req, res, next) => {
   try {
     const result = await discoverMiners();
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===== Miner Control APIs =====
+
+// Reboot single miner
+router.post('/mining/miners/:minerId/reboot', async (req, res, next) => {
+  try {
+    const { minerId } = req.params;
+    const result = await rebootMiner(minerId);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk reboot miners
+router.post('/mining/miners/bulk/reboot', async (req, res, next) => {
+  try {
+    const { minerIds } = req.body;
+    
+    if (!minerIds || !Array.isArray(minerIds)) {
+      return res.status(400).json({ error: 'minerIds array is required' });
+    }
+    
+    const result = await rebootMiners(minerIds);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get miner pool configuration
+router.get('/mining/miners/:minerId/pools', async (req, res, next) => {
+  try {
+    const { minerId } = req.params;
+    const result = await getMinerPools(minerId);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update miner pool configuration
+router.put('/mining/miners/:minerId/pools', async (req, res, next) => {
+  try {
+    const { minerId } = req.params;
+    const { pools } = req.body;
+    
+    if (!pools || !Array.isArray(pools)) {
+      return res.status(400).json({ error: 'pools array is required' });
+    }
+    
+    const result = await updateMinerPools(minerId, pools);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk update pools
+router.post('/mining/miners/bulk/pools', async (req, res, next) => {
+  try {
+    const { minerIds, pools } = req.body;
+    
+    if (!minerIds || !Array.isArray(minerIds)) {
+      return res.status(400).json({ error: 'minerIds array is required' });
+    }
+    
+    if (!pools || !Array.isArray(pools)) {
+      return res.status(400).json({ error: 'pools array is required' });
+    }
+    
+    const result = await bulkUpdatePools(minerIds, pools);
     res.json(result);
   } catch (error) {
     next(error);

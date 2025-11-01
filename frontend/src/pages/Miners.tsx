@@ -34,7 +34,10 @@ import SearchIcon from '@mui/icons-material/Search';
 import WarningIcon from '@mui/icons-material/Warning';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TuneIcon from '@mui/icons-material/Tune';
-import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, discoverMiners as discoverMinersAPI } from '../services/api';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, discoverMiners as discoverMinersAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, getMinerPools } from '../services/api';
 
 interface MinerError {
   code: string;
@@ -71,6 +74,8 @@ const Miners: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [editingMiner, setEditingMiner] = useState<Miner | null>(null);
+  const [selectedMiners, setSelectedMiners] = useState<string[]>([]);
+  const [minerPools, setMinerPools] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     ip: '',
@@ -240,6 +245,77 @@ const Miners: React.FC = () => {
     }
   };
 
+  // Reboot single miner
+  const handleRebootMiner = async (minerId: string, minerName: string) => {
+    if (!window.confirm(`Reboot ${minerName}? This will temporarily interrupt mining.`)) {
+      return;
+    }
+    
+    try {
+      const result = await rebootMinerAPI(minerId);
+      if (result.success) {
+        alert(result.message);
+      } else {
+        setError(result.message);
+      }
+    } catch (error) {
+      console.error('Error rebooting miner:', error);
+      setError('Failed to reboot miner');
+    }
+  };
+
+  // Bulk reboot selected miners
+  const handleBulkReboot = async () => {
+    if (selectedMiners.length === 0) {
+      alert('Please select miners to reboot');
+      return;
+    }
+
+    if (!window.confirm(`Reboot ${selectedMiners.length} selected miners? This will temporarily interrupt mining.`)) {
+      return;
+    }
+
+    try {
+      const result = await bulkRebootMiners(selectedMiners);
+      const successCount = result.results.filter((r: any) => r.success).length;
+      alert(`Rebooted ${successCount} of ${selectedMiners.length} miners`);
+      setSelectedMiners([]);
+    } catch (error) {
+      console.error('Error bulk rebooting:', error);
+      setError('Failed to reboot miners');
+    }
+  };
+
+  // Toggle miner selection
+  const handleToggleSelect = (minerId: string) => {
+    setSelectedMiners(prev =>
+      prev.includes(minerId)
+        ? prev.filter(id => id !== minerId)
+        : [...prev, minerId]
+    );
+  };
+
+  // Select all miners
+  const handleSelectAll = () => {
+    if (selectedMiners.length === miners.length) {
+      setSelectedMiners([]);
+    } else {
+      setSelectedMiners(miners.map(m => m.minerId));
+    }
+  };
+
+  // Load pools when editing miner
+  const loadMinerPools = async (minerId: string) => {
+    try {
+      const result = await getMinerPools(minerId);
+      if (result.success && result.pools) {
+        setMinerPools(result.pools);
+      }
+    } catch (error) {
+      console.error('Error loading pools:', error);
+    }
+  };
+
   // Get status color
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -305,11 +381,44 @@ const Miners: React.FC = () => {
         </Alert>
       )}
 
+      {selectedMiners.length > 0 && (
+        <Paper sx={{ mb: 2, p: 2, bgcolor: 'action.selected' }}>
+          <Box display="flex" alignItems="center" justifyContent="space-between">
+            <Typography variant="body1">
+              {selectedMiners.length} miner{selectedMiners.length > 1 ? 's' : ''} selected
+            </Typography>
+            <Box>
+              <Button
+                variant="outlined"
+                startIcon={<RestartAltIcon />}
+                onClick={handleBulkReboot}
+                sx={{ mr: 1 }}
+              >
+                Reboot Selected
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => setSelectedMiners([])}
+              >
+                Clear Selection
+              </Button>
+            </Box>
+          </Box>
+        </Paper>
+      )}
+
       <Paper>
         <TableContainer>
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox">
+                  <Tooltip title={selectedMiners.length === miners.length ? "Deselect all" : "Select all"}>
+                    <IconButton onClick={handleSelectAll} size="small">
+                      {selectedMiners.length === miners.length ? <CheckBoxIcon /> : <CheckBoxOutlineBlankIcon />}
+                    </IconButton>
+                  </Tooltip>
+                </TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Name</TableCell>
                 <TableCell>IP Address</TableCell>
@@ -322,7 +431,7 @@ const Miners: React.FC = () => {
             <TableBody>
               {miners.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center">
+                  <TableCell colSpan={8} align="center">
                     <Typography color="textSecondary" sx={{ py: 4 }}>
                       No miners configured. Click "Add Miner" or "Auto-Discover" to get started.
                     </Typography>
@@ -330,7 +439,15 @@ const Miners: React.FC = () => {
                 </TableRow>
               ) : (
                 miners.map((miner) => (
-                  <TableRow key={miner.minerId}>
+                  <TableRow key={miner.minerId} selected={selectedMiners.includes(miner.minerId)}>
+                    <TableCell padding="checkbox">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleToggleSelect(miner.minerId)}
+                      >
+                        {selectedMiners.includes(miner.minerId) ? <CheckBoxIcon /> : <CheckBoxOutlineBlankIcon />}
+                      </IconButton>
+                    </TableCell>
                     <TableCell>
                       <Box display="flex" alignItems="center" gap={1}>
                         <Chip
@@ -373,6 +490,15 @@ const Miners: React.FC = () => {
                     <TableCell>{miner.alias || '-'}</TableCell>
                     <TableCell>{miner.owner || '-'}</TableCell>
                     <TableCell align="right">
+                      <Tooltip title="Reboot miner">
+                        <IconButton
+                          size="small"
+                          color="warning"
+                          onClick={() => handleRebootMiner(miner.minerId, miner.name)}
+                        >
+                          <RestartAltIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="Edit miner">
                         <IconButton
                           size="small"

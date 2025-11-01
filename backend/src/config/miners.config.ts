@@ -33,6 +33,12 @@ export interface MinerThresholds {
   };
 }
 
+export interface PoolConfig {
+  url: string;
+  user: string;
+  password?: string;
+}
+
 export interface MinerConfig {
   ip: string;
   name?: string;  // Optional - will be auto-generated from IP if not provided
@@ -42,6 +48,7 @@ export interface MinerConfig {
   status?: 'online' | 'offline' | 'error';
   lastSeen?: Date;
   thresholds?: MinerThresholds;  // Per-miner threshold overrides
+  pools?: PoolConfig[];  // Mining pool configuration
   // Add more miner-specific configuration as needed
 }
 

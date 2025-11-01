@@ -142,4 +142,59 @@ export const discoverMiners = async () => {
   }
 };
 
+// Reboot single miner
+export const rebootMiner = async (minerId: string) => {
+  try {
+    const response = await api.post(`/mining/miners/${minerId}/reboot`);
+    return response.data;
+  } catch (error) {
+    console.error('Error rebooting miner:', error);
+    throw error;
+  }
+};
+
+// Bulk reboot miners
+export const bulkRebootMiners = async (minerIds: string[]) => {
+  try {
+    const response = await api.post('/mining/miners/bulk/reboot', { minerIds });
+    return response.data;
+  } catch (error) {
+    console.error('Error rebooting miners:', error);
+    throw error;
+  }
+};
+
+// Get miner pools
+export const getMinerPools = async (minerId: string) => {
+  try {
+    const response = await api.get(`/mining/miners/${minerId}/pools`);
+    return response.data;
+  } catch (error) {
+    console.error('Error getting miner pools:', error);
+    throw error;
+  }
+};
+
+// Update miner pools
+export const updateMinerPools = async (minerId: string, pools: any[]) => {
+  try {
+    const response = await api.put(`/mining/miners/${minerId}/pools`, { pools });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating miner pools:', error);
+    throw error;
+  }
+};
+
+// Bulk update pools
+export const bulkUpdatePools = async (minerIds: string[], pools: any[]) => {
+  try {
+    const response = await api.post('/mining/miners/bulk/pools', { minerIds, pools });
+    return response.data;
+  } catch (error) {
+    console.error('Error bulk updating pools:', error);
+    throw error;
+  }
+};
+
 export default api;
