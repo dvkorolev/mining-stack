@@ -43,7 +43,9 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
-      - ./etc/miners.yaml:/opt/mining-stack/etc/miners.yaml:ro
+      - ./etc:/opt/mining-stack/etc
+      - ./bin:/opt/mining-stack/bin:ro
+      - ./venv:/opt/mining-stack/venv:ro
     deploy:
       resources:
         limits:

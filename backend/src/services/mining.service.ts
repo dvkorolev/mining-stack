@@ -13,6 +13,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import fs from 'fs';
 import { config } from '../config/config';
 import { broadcast } from './websocket.service';
 import { getMiners, updateMinerStatus, getMinerById, loadMinersConfig } from '../config/miners.config';
@@ -816,12 +817,30 @@ const discoverMiners = async (): Promise<{ success: boolean; message: string; mi
   try {
     logger.info('Starting miner auto-discovery...');
     
+    // Use virtual environment Python
+    const pythonPath = process.env.NODE_ENV === 'production'
+      ? '/opt/mining-stack/venv/bin/python3'
+      : path.join(process.cwd(), 'venv', 'bin', 'python3');
+    
+    // Check if virtual environment exists
+    if (!fs.existsSync(pythonPath)) {
+      throw new Error(`Python virtual environment not found at ${pythonPath}. Please run setup.`);
+    }
+    
     // Run the Python discovery script
     const scriptPath = process.env.NODE_ENV === 'production' 
       ? '/opt/mining-stack/bin/farm_init.py'
       : path.join(process.cwd(), 'bin', 'farm_init.py');
     
-    const { stdout, stderr } = await execAsync(`python3 ${scriptPath}`);
+    if (!fs.existsSync(scriptPath)) {
+      throw new Error(`Discovery script not found at ${scriptPath}`);
+    }
+    
+    logger.info(`Running discovery: ${pythonPath} ${scriptPath}`);
+    
+    const { stdout, stderr } = await execAsync(`${pythonPath} ${scriptPath}`, {
+      timeout: 120000, // 2 minutes timeout
+    });
     
     if (stderr && !stderr.includes('Found network')) {
       logger.warn('Discovery script warnings:', stderr);
@@ -842,7 +861,15 @@ const discoverMiners = async (): Promise<{ success: boolean; message: string; mi
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Error during auto-discovery:', errorMessage);
-    throw new Error(`Failed to discover miners: ${errorMessage}`);
+    
+    // Provide helpful error messages
+    if (errorMessage.includes('not found')) {
+      throw new Error('Python virtual environment or pyasic not installed. Please run setup.');
+    } else if (errorMessage.includes('timeout')) {
+      throw new Error('Discovery timed out. Network might be slow or unreachable.');
+    } else {
+      throw new Error(`Failed to discover miners: ${errorMessage}`);
+    }
   }
 };
 

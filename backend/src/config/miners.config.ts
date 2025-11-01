@@ -158,7 +158,7 @@ export const saveMinersConfig = (minersToSave: MinerConfig[]): void => {
     const minersData = minersToSave.map(m => {
       const data: any = {
         ip: m.ip,
-        name: m.name,
+        name: m.name || `miner-${m.ip.replace(/\./g, '-')}`, // Ensure name is always set
         model: m.model,
         alias: m.alias,
         owner: m.owner,
