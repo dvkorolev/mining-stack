@@ -43,32 +43,43 @@ async def test_miner(ip):
         
         print(f"  ✓ Got response!")
         
+        # Print full response for debugging
+        print(f"\n  Full response structure:")
+        print(f"  Top-level keys: {list(response.keys())}")
+        
         # Extract key info
         if 'SUMMARY' in response and len(response['SUMMARY']) > 0:
             summary = response['SUMMARY'][0]
+            
+            print(f"\n  Summary data:")
+            for key, value in summary.items():
+                print(f"    {key}: {value}")
             
             # Try different hashrate fields
             hashrate = 0
             if 'MHS av' in summary:
                 hashrate = float(summary['MHS av']) / 1000000.0  # MH/s to TH/s
-                print(f"  Hashrate (MHS av): {hashrate:.2f} TH/s")
+                print(f"\n  Hashrate (MHS av): {hashrate:.2f} TH/s")
             elif 'GHS av' in summary:
                 hashrate = float(summary['GHS av']) / 1000.0  # GH/s to TH/s
-                print(f"  Hashrate (GHS av): {hashrate:.2f} TH/s")
+                print(f"\n  Hashrate (GHS av): {hashrate:.2f} TH/s")
             elif 'MHS 5s' in summary:
                 hashrate = float(summary['MHS 5s']) / 1000000.0
-                print(f"  Hashrate (MHS 5s): {hashrate:.2f} TH/s")
+                print(f"\n  Hashrate (MHS 5s): {hashrate:.2f} TH/s")
             elif 'GHS 5s' in summary:
                 hashrate = float(summary['GHS 5s']) / 1000.0
-                print(f"  Hashrate (GHS 5s): {hashrate:.2f} TH/s")
+                print(f"\n  Hashrate (GHS 5s): {hashrate:.2f} TH/s")
+            else:
+                print(f"\n  ⚠️ No hashrate field found!")
             
             if 'Temperature' in summary:
                 print(f"  Temperature: {summary['Temperature']}°C")
             
             if 'Power' in summary:
                 print(f"  Power: {summary['Power']}W")
-            
-            print(f"\n  Full summary keys: {list(summary.keys())}")
+        else:
+            print(f"\n  ⚠️ No SUMMARY in response!")
+            print(f"  Full response: {response}")
         
         return True
         
