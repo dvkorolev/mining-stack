@@ -12,8 +12,9 @@
 
 import TelegramBot from 'node-telegram-bot-api';
 import { logger } from '../utils/logger';
-import { getMiningStats, getMinerStats, restartMiner } from './mining.service';
+import { getMiningStats, getMinerStats } from './mining.service';
 import { getMiners, getMinerById } from '../config/miners.config';
+import { rebootMiner, getMinerPools } from './miner-control.service';
 
 let bot: TelegramBot | null = null;
 let isEnabled = false;
@@ -72,6 +73,7 @@ Available commands:
 /miners - List all miners
 /miner <name> - Get specific miner stats
 /reboot <name> - Reboot a miner
+/pools <name> - View miner pool config
 /alerts - View active alerts
 /help - Show this help message
 
@@ -120,6 +122,15 @@ Use inline buttons for easier navigation!
     }
   });
 
+  // /pools <name> - View pool configuration
+  bot.onText(/\/pools (.+)/, async (msg, match) => {
+    if (!isAuthorized(msg.chat.id)) return;
+    const minerName = match?.[1];
+    if (minerName) {
+      await sendMinerPools(msg.chat.id, minerName);
+    }
+  });
+
   // /alerts - Active alerts
   bot.onText(/\/alerts/, async (msg) => {
     if (!isAuthorized(msg.chat.id)) return;
@@ -140,6 +151,7 @@ Use inline buttons for easier navigation!
 *Miner Control:*
 /miner <name> - Detailed stats for a miner
 /reboot <name> - Reboot a specific miner
+/pools <name> - View pool configuration
 
 *Alerts:*
 /alerts - View active alerts
@@ -373,16 +385,52 @@ const executeReboot = async (chatId: number, minerName: string): Promise<void> =
   try {
     await bot?.sendMessage(chatId, `🔄 Rebooting ${minerName}...`);
     
-    const result = await restartMiner(minerName);
+    const result = await rebootMiner(minerName);
     
     if (result.success) {
       await bot?.sendMessage(chatId, `✅ ${result.message}`);
     } else {
-      await bot?.sendMessage(chatId, `❌ Failed to reboot ${minerName}`);
+      await bot?.sendMessage(chatId, `❌ ${result.message}`);
     }
   } catch (error) {
     logger.error('Error executing reboot:', error);
     await bot?.sendMessage(chatId, `❌ Error rebooting ${minerName}`);
+  }
+};
+
+/**
+ * Send miner pool configuration
+ */
+const sendMinerPools = async (chatId: number, minerName: string): Promise<void> => {
+  try {
+    const miner = getMinerById(minerName);
+    if (!miner) {
+      await bot?.sendMessage(chatId, `❌ Miner "${minerName}" not found`);
+      return;
+    }
+
+    const result = await getMinerPools(minerName);
+    
+    if (!result.success || !result.pools || result.pools.length === 0) {
+      await bot?.sendMessage(chatId, `⚠️ No pool configuration available for ${miner.alias || miner.name}\n\n${result.message || 'Unable to retrieve pool data'}`);
+      return;
+    }
+
+    let message = `🌊 *Pool Configuration*\n\n`;
+    message += `Miner: *${miner.alias || miner.name}*\n`;
+    message += `IP: \`${miner.ip}\`\n\n`;
+
+    result.pools.forEach((pool, index) => {
+      message += `*Pool ${index + 1}:*\n`;
+      message += `URL: \`${pool.url}\`\n`;
+      message += `User: \`${pool.user}\`\n`;
+      if (index < result.pools!.length - 1) message += '\n';
+    });
+
+    await bot?.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  } catch (error) {
+    logger.error('Error sending pool configuration:', error);
+    await bot?.sendMessage(chatId, `❌ Error fetching pool configuration for "${minerName}"`);
   }
 };
 
