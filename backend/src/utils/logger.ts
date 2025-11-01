@@ -39,14 +39,18 @@ const logger = winston.createLogger({
       filename: path.join(config.paths.logs, 'telegram.log'),
       format: winston.format.combine(
         winston.format.timestamp(),
-        winston.format.printf((info) => {
-          const { timestamp, level, message, ...meta } = info;
+        winston.format((info) => {
+          const { message, ...meta } = info;
           const msgStr = String(message);
           // Only log messages with telegram context
           if (meta.service === 'telegram' || msgStr.toLowerCase().includes('telegram')) {
-            return `${timestamp} [${level}]: ${msgStr} ${Object.keys(meta).length ? JSON.stringify(meta) : ''}`;
+            return info;
           }
-          return '';
+          return false; // Filter out non-telegram logs
+        })(),
+        winston.format.printf((info) => {
+          const { timestamp, level, message, ...meta } = info;
+          return `${timestamp} [${level}]: ${message} ${Object.keys(meta).length ? JSON.stringify(meta) : ''}`;
         })
       ),
     }),
