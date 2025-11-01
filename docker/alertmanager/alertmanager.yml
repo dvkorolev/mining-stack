@@ -6,9 +6,17 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
-  receiver: 'telegram-notifications'
+  receiver: 'default-receiver'
+  routes:
+    - receiver: 'telegram-notifications'
+      continue: true
 
 receivers:
+- name: 'default-receiver'
+  webhook_configs:
+  - url: 'http://backend:5000/api/alerts/webhook'
+    send_resolved: true
+
 - name: 'telegram-notifications'
   telegram_configs:
   - bot_token: '${TELEGRAM_BOT_TOKEN}'

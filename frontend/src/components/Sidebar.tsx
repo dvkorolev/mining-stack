@@ -5,6 +5,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import PeopleIcon from '@mui/icons-material/People';
+import NotificationsIcon from '@mui/icons-material/Notifications';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const drawerWidth = 240;
@@ -25,6 +26,7 @@ const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClo
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
     { text: 'Miners', icon: <PeopleIcon />, path: '/miners' },
     { text: 'Analytics', icon: <BarChartIcon />, path: '/analytics' },
+    { text: 'Alerts', icon: <NotificationsIcon />, path: '/alerts' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
 

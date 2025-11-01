@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { 
   getMiningStats, 
+  getMinerStats,
   getHistoricalStats, 
   getDatabaseInfo, 
   backupDatabase,
@@ -11,6 +12,19 @@ import {
   updateMinerConfig 
 } from '../services/mining.service';
 import { getMiners, addMiner, updateMiner, deleteMiner } from '../config/miners.config';
+import { 
+  initTelegramBot, 
+  testConnection, 
+  getBotStatus, 
+  sendMessage 
+} from '../services/telegram.service';
+import { 
+  processAlertWebhook, 
+  getActiveAlerts, 
+  getAlertHistory, 
+  getMinerAlerts,
+  getAlertStats 
+} from '../services/alert.service';
 
 const router = Router();
 
@@ -180,6 +194,127 @@ router.post('/mining/discover', async (req, res, next) => {
   try {
     const result = await discoverMiners();
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===== Telegram Bot APIs =====
+
+// Initialize Telegram bot
+router.post('/telegram/init', async (req, res, next) => {
+  try {
+    const { token, chatId } = req.body;
+    
+    if (!token || !chatId) {
+      return res.status(400).json({ error: 'Token and chatId are required' });
+    }
+    
+    initTelegramBot(token, chatId);
+    res.json({ success: true, message: 'Telegram bot initialized' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Test Telegram connection
+router.post('/telegram/test', async (req, res, next) => {
+  try {
+    const result = await testConnection();
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get Telegram bot status
+router.get('/telegram/status', async (req, res, next) => {
+  try {
+    const status = getBotStatus();
+    res.json(status);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Send custom message via Telegram
+router.post('/telegram/send', async (req, res, next) => {
+  try {
+    const { message } = req.body;
+    
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    
+    await sendMessage(message);
+    res.json({ success: true, message: 'Message sent' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===== Alert APIs =====
+
+// Webhook endpoint for Alertmanager
+router.post('/alerts/webhook', async (req, res, next) => {
+  try {
+    await processAlertWebhook(req.body);
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get active alerts
+router.get('/alerts/active', async (req, res, next) => {
+  try {
+    const alerts = getActiveAlerts();
+    res.json(alerts);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get alert history
+router.get('/alerts/history', async (req, res, next) => {
+  try {
+    const { limit = 100 } = req.query;
+    const alerts = getAlertHistory(parseInt(limit as string, 10));
+    res.json(alerts);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get alerts for specific miner
+router.get('/alerts/miner/:minerId', async (req, res, next) => {
+  try {
+    const { minerId } = req.params;
+    const alerts = getMinerAlerts(minerId);
+    res.json(alerts);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get alert statistics
+router.get('/alerts/stats', async (req, res, next) => {
+  try {
+    const stats = getAlertStats();
+    res.json(stats);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===== Miner Stats API =====
+
+// Get detailed stats for specific miner
+router.get('/miners/:minerId/stats', async (req, res, next) => {
+  try {
+    const { minerId } = req.params;
+    const stats = getMinerStats(minerId);
+    res.json(stats);
   } catch (error) {
     next(error);
   }

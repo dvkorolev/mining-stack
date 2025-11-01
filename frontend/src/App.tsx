@@ -6,6 +6,7 @@ import { Box } from '@mui/material';
 import Dashboard from './pages/Dashboard';
 import Miners from './pages/Miners';
 import Analytics from './pages/Analytics';
+import Alerts from './pages/Alerts';
 import Settings from './pages/Settings';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
@@ -63,6 +64,7 @@ const App: React.FC = () => {
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/miners" element={<Miners />} />
                   <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/alerts" element={<Alerts />} />
                   <Route path="/settings" element={<Settings />} />
                 </Routes>
               </Box>
