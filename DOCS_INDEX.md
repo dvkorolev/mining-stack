@@ -171,10 +171,11 @@ Complete guide to all documentation in the Mining Stack project.
 
 | Metric | Count |
 |--------|-------|
-| **Total Documentation Files** | 15 |
-| **Root Documentation** | 4 |
+| **Total Documentation Files** | 17 |
+| **Root Documentation** | 5 |
+| **Feature Guides** | 6 |
 | **Detailed Guides** | 11 |
-| **Total Lines** | ~5,000+ |
+| **Total Lines** | ~6,000+ |
 | **Coverage** | 100% |
 
 ---

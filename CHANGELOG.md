@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (2025-11-01)
+- **Critical Filesystem Permissions** - Fixed EROFS read-only file system error
+  - Removed read-only flag from miners.yaml mount in docker-compose.prod.yml
+  - Mount entire etc/ directory as read-write for configuration saves
+  - Mount bin/ and venv/ directories for discovery script access
+- **Miner Save Functionality** - Fixed 500 errors when saving miner configuration
+  - Ensure name field is always set when saving to prevent undefined values
+  - Proper error handling for save operations
+- **Auto-Discovery** - Fixed discovery failing with "python3 not found"
+  - Use virtual environment Python (/opt/mining-stack/venv/bin/python3)
+  - Add fs module import for file existence checks
+  - Add 2-minute timeout for discovery operations
+  - Better error messages for troubleshooting
+- **Mobile UI Responsiveness** - Fixed UI not working on mobile devices
+  - Add responsive breakpoints to theme configuration
+  - Mobile-friendly padding (xs:1, sm:2, md:3)
+  - Temporary drawer on mobile, persistent on desktop
+  - Auto-close sidebar after navigation on mobile
+  - Prevent horizontal scrolling on small screens
+- **Grafana Dashboard** - Fixed dashboard not showing in Grafana
+  - Add proper dashboard UID and provisioning metadata
+  - Update schema version to 38 (latest)
+  - Add time range configuration
+  - Add overwrite flag for auto-provisioning
+- **Telegram Alerts** - Fixed alerts not being sent to Telegram
+  - Simplify Alertmanager to webhook-only configuration
+  - Remove direct Telegram config that caused environment variable issues
+  - Backend handles all Telegram communication via webhook
+
 ### Added
 - **Telegram Bot Integration** - Complete bot for remote miner control and monitoring
   - Interactive command handlers (`/start`, `/status`, `/miners`, `/miner`, `/reboot`, `/alerts`, `/help`)
