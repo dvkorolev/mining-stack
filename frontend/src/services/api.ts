@@ -46,7 +46,7 @@ export interface MiningStatsResponse {
 
 export const fetchMiningStats = async (): Promise<MiningStatsResponse> => {
   try {
-    const response = await api.get<MiningStatsResponse>('/mining/stats');
+    const response = await api.get('/mining/stats');
     return response.data;
   } catch (error) {
     console.error('Error fetching mining stats:', error);
@@ -68,6 +68,64 @@ export const updateMinerConfig = async (minerId: string, config: any): Promise<v
     await api.put(`/mining/config/${minerId}`, config);
   } catch (error) {
     console.error(`Error updating config for miner ${minerId}:`, error);
+    throw error;
+  }
+};
+
+// ===== Miner Management APIs =====
+
+export const fetchMiners = async () => {
+  try {
+    const response = await api.get('/mining/miners');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching miners:', error);
+    throw error;
+  }
+};
+
+export const addMiner = async (miner: {
+  name?: string;
+  ip: string;
+  model: string;
+  alias?: string;
+  owner?: string;
+}) => {
+  try {
+    const response = await api.post('/mining/miners', miner);
+    return response.data;
+  } catch (error) {
+    console.error('Error adding miner:', error);
+    throw error;
+  }
+};
+
+export const updateMiner = async (minerId: string, updates: any) => {
+  try {
+    const response = await api.put(`/mining/miners/${minerId}`, updates);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating miner:', error);
+    throw error;
+  }
+};
+
+export const deleteMiner = async (minerId: string) => {
+  try {
+    const response = await api.delete(`/mining/miners/${minerId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting miner:', error);
+    throw error;
+  }
+};
+
+export const discoverMiners = async () => {
+  try {
+    const response = await api.post('/mining/discover');
+    return response.data;
+  } catch (error) {
+    console.error('Error discovering miners:', error);
     throw error;
   }
 };

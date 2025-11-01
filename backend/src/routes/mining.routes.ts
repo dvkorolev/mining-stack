@@ -4,11 +4,13 @@ import {
   getHistoricalStats, 
   getDatabaseInfo, 
   backupDatabase,
+  discoverMiners,
   startMining, 
   stopMining, 
   restartMiner, 
   updateMinerConfig 
 } from '../services/mining.service';
+import { getMiners, addMiner, updateMiner, deleteMiner } from '../config/miners.config';
 
 const router = Router();
 
@@ -104,6 +106,79 @@ router.post('/mining/database/backup', async (req, res, next) => {
     }
     
     const result = backupDatabase(backupPath);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===== Miner Management Endpoints =====
+
+// Get all miners configuration
+router.get('/mining/miners', async (req, res, next) => {
+  try {
+    const miners = getMiners();
+    res.json({ miners });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Add new miner
+router.post('/mining/miners', async (req, res, next) => {
+  try {
+    const { name, ip, model, alias, owner } = req.body;
+    
+    if (!ip || !model) {
+      return res.status(400).json({ error: 'IP and model are required' });
+    }
+    
+    const newMiner = addMiner({ name, ip, model, alias, owner });
+    res.json({ success: true, miner: newMiner });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update miner
+router.put('/mining/miners/:minerId', async (req, res, next) => {
+  try {
+    const { minerId } = req.params;
+    const updates = req.body;
+    
+    const updatedMiner = updateMiner(minerId, updates);
+    
+    if (!updatedMiner) {
+      return res.status(404).json({ error: `Miner ${minerId} not found` });
+    }
+    
+    res.json({ success: true, miner: updatedMiner });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Delete miner
+router.delete('/mining/miners/:minerId', async (req, res, next) => {
+  try {
+    const { minerId } = req.params;
+    
+    const deleted = deleteMiner(minerId);
+    
+    if (!deleted) {
+      return res.status(404).json({ error: `Miner ${minerId} not found` });
+    }
+    
+    res.json({ success: true, message: `Miner ${minerId} deleted` });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Trigger auto-discovery
+router.post('/mining/discover', async (req, res, next) => {
+  try {
+    const result = await discoverMiners();
     res.json(result);
   } catch (error) {
     next(error);

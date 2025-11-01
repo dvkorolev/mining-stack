@@ -12,9 +12,10 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import path from 'path';
 import { config } from '../config/config';
 import { broadcast } from './websocket.service';
-import { getMiners, updateMinerStatus, getMinerById } from '../config/miners.config';
+import { getMiners, updateMinerStatus, getMinerById, loadMinersConfig } from '../config/miners.config';
 import { logger } from '../utils/logger';
 import { getDatabase, StatsRecord } from './database.service';
 
@@ -489,12 +490,48 @@ const backupDatabase = (backupPath: string) => {
   }
 };
 
+// Trigger network scan for miners
+const discoverMiners = async (): Promise<{ success: boolean; message: string; miners: any[] }> => {
+  try {
+    logger.info('Starting miner auto-discovery...');
+    
+    // Run the Python discovery script
+    const scriptPath = process.env.NODE_ENV === 'production' 
+      ? '/opt/mining-stack/bin/farm_init.py'
+      : path.join(process.cwd(), 'bin', 'farm_init.py');
+    
+    const { stdout, stderr } = await execAsync(`python3 ${scriptPath}`);
+    
+    if (stderr && !stderr.includes('Found network')) {
+      logger.warn('Discovery script warnings:', stderr);
+    }
+    
+    if (stdout) {
+      logger.info('Discovery output:', stdout);
+    }
+    
+    // Reload miners configuration
+    const newMiners = loadMinersConfig();
+    
+    return {
+      success: true,
+      message: `Discovered ${newMiners.length} miners`,
+      miners: newMiners,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Error during auto-discovery:', errorMessage);
+    throw new Error(`Failed to discover miners: ${errorMessage}`);
+  }
+};
+
 export {
   getMiningStats,
   getMinerStats,
   getHistoricalStats,
   getDatabaseInfo,
   backupDatabase,
+  discoverMiners,
   startMining,
   stopMining,
   restartMiner,
