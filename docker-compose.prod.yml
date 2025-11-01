@@ -2,6 +2,37 @@
 # Uses pre-built images from GitHub Container Registry
 
 services:
+  # Python Scheduler Service - Runs metric collection scripts
+  python-scheduler:
+    build:
+      context: ./python-scheduler
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    ports:
+      - "8000:8000"
+    environment:
+      - METRICS_DIR=/metrics
+      - MINERS_CONFIG=/app/etc/miners.yaml
+      - COLLECTION_INTERVAL=2  # minutes
+    volumes:
+      - metrics-data:/metrics
+      - ./etc:/app/etc
+      - ./bin:/app/bin:ro
+    networks:
+      - mining-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   frontend:
     image: ghcr.io/${GITHUB_REPOSITORY:-dvkorolev/mining-stack}/frontend:${IMAGE_TAG:-latest}
     platform: linux/arm64
@@ -104,7 +135,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
-      - ./textfile:/textfile:ro
+      - metrics-data:/textfile:ro  # Shared volume with python-scheduler
     command:
       - '--path.procfs=/host/proc'
       - '--path.rootfs=/rootfs'
@@ -173,3 +204,4 @@ volumes:
   prometheus_data:
   grafana-storage:
   alertmanager_data:
+  metrics-data:  # Shared volume for Python scheduler → Node Exporter

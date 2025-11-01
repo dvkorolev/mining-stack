@@ -813,24 +813,48 @@ const backupDatabase = (backupPath: string) => {
 };
 
 /**
- * Auto-discovery is NOT implemented in the Node.js backend.
+ * Trigger auto-discovery via Python Scheduler Service
  * 
- * Architecture Decision:
- * - Hardware discovery belongs in the dedicated Python scraper service
- * - The Python service (bin/farm_init.py) runs on the host with pyasic
- * - Backend's responsibility is to read from Prometheus, not scrape hardware
- * 
- * To discover miners:
- * 1. SSH to the Raspberry Pi
- * 2. Run: /opt/mining-stack/bin/farm_init.py
- * 3. Miners will be added to etc/miners.yaml
- * 4. Backend will automatically load the updated config
+ * Architecture:
+ * - Backend calls Python Scheduler Service API
+ * - Python Scheduler runs farm_init.py with pyasic
+ * - Discovered miners written to etc/miners.yaml
+ * - Backend automatically reloads configuration
  */
 const discoverMiners = async (): Promise<{ success: boolean; message: string; miners: any[] }> => {
-  throw new Error(
-    'Auto-discovery must be run on the host system. ' +
-    'SSH to your Raspberry Pi and run: /opt/mining-stack/bin/farm_init.py'
-  );
+  try {
+    logger.info('Triggering miner discovery via Python Scheduler Service...');
+    
+    const schedulerUrl = process.env.PYTHON_SCHEDULER_URL || 'http://python-scheduler:8000';
+    const response = await fetch(`${schedulerUrl}/discover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Python Scheduler returned ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      // Reload miners configuration
+      const newMiners = getMiners();
+      logger.info(`Discovery completed: ${newMiners.length} miners configured`);
+      
+      return {
+        success: true,
+        message: `Discovered miners successfully`,
+        miners: newMiners
+      };
+    } else {
+      throw new Error(result.error || 'Discovery failed');
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Error during auto-discovery:', errorMessage);
+    throw new Error(`Failed to discover miners: ${errorMessage}`);
+  }
 };
 
 export {
