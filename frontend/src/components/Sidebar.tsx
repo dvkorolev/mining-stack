@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Drawer, List, ListItem, ListItemIcon, ListItemText, Divider, IconButton, styled } from '@mui/material';
+import { Drawer, List, ListItem, ListItemIcon, ListItemText, Divider, IconButton, styled, useMediaQuery, useTheme } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -21,6 +21,8 @@ const DrawerHeader = styled('div')(({ theme }) => ({
 const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClose }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
@@ -29,6 +31,13 @@ const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClo
     { text: 'Alerts', icon: <NotificationsIcon />, path: '/alerts' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
+
+  const handleNavigate = (path: string) => {
+    navigate(path);
+    if (isMobile) {
+      onClose();
+    }
+  };
 
   return (
     <Drawer
@@ -40,9 +49,13 @@ const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClo
           boxSizing: 'border-box',
         },
       }}
-      variant="persistent"
+      variant={isMobile ? 'temporary' : 'persistent'}
       anchor="left"
       open={open}
+      onClose={onClose}
+      ModalProps={{
+        keepMounted: true, // Better mobile performance
+      }}
     >
       <DrawerHeader>
         <IconButton onClick={onClose}>
@@ -55,7 +68,7 @@ const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClo
           <ListItem 
             button 
             key={item.text} 
-            onClick={() => navigate(item.path)}
+            onClick={() => handleNavigate(item.path)}
             selected={location.pathname === item.path}
           >
             <ListItemIcon>{item.icon}</ListItemIcon>

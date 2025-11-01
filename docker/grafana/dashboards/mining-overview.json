@@ -1,11 +1,23 @@
 {
   "dashboard": {
+    "id": null,
+    "uid": "mining-farm-overview",
     "title": "Mining Farm Overview",
     "tags": ["mining", "overview"],
     "timezone": "browser",
-    "schemaVersion": 16,
-    "version": 0,
+    "schemaVersion": 38,
+    "version": 1,
     "refresh": "30s",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "links": [],
+    "liveNow": false,
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
     "panels": [
       {
         "id": 1,
@@ -191,5 +203,8 @@
         ]
       }
     ]
-  }
+  },
+  "overwrite": true,
+  "folderUid": "",
+  "message": "Mining Farm Overview Dashboard"
 }

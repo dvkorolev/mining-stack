@@ -6,28 +6,12 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
-  receiver: 'default-receiver'
-  routes:
-    - receiver: 'telegram-notifications'
-      continue: true
+  receiver: 'webhook-receiver'
 
 receivers:
-- name: 'default-receiver'
+- name: 'webhook-receiver'
   webhook_configs:
   - url: 'http://backend:5000/api/alerts/webhook'
     send_resolved: true
-
-- name: 'telegram-notifications'
-  telegram_configs:
-  - bot_token: '${TELEGRAM_BOT_TOKEN}'
-    chat_id: ${TELEGRAM_CHAT_ID}
-    parse_mode: 'HTML'
-    message: |
-      {{ range .Alerts }}
-      <b>{{ if eq .Status "firing" }}🔥 ALERT{{ else }}✅ RESOLVED{{ end }}</b>: {{ .Labels.alertname }}
-      {{ if .Labels.miner }}<b>Miner:</b> <code>{{ .Labels.miner }}</code>
-      {{ else if .Labels.instance }}<b>Instance:</b> <code>{{ .Labels.instance }}</code>
-      {{ end }}<b>Job:</b> {{ .Labels.job }}
-      <b>Summary:</b> {{ .Annotations.summary }}
-      <b>Description:</b> {{ .Annotations.description }}
-      {{ end }}
+    http_config:
+      follow_redirects: true

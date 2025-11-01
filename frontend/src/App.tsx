@@ -31,6 +31,27 @@ const theme = createTheme({
   typography: {
     fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
   },
+  breakpoints: {
+    values: {
+      xs: 0,
+      sm: 600,
+      md: 960,
+      lg: 1280,
+      xl: 1920,
+    },
+  },
+  components: {
+    MuiContainer: {
+      styleOverrides: {
+        root: {
+          '@media (max-width: 600px)': {
+            paddingLeft: '8px',
+            paddingRight: '8px',
+          },
+        },
+      },
+    },
+  },
 });
 
 const App: React.FC = () => {
@@ -53,10 +74,13 @@ const App: React.FC = () => {
                 component="main" 
                 sx={{ 
                   flexGrow: 1, 
-                  p: 3, 
+                  p: { xs: 1, sm: 2, md: 3 }, 
                   marginTop: '64px',
-                  marginLeft: drawerOpen ? `${240}px` : 0,
+                  marginLeft: { xs: 0, md: drawerOpen ? `${240}px` : 0 },
                   transition: 'margin 225ms cubic-bezier(0, 0, 0.2, 1) 0ms',
+                  width: { xs: '100%', md: 'auto' },
+                  maxWidth: '100vw',
+                  overflowX: 'hidden',
                 }}
               >
                 <Routes>
