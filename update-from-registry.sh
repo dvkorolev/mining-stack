@@ -70,7 +70,7 @@ echo ""
 # Check if git repository exists
 if [ -d ".git" ] && [ "$SKIP_GIT" = false ]; then
     echo -e "${BLUE}📦 Syncing configuration files from GitHub...${NC}"
-    echo -e "${BLUE}   (Only docker-compose, scripts - no source code)${NC}"
+    echo -e "${BLUE}   (docker-compose, python-scheduler, bin/ - no source code)${NC}"
     
     # Backup current configuration files
     echo -e "${BLUE}💾 Backing up configuration...${NC}"
@@ -108,8 +108,10 @@ if [ -d ".git" ] && [ "$SKIP_GIT" = false ]; then
                 
                 # Make scripts executable
                 chmod +x *.sh 2>/dev/null || true
+                chmod +x bin/*.sh bin/*.py 2>/dev/null || true
                 
                 echo -e "${GREEN}✓ Configuration restored${NC}"
+                echo -e "${GREEN}✓ Updated: docker-compose, python-scheduler, bin scripts${NC}"
             else
                 echo -e "${RED}✗ Failed to pull updates${NC}"
                 echo -e "${YELLOW}   Continuing with existing files...${NC}"
