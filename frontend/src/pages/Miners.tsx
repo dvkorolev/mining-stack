@@ -316,16 +316,13 @@ const Miners: React.FC = () => {
                 <TableCell>Model</TableCell>
                 <TableCell>Alias</TableCell>
                 <TableCell>Owner</TableCell>
-                <TableCell align="right">Hashrate</TableCell>
-                <TableCell align="right">Temp</TableCell>
-                <TableCell align="right">Power</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {miners.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} align="center">
+                  <TableCell colSpan={7} align="center">
                     <Typography color="textSecondary" sx={{ py: 4 }}>
                       No miners configured. Click "Add Miner" or "Auto-Discover" to get started.
                     </Typography>
@@ -375,19 +372,6 @@ const Miners: React.FC = () => {
                     <TableCell>{miner.model}</TableCell>
                     <TableCell>{miner.alias || '-'}</TableCell>
                     <TableCell>{miner.owner || '-'}</TableCell>
-                    <TableCell align="right">
-                      {miner.currentHashrate ? `${miner.currentHashrate.toFixed(2)} TH/s` : '-'}
-                    </TableCell>
-                    <TableCell align="right">
-                      <Typography
-                        color={miner.hardware?.temperature && miner.hardware.temperature > 80 ? 'error' : 'inherit'}
-                      >
-                        {miner.hardware?.temperature ? `${miner.hardware.temperature.toFixed(1)}°C` : '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      {miner.hardware?.powerUsage ? `${miner.hardware.powerUsage.toFixed(0)}W` : '-'}
-                    </TableCell>
                     <TableCell align="right">
                       <Tooltip title="Edit miner">
                         <IconButton
