@@ -88,7 +88,7 @@ echo ""
 echo -e "${BLUE}[3/10] Checking Docker containers...${NC}"
 CONTAINERS=$(docker compose -f docker-compose.prod.yml ps --format json 2>/dev/null | jq -r '.Name' 2>/dev/null || docker compose -f docker-compose.prod.yml ps --services)
 
-EXPECTED_SERVICES=("backend" "frontend" "prometheus" "grafana" "node-exporter")
+EXPECTED_SERVICES=("python-scheduler" "backend" "frontend" "prometheus" "grafana" "node-exporter")
 for service in "${EXPECTED_SERVICES[@]}"; do
     if docker compose -f docker-compose.prod.yml ps "$service" 2>/dev/null | grep -q "Up"; then
         UPTIME=$(docker compose -f docker-compose.prod.yml ps "$service" --format "{{.Status}}" | grep -oP '\d+\s+(seconds|minutes|hours)' || echo "running")
@@ -149,8 +149,39 @@ else
 fi
 echo ""
 
-# 6. Check WebSocket
-echo -e "${BLUE}[6/10] Checking WebSocket connection...${NC}"
+# 6. Check Python Scheduler (Job Runner)
+echo -e "${BLUE}[6/10] Checking Python Scheduler...${NC}"
+SCHEDULER_URL="http://localhost:8000"
+
+# Health endpoint
+if curl -sf --max-time $TIMEOUT "$SCHEDULER_URL/health" > /dev/null 2>&1; then
+    check_pass "Python Scheduler health endpoint responding"
+else
+    check_fail "Python Scheduler health endpoint not responding"
+fi
+
+# Status endpoint
+if curl -sf --max-time $TIMEOUT "$SCHEDULER_URL/status" > /dev/null 2>&1; then
+    check_pass "Python Scheduler status endpoint responding"
+else
+    check_warn "Python Scheduler status endpoint not responding"
+fi
+
+# Jobs endpoint
+if curl -sf --max-time $TIMEOUT "$SCHEDULER_URL/jobs" > /dev/null 2>&1; then
+    JOBS=$(curl -s --max-time $TIMEOUT "$SCHEDULER_URL/jobs" | jq -r '.jobs | keys[]' 2>/dev/null || echo "")
+    if [ -n "$JOBS" ]; then
+        check_pass "Python Scheduler jobs available: $(echo $JOBS | tr '\n' ', ' | sed 's/,$//')"
+    else
+        check_warn "Python Scheduler jobs endpoint returned no jobs"
+    fi
+else
+    check_warn "Python Scheduler jobs endpoint not responding"
+fi
+echo ""
+
+# 7. Check WebSocket
+echo -e "${BLUE}[7/10] Checking WebSocket connection...${NC}"
 if command -v websocat &> /dev/null || command -v wscat &> /dev/null; then
     # Try to connect to WebSocket
     if timeout 3 bash -c "echo 'test' | nc -w 1 localhost 5000" &> /dev/null; then
@@ -165,7 +196,7 @@ fi
 echo ""
 
 # 7. Check Frontend
-echo -e "${BLUE}[7/10] Checking Frontend...${NC}"
+echo -e "${BLUE}[8/10] Checking Frontend...${NC}"
 FRONTEND_URL="http://localhost:3000"
 
 if curl -sf --max-time $TIMEOUT "$FRONTEND_URL" > /dev/null 2>&1; then
@@ -184,7 +215,7 @@ fi
 echo ""
 
 # 8. Check Prometheus
-echo -e "${BLUE}[8/10] Checking Prometheus...${NC}"
+echo -e "${BLUE}[9/10] Checking Prometheus...${NC}"
 PROMETHEUS_URL="http://localhost:9090"
 
 if curl -sf --max-time $TIMEOUT "$PROMETHEUS_URL/-/healthy" > /dev/null 2>&1; then
@@ -205,7 +236,7 @@ fi
 echo ""
 
 # 9. Check Grafana
-echo -e "${BLUE}[9/10] Checking Grafana...${NC}"
+echo -e "${BLUE}[10/10] Checking Grafana...${NC}"
 GRAFANA_URL="http://localhost:3001"
 
 if curl -sf --max-time $TIMEOUT "$GRAFANA_URL/api/health" > /dev/null 2>&1; then

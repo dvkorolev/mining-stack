@@ -89,6 +89,8 @@ run_cmd "
 # 2. Copy configuration files (not source code)
 echo -e "${BLUE}📤 Copying configuration files...${NC}"
 copy_files "./docker" "$REMOTE_DIR/"
+copy_files "./python-scheduler" "$REMOTE_DIR/"
+copy_files "./bin" "$REMOTE_DIR/"
 copy_files "./docker-compose.prod.yml" "$REMOTE_DIR/"
 copy_files "./health-check.sh" "$REMOTE_DIR/"
 copy_files "./update-from-registry.sh" "$REMOTE_DIR/"
