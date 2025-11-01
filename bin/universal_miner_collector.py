@@ -69,10 +69,10 @@ class MinerAPI:
     async def _get_cgminer_stats(self) -> Optional[Dict[str, Any]]:
         """Get stats via cgminer API (port 4028)"""
         try:
-            # Create socket connection
+            # Create socket connection (longer timeout for Antminers)
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(self.ip, 4028),
-                timeout=5.0
+                timeout=10.0
             )
             
             # Send stats command
@@ -80,8 +80,8 @@ class MinerAPI:
             writer.write(command.encode())
             await writer.drain()
             
-            # Read response
-            data = await asyncio.wait_for(reader.read(65536), timeout=5.0)
+            # Read response (longer timeout)
+            data = await asyncio.wait_for(reader.read(65536), timeout=10.0)
             writer.close()
             await writer.wait_closed()
             
@@ -102,14 +102,14 @@ class MinerAPI:
         try:
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(self.ip, 4028),
-                timeout=5.0
+                timeout=10.0
             )
             
             command = json.dumps({"command": "summary"})
             writer.write(command.encode())
             await writer.drain()
             
-            data = await asyncio.wait_for(reader.read(65536), timeout=5.0)
+            data = await asyncio.wait_for(reader.read(65536), timeout=10.0)
             writer.close()
             await writer.wait_closed()
             
@@ -204,9 +204,25 @@ class MinerAPI:
                         hw_errors += int(stat_data.get(f'chain_hw{i}', 0))
                 result['hw_errors'] = hw_errors
             
-            # Get summary data for shares and power
+            # Get summary data for shares, power, and hashrate
             if summary and 'SUMMARY' in summary and len(summary['SUMMARY']) > 0:
                 summary_data = summary['SUMMARY'][0]
+                
+                # Hashrate from summary (Whatsminer uses MHS av)
+                if result['hashrate_ths'] == 0:
+                    if 'MHS av' in summary_data:
+                        # Whatsminer reports in MH/s
+                        result['hashrate_ghs'] = float(summary_data['MHS av']) / 1000.0
+                        result['hashrate_ths'] = result['hashrate_ghs'] / 1000.0
+                    elif 'GHS av' in summary_data:
+                        result['hashrate_ghs'] = float(summary_data['GHS av'])
+                        result['hashrate_ths'] = result['hashrate_ghs'] / 1000.0
+                    elif 'MHS 5s' in summary_data:
+                        result['hashrate_ghs'] = float(summary_data['MHS 5s']) / 1000.0
+                        result['hashrate_ths'] = result['hashrate_ghs'] / 1000.0
+                    elif 'GHS 5s' in summary_data:
+                        result['hashrate_ghs'] = float(summary_data['GHS 5s'])
+                        result['hashrate_ths'] = result['hashrate_ghs'] / 1000.0
                 
                 # Shares
                 if 'Accepted' in summary_data:
