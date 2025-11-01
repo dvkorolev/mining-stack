@@ -817,15 +817,14 @@ const discoverMiners = async (): Promise<{ success: boolean; message: string; mi
   try {
     logger.info('Starting miner auto-discovery...');
     
-    // Use virtual environment Python
+    // Use system Python (installed in container via Dockerfile)
+    // In production: python3 is installed in container with pyasic
+    // In development: use venv if available, otherwise system python3
     const pythonPath = process.env.NODE_ENV === 'production'
-      ? '/opt/mining-stack/venv/bin/python3'
-      : path.join(process.cwd(), 'venv', 'bin', 'python3');
-    
-    // Check if virtual environment exists
-    if (!fs.existsSync(pythonPath)) {
-      throw new Error(`Python virtual environment not found at ${pythonPath}. Please run setup.`);
-    }
+      ? 'python3'
+      : (fs.existsSync(path.join(process.cwd(), 'venv', 'bin', 'python3'))
+          ? path.join(process.cwd(), 'venv', 'bin', 'python3')
+          : 'python3');
     
     // Run the Python discovery script
     const scriptPath = process.env.NODE_ENV === 'production' 
