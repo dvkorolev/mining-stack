@@ -68,19 +68,66 @@ def generate_alias(owner, model, ip):
     last_octet = ip.split(".")[-1].zfill(3)
     return f"{owner}-{model_clean}-{last_octet}"
 
+def get_model_thresholds(model: str, hashrate: float = None, power: float = None):
+    """
+    Suggest thresholds based on miner model and actual performance.
+    Returns None to use global defaults, or dict with suggested values.
+    
+    Note: Only set thresholds if you want to override global defaults.
+    Leave empty to use global defaults (75/85/90°C, etc.)
+    """
+    model_lower = model.lower()
+    
+    # Only set expected hashrate and power if we have real data
+    thresholds = {}
+    
+    if hashrate and hashrate > 0:
+        thresholds["hashrate"] = {
+            "expected": round(hashrate, 1)
+        }
+    
+    if power and power > 0:
+        thresholds["power"] = {
+            "expected": round(power, 0)
+        }
+    
+    # Return None if no thresholds to set (use global defaults)
+    return thresholds if thresholds else None
+
 async def identify_miner(ip: str, default_owner: str):
     """Identify a miner and generate an inventory entry."""
     try:
         miner = await get_miner(ip)
         if miner and miner.model:
             alias = generate_alias(default_owner, miner.model, ip)
-            return {
+            
+            # Try to get actual hashrate and power
+            hashrate = None
+            power = None
+            try:
+                data = await miner.get_data()
+                if data:
+                    hashrate = data.hashrate if hasattr(data, 'hashrate') else None
+                    power = data.wattage if hasattr(data, 'wattage') else None
+            except:
+                pass
+            
+            # Get suggested thresholds based on model and actual performance
+            thresholds = get_model_thresholds(miner.model, hashrate, power)
+            
+            entry = {
                 "ip": ip, 
                 "model": miner.model, 
                 "alias": alias, 
                 "owner": default_owner, 
                 "status": "active"
             }
+            
+            # Only add thresholds if we have suggestions
+            if thresholds:
+                entry["thresholds"] = thresholds
+            
+            return entry
     except Exception as e:
         print(f"  - Error identifying {ip}: {e}", file=sys.stderr)
     return None

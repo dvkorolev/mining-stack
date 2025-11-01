@@ -29,6 +29,30 @@ const config = {
     enabled: process.env.PROMETHEUS_ENABLED !== 'false',
   },
   
+  // Global default thresholds for all miners
+  thresholds: {
+    temperature: {
+      warning: parseInt(process.env.THRESHOLD_TEMP_WARNING || '75', 10), // 75°C
+      critical: parseInt(process.env.THRESHOLD_TEMP_CRITICAL || '85', 10), // 85°C
+      shutdown: parseInt(process.env.THRESHOLD_TEMP_SHUTDOWN || '90', 10), // 90°C
+    },
+    hashrate: {
+      warningPercent: parseInt(process.env.THRESHOLD_HASHRATE_WARNING_PCT || '20', 10), // 20% below expected
+      criticalPercent: parseInt(process.env.THRESHOLD_HASHRATE_CRITICAL_PCT || '50', 10), // 50% below expected
+    },
+    power: {
+      warningPercent: parseInt(process.env.THRESHOLD_POWER_WARNING_PCT || '15', 10), // 15% deviation
+    },
+    rejectionRate: {
+      warning: parseFloat(process.env.THRESHOLD_REJECTION_WARNING || '2.0'), // 2%
+      critical: parseFloat(process.env.THRESHOLD_REJECTION_CRITICAL || '5.0'), // 5%
+    },
+    fanSpeed: {
+      warning: parseInt(process.env.THRESHOLD_FAN_WARNING || '3000', 10), // 3000 RPM
+      critical: parseInt(process.env.THRESHOLD_FAN_CRITICAL || '2000', 10), // 2000 RPM
+    },
+  },
+  
   // Simulation configuration (for demo/testing)
   simulation: {
     onlineProbability: parseFloat(process.env.SIM_ONLINE_PROBABILITY || '0.9'), // 90% online

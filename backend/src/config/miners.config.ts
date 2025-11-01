@@ -4,6 +4,31 @@ import yaml from 'js-yaml';
 import path from 'path';
 import { logger } from '../utils/logger';
 
+export interface MinerThresholds {
+  temperature?: {
+    warning?: number;    // Default: 75°C
+    critical?: number;   // Default: 85°C
+    shutdown?: number;   // Default: 90°C
+  };
+  hashrate?: {
+    expected?: number;      // Expected hashrate in TH/s
+    warningPercent?: number; // Default: 20% below expected
+    criticalPercent?: number; // Default: 50% below expected
+  };
+  power?: {
+    expected?: number;      // Expected power in W
+    warningPercent?: number; // Default: 15% deviation
+  };
+  rejectionRate?: {
+    warning?: number;    // Default: 2%
+    critical?: number;   // Default: 5%
+  };
+  fanSpeed?: {
+    warning?: number;    // Default: 3000 RPM
+    critical?: number;   // Default: 2000 RPM
+  };
+}
+
 export interface MinerConfig {
   ip: string;
   name?: string;  // Optional - will be auto-generated from IP if not provided
@@ -12,10 +37,44 @@ export interface MinerConfig {
   owner?: string;  // Support for owner field
   status?: 'online' | 'offline' | 'error';
   lastSeen?: Date;
+  thresholds?: MinerThresholds;  // Per-miner threshold overrides
   // Add more miner-specific configuration as needed
 }
 
 let miners: MinerConfig[] = [];
+
+/**
+ * Get effective thresholds for a miner (global defaults + per-miner overrides)
+ */
+export const getEffectiveThresholds = (miner: MinerConfig): Required<MinerThresholds> => {
+  const { config: appConfig } = require('./config');
+  const globalThresholds = appConfig.thresholds;
+  
+  return {
+    temperature: {
+      warning: miner.thresholds?.temperature?.warning ?? globalThresholds.temperature.warning,
+      critical: miner.thresholds?.temperature?.critical ?? globalThresholds.temperature.critical,
+      shutdown: miner.thresholds?.temperature?.shutdown ?? globalThresholds.temperature.shutdown,
+    },
+    hashrate: {
+      expected: miner.thresholds?.hashrate?.expected ?? 0, // Must be set per-miner
+      warningPercent: miner.thresholds?.hashrate?.warningPercent ?? globalThresholds.hashrate.warningPercent,
+      criticalPercent: miner.thresholds?.hashrate?.criticalPercent ?? globalThresholds.hashrate.criticalPercent,
+    },
+    power: {
+      expected: miner.thresholds?.power?.expected ?? 0, // Must be set per-miner
+      warningPercent: miner.thresholds?.power?.warningPercent ?? globalThresholds.power.warningPercent,
+    },
+    rejectionRate: {
+      warning: miner.thresholds?.rejectionRate?.warning ?? globalThresholds.rejectionRate.warning,
+      critical: miner.thresholds?.rejectionRate?.critical ?? globalThresholds.rejectionRate.critical,
+    },
+    fanSpeed: {
+      warning: miner.thresholds?.fanSpeed?.warning ?? globalThresholds.fanSpeed.warning,
+      critical: miner.thresholds?.fanSpeed?.critical ?? globalThresholds.fanSpeed.critical,
+    },
+  };
+};
 
 /**
  * Load miners configuration from YAML file
@@ -96,13 +155,22 @@ export const saveMinersConfig = (minersToSave: MinerConfig[]): void => {
     }
     
     // Prepare data for YAML (remove runtime fields)
-    const minersData = minersToSave.map(m => ({
-      ip: m.ip,
-      name: m.name,
-      model: m.model,
-      alias: m.alias,
-      owner: m.owner,
-    }));
+    const minersData = minersToSave.map(m => {
+      const data: any = {
+        ip: m.ip,
+        name: m.name,
+        model: m.model,
+        alias: m.alias,
+        owner: m.owner,
+      };
+      
+      // Include thresholds if they exist
+      if (m.thresholds) {
+        data.thresholds = m.thresholds;
+      }
+      
+      return data;
+    });
     
     const data = { miners: minersData };
     const yamlStr = yaml.dump(data, {

@@ -15,6 +15,17 @@ Complete guide to all documentation in the Mining Stack project.
 | [TELEGRAM_SETUP.md](./TELEGRAM_SETUP.md) | Quick Telegram bot setup (5 min) | Users |
 | [IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md) | Technical implementation details | Developers |
 
+### **Advanced Features**
+
+| File | Purpose | Audience |
+|------|---------|----------|
+| [THRESHOLD_CONFIGURATION.md](./THRESHOLD_CONFIGURATION.md) | Threshold configuration guide | Operators |
+| [THRESHOLD_INTEGRATION.md](./THRESHOLD_INTEGRATION.md) | How thresholds integrate with backend | Developers |
+| [THRESHOLD_SYNC.md](./THRESHOLD_SYNC.md) | Sync thresholds with Prometheus | Operators |
+| [DUAL_COLLECTOR_SETUP.md](./DUAL_COLLECTOR_SETUP.md) | Run pyasic + universal collectors | Operators |
+| [UNIVERSAL_COLLECTOR.md](./UNIVERSAL_COLLECTOR.md) | Universal miner collector docs | Operators |
+| [PYASIC_SETUP.md](./PYASIC_SETUP.md) | PyASIC collector setup | Operators |
+
 ---
 
 ## 📖 Documentation Directory (`docs/`)
@@ -32,6 +43,7 @@ Complete guide to all documentation in the Mining Stack project.
 | File | Description | Use Case |
 |------|-------------|----------|
 | [MONITORING.md](./docs/MONITORING.md) | Prometheus, Grafana, metrics | Setup monitoring |
+| [THRESHOLDS.md](./docs/THRESHOLDS.md) | Threshold configuration guide | Configure alerts |
 | [TELEGRAM_BOT.md](./docs/TELEGRAM_BOT.md) | Complete Telegram bot guide | Remote control |
 | [HEALTH_CHECKS.md](./docs/HEALTH_CHECKS.md) | System health monitoring | Maintenance |
 | [TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | Common issues & solutions | Problem solving |
