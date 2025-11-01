@@ -2,7 +2,11 @@
 import fs from 'fs';
 import yaml from 'js-yaml';
 import path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { logger } from '../utils/logger';
+
+const execAsync = promisify(exec);
 
 export interface MinerThresholds {
   temperature?: {
@@ -141,6 +145,44 @@ export const updateMinerStatus = (minerId: string, status: 'online' | 'offline' 
 };
 
 /**
+ * Regenerate Prometheus rules after config change
+ */
+const regeneratePrometheusRules = async (): Promise<void> => {
+  try {
+    const pythonPath = process.env.NODE_ENV === 'production'
+      ? '/opt/mining-stack/venv/bin/python3'
+      : path.join(process.cwd(), 'venv', 'bin', 'python3');
+    
+    const scriptPath = process.env.NODE_ENV === 'production'
+      ? '/opt/mining-stack/bin/generate_prometheus_rules.py'
+      : path.join(process.cwd(), 'bin', 'generate_prometheus_rules.py');
+    
+    if (!fs.existsSync(pythonPath) || !fs.existsSync(scriptPath)) {
+      logger.warn('Prometheus rule generation skipped: Python or script not found');
+      return;
+    }
+    
+    logger.info('Regenerating Prometheus rules...');
+    await execAsync(`${pythonPath} ${scriptPath}`);
+    
+    // Reload Prometheus (only in production)
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        await execAsync('docker exec mining-stack-prometheus-1 kill -HUP 1');
+        logger.info('Prometheus rules regenerated and reloaded');
+      } catch (error) {
+        logger.warn('Failed to reload Prometheus (container might not be running)');
+      }
+    } else {
+      logger.info('Prometheus rules regenerated (reload skipped in development)');
+    }
+  } catch (error) {
+    logger.error('Failed to regenerate Prometheus rules:', error);
+    // Don't throw - config was saved successfully
+  }
+};
+
+/**
  * Save miners configuration to YAML file
  */
 export const saveMinersConfig = (minersToSave: MinerConfig[]): void => {
@@ -181,6 +223,11 @@ export const saveMinersConfig = (minersToSave: MinerConfig[]): void => {
     
     fs.writeFileSync(configPath, yamlStr, 'utf8');
     logger.info(`Saved ${minersToSave.length} miners to ${configPath}`);
+    
+    // Regenerate Prometheus rules after save (async, don't wait)
+    regeneratePrometheusRules().catch(err => {
+      logger.warn('Failed to auto-regenerate Prometheus rules:', err);
+    });
   } catch (error) {
     logger.error('Failed to save miners configuration:', error);
     throw error;
