@@ -227,8 +227,17 @@ class MinerAPI:
                 result['hw_errors'] = hw_errors
             
             # Get summary data for shares, power, and hashrate
-            if summary and 'SUMMARY' in summary and len(summary['SUMMARY']) > 0:
-                summary_data = summary['SUMMARY'][0]
+            # Handle two response formats:
+            # 1. Standard: {"SUMMARY": [{"MHS av": ...}]}
+            # 2. Alternative: {"Msg": {"MHS av": ...}}
+            summary_data = None
+            if summary:
+                if 'SUMMARY' in summary and len(summary['SUMMARY']) > 0:
+                    summary_data = summary['SUMMARY'][0]
+                elif 'Msg' in summary and isinstance(summary['Msg'], dict):
+                    summary_data = summary['Msg']
+            
+            if summary_data:
                 
                 # Hashrate from summary (Whatsminer uses MHS av)
                 if result['hashrate_ths'] == 0:
@@ -257,8 +266,15 @@ class MinerAPI:
                     result['power_watts'] = float(summary_data['Power'])
                 
                 # Temperature from summary (fallback)
-                if result['temperature'] == 0 and 'Temperature' in summary_data:
-                    result['temperature'] = float(summary_data['Temperature'])
+                if result['temperature'] == 0:
+                    if 'Temperature' in summary_data:
+                        result['temperature'] = float(summary_data['Temperature'])
+                    elif 'Chip Temp Avg' in summary_data:
+                        result['temperature'] = float(summary_data['Chip Temp Avg'])
+                    
+                    # Also set temp_max if available
+                    if 'Chip Temp Max' in summary_data:
+                        result['temp_max'] = float(summary_data['Chip Temp Max'])
                 
                 # Uptime from summary (fallback)
                 if result['uptime'] == 0 and 'Elapsed' in summary_data:
