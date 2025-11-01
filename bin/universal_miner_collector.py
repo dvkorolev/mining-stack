@@ -85,8 +85,8 @@ class MinerAPI:
             writer.close()
             await writer.wait_closed()
             
-            # Parse JSON response
-            response = json.loads(data.decode())
+            # Parse JSON response (handle multiple responses from Antminer)
+            response = self._parse_json_response(data.decode())
             
             # Also get summary for additional data
             summary = await self._get_cgminer_summary()
@@ -116,11 +116,30 @@ class MinerAPI:
             writer.close()
             await writer.wait_closed()
             
-            return json.loads(data.decode())
+            return self._parse_json_response(data.decode())
             
         except Exception as e:
             logger.debug(f"cgminer summary failed for {self.ip}: {e}")
             return None
+    
+    def _parse_json_response(self, data: str) -> Dict[str, Any]:
+        """Parse JSON response, handling multiple concatenated responses from Antminer"""
+        try:
+            # Try normal JSON parse first
+            return json.loads(data)
+        except json.JSONDecodeError as e:
+            # Antminer may send multiple JSON objects concatenated
+            # Find the first complete JSON object
+            try:
+                # Find the position where the first JSON ends
+                decoder = json.JSONDecoder()
+                obj, idx = decoder.raw_decode(data)
+                return obj
+            except:
+                # If that fails, try to clean up the data
+                # Remove null bytes and extra data
+                cleaned = data.strip('\x00').split('\x00')[0]
+                return json.loads(cleaned)
     
     async def _get_http_stats(self) -> Optional[Dict[str, Any]]:
         """Get stats via HTTP API (for DG1+ and some others)"""

@@ -33,8 +33,14 @@ async def test_miner(ip):
         writer.close()
         await writer.wait_closed()
         
-        # Parse
-        response = json.loads(data.decode())
+        # Parse (handle Antminer multiple responses)
+        try:
+            response = json.loads(data.decode())
+        except json.JSONDecodeError:
+            # Antminer sends multiple JSON objects - get the first one
+            decoder = json.JSONDecoder()
+            response, _ = decoder.raw_decode(data.decode())
+        
         print(f"  ✓ Got response!")
         
         # Extract key info
