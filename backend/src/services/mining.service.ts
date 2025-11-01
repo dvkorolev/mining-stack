@@ -47,6 +47,7 @@ export interface MinerStats {
 
 export interface MiningStats {
   totalHashrate: number;
+  averageHashrate24h: number;
   activeMiners: number;
   totalMined: number;
   miners: MinerStats[];
@@ -60,6 +61,7 @@ export interface MiningStats {
 // In-memory storage for mining stats
 let miningStats: MiningStats = {
   totalHashrate: 0,
+  averageHashrate24h: 0,
   activeMiners: 0,
   totalMined: 0,
   miners: [],
@@ -70,15 +72,58 @@ let miningStats: MiningStats = {
 // Track mining simulation intervals
 let simulationInterval: NodeJS.Timeout | null = null;
 
+// Persistent miner state to avoid constant status changes
+const minerPersistentState = new Map<string, {
+  status: 'online' | 'offline' | 'error';
+  lastHashrate: number;
+  lastStatusChange: number;
+}>();
+
+// Minimum time between status changes (5 minutes)
+const MIN_STATUS_CHANGE_INTERVAL = 5 * 60 * 1000;
+
 /**
  * Simulate miner stats for a single miner
  * Uses configuration values for realistic simulation
+ * Maintains persistent state to avoid constant status changes
  */
 const simulateMinerStats = (miner: any): MinerStats => {
-  const isOnline = Math.random() > (1 - config.simulation.onlineProbability);
-  const hasError = isOnline && Math.random() < config.simulation.errorProbability;
+  const minerId = miner.name || miner.ip;
+  const now = Date.now();
   
-  const status = !isOnline ? 'offline' : hasError ? 'error' : 'online';
+  // Get or initialize persistent state
+  let state = minerPersistentState.get(minerId);
+  if (!state) {
+    // Initialize with online status for new miners
+    const isOnline = Math.random() < config.simulation.onlineProbability;
+    state = {
+      status: isOnline ? 'online' : 'offline',
+      lastHashrate: 0,
+      lastStatusChange: now
+    };
+    minerPersistentState.set(minerId, state);
+  }
+  
+  // Only consider status change if enough time has passed
+  let status = state.status;
+  if (now - state.lastStatusChange > MIN_STATUS_CHANGE_INTERVAL) {
+    // Small chance of status change (5% every check after minimum interval)
+    if (Math.random() < 0.05) {
+      if (status === 'offline') {
+        status = 'online';
+      } else if (status === 'online' && Math.random() < config.simulation.errorProbability) {
+        status = 'error';
+      } else if (status === 'error') {
+        status = 'online';
+      } else if (Math.random() < 0.02) {
+        // Very small chance to go offline
+        status = 'offline';
+      }
+      state.status = status;
+      state.lastStatusChange = now;
+    }
+  }
+  
   const lastSeen = new Date();
   
   // Update miner status
@@ -86,21 +131,36 @@ const simulateMinerStats = (miner: any): MinerStats => {
     updateMinerStatus(miner.name, status);
   }
   
-  // Generate realistic stats based on miner status
+  // Generate realistic stats based on miner status with smoothing
   const baseHashrate = miner.model.includes('S19') ? 100 : 50;
-  const varianceRange = baseHashrate * config.simulation.hashrateVariance * 2;
-  const hashrateVariance = Math.random() * varianceRange - (varianceRange / 2);
-  const currentHashrate = status === 'online' ? Math.max(0, baseHashrate + hashrateVariance) : 0;
+  
+  let currentHashrate = 0;
+  if (status === 'online') {
+    // Reduced variance to 2% for smoother changes
+    const varianceRange = baseHashrate * 0.02;
+    const hashrateVariance = Math.random() * varianceRange - (varianceRange / 2);
+    const targetHashrate = Math.max(0, baseHashrate + hashrateVariance);
+    
+    // Apply exponential moving average for smooth transitions
+    const alpha = 0.3; // Smoothing factor
+    currentHashrate = state.lastHashrate === 0 
+      ? targetHashrate 
+      : alpha * targetHashrate + (1 - alpha) * state.lastHashrate;
+    
+    state.lastHashrate = currentHashrate;
+  } else {
+    state.lastHashrate = 0;
+  }
   
   return {
-    minerId: miner.name || miner.ip,
+    minerId,
     name: miner.alias || miner.name || miner.ip,
     model: miner.model,
     ip: miner.ip,
     status,
     lastSeen,
     currentHashrate,
-    averageHashrate: currentHashrate * (0.9 + Math.random() * 0.2),
+    averageHashrate: currentHashrate * 0.98, // Slightly lower average
     shares: {
       accepted: Math.floor(Math.random() * 1000),
       rejected: Math.floor(Math.random() * 10)
@@ -123,17 +183,37 @@ const simulateMiningStats = (): MiningStats => {
   const totalHashrate = minerStats.reduce((sum, miner) => sum + miner.currentHashrate, 0);
   const activeMiners = minerStats.filter(m => m.status === 'online').length;
   
+  // Calculate 24h average hashrate from history
+  const statsHistory = [
+    ...miningStats.statsHistory,
+    { timestamp: Date.now(), hashrate: totalHashrate }
+  ].slice(-config.mining.maxHistoryPoints);
+  
+  const averageHashrate24h = statsHistory.length > 0
+    ? statsHistory.reduce((sum, stat) => sum + stat.hashrate, 0) / statsHistory.length
+    : totalHashrate;
+  
+  // Realistic BTC mining calculation
+  // Network hashrate ~600 EH/s = 600,000,000 TH/s
+  // Block reward: 3.125 BTC per block (after 2024 halving)
+  // Blocks per day: 144
+  // Daily BTC: 450 BTC total for entire network
+  // Formula: (miner_hashrate / network_hashrate) * daily_btc * time_fraction
+  const networkHashrate = 600000000; // 600 EH/s in TH/s
+  const dailyBTC = 450;
+  const updateIntervalSeconds = config.mining.updateInterval / 1000;
+  const timeFraction = updateIntervalSeconds / 86400; // fraction of a day
+  const btcMined = (totalHashrate / networkHashrate) * dailyBTC * timeFraction;
+  
   // Update global stats
   const stats: MiningStats = {
     totalHashrate,
+    averageHashrate24h,
     activeMiners,
-    totalMined: miningStats.totalMined + (totalHashrate / 10000), // Simulate some mining
+    totalMined: miningStats.totalMined + btcMined,
     miners: minerStats,
     timestamp: Date.now(),
-    statsHistory: [
-      ...miningStats.statsHistory,
-      { timestamp: Date.now(), hashrate: totalHashrate }
-    ].slice(-config.mining.maxHistoryPoints)
+    statsHistory
   };
 
   return stats;

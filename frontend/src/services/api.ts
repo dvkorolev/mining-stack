@@ -33,6 +33,7 @@ export interface MinerStats {
 
 export interface MiningStatsResponse {
   totalHashrate: number;
+  averageHashrate24h: number;
   activeMiners: number;
   totalMined: number;
   miners: MinerStats[];

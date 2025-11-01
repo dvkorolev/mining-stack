@@ -146,20 +146,32 @@ const Dashboard: React.FC = () => {
       )}
       
       <Grid container spacing={3}>
-        {/* Hashrate Card */}
-        <Grid item xs={12} md={4}>
+        {/* Current Hashrate Card */}
+        <Grid item xs={12} md={3}>
           <Paper sx={{ p: 2, height: '100%' }}>
             <Typography variant="h6" color="textSecondary" gutterBottom>
               Current Hashrate
             </Typography>
             <Typography variant="h4">
-              {stats?.totalHashrate ? `${stats.totalHashrate} TH/s` : 'N/A'}
+              {stats?.totalHashrate ? `${stats.totalHashrate.toFixed(2)} TH/s` : 'N/A'}
+            </Typography>
+          </Paper>
+        </Grid>
+
+        {/* 24h Average Hashrate Card */}
+        <Grid item xs={12} md={3}>
+          <Paper sx={{ p: 2, height: '100%' }}>
+            <Typography variant="h6" color="textSecondary" gutterBottom>
+              24h Avg Hashrate
+            </Typography>
+            <Typography variant="h4">
+              {stats?.averageHashrate24h ? `${stats.averageHashrate24h.toFixed(2)} TH/s` : 'N/A'}
             </Typography>
           </Paper>
         </Grid>
 
         {/* Active Miners Card */}
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={3}>
           <Paper sx={{ p: 2, height: '100%' }}>
             <Typography variant="h6" color="textSecondary" gutterBottom>
               Active Miners
@@ -171,13 +183,13 @@ const Dashboard: React.FC = () => {
         </Grid>
 
         {/* Total Mined Card */}
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={3}>
           <Paper sx={{ p: 2, height: '100%' }}>
             <Typography variant="h6" color="textSecondary" gutterBottom>
               Total Mined (24h)
             </Typography>
             <Typography variant="h4">
-              {stats?.totalMined ? `${stats.totalMined} BTC` : 'N/A'}
+              {stats?.totalMined ? `${stats.totalMined.toFixed(8)} BTC` : 'N/A'}
             </Typography>
           </Paper>
         </Grid>
