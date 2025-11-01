@@ -8,6 +8,7 @@ import yaml
 from concurrent.futures import ThreadPoolExecutor
 
 import netifaces
+import pyasic
 from pyasic import get_miner
 
 # --- Configuration ---
