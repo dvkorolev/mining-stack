@@ -4,9 +4,7 @@
 services:
   # Python Scheduler Service - Runs metric collection scripts
   python-scheduler:
-    build:
-      context: ./python-scheduler
-      dockerfile: Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY:-dvkorolev/mining-stack}/python-scheduler:${IMAGE_TAG:-latest}
     platform: linux/arm64
     ports:
       - "8000:8000"
