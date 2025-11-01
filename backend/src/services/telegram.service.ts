@@ -205,14 +205,36 @@ const setupCallbackHandlers = (): void => {
     if (!data) return;
 
     try {
+      // Miner selection
       if (data.startsWith('miner_')) {
         const minerName = data.replace('miner_', '');
         await sendMinerDetails(query.message.chat.id, minerName);
-      } else if (data.startsWith('reboot_confirm_')) {
+      } 
+      // Reboot actions
+      else if (data.startsWith('reboot_confirm_')) {
         const minerName = data.replace('reboot_confirm_', '');
         await executeReboot(query.message.chat.id, minerName);
-      } else if (data.startsWith('reboot_cancel_')) {
+      } 
+      else if (data.startsWith('reboot_cancel_')) {
         await bot?.sendMessage(query.message.chat.id, '❌ Reboot cancelled');
+      }
+      // Pool actions
+      else if (data.startsWith('pools_')) {
+        const minerName = data.replace('pools_', '');
+        await sendMinerPools(query.message.chat.id, minerName);
+      }
+      // Quick actions
+      else if (data === 'action_status') {
+        await sendFarmStatus(query.message.chat.id);
+      }
+      else if (data === 'action_miners') {
+        await sendMinersList(query.message.chat.id);
+      }
+      else if (data === 'action_alerts') {
+        await sendActiveAlerts(query.message.chat.id);
+      }
+      else if (data === 'miners_list') {
+        await sendMinersList(query.message.chat.id);
       }
 
       // Answer callback query to remove loading state
@@ -243,7 +265,23 @@ const sendFarmStatus = async (chatId: number): Promise<void> => {
 🕐 Last Update: ${new Date(stats.timestamp).toLocaleString()}
     `.trim();
 
-    await bot?.sendMessage(chatId, statusMessage, { parse_mode: 'Markdown' });
+    // Add quick action buttons
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '⛏️ View Miners', callback_data: 'action_miners' },
+          { text: '🔔 Alerts', callback_data: 'action_alerts' },
+        ],
+        [
+          { text: '🔄 Refresh', callback_data: 'action_status' },
+        ],
+      ],
+    };
+
+    await bot?.sendMessage(chatId, statusMessage, { 
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
     logger.info('Telegram: Farm status sent successfully', { service: 'telegram', chatId });
   } catch (error) {
     logger.error('Telegram: Error sending farm status', { service: 'telegram', chatId, error });
@@ -340,7 +378,11 @@ Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
       inline_keyboard: [
         [
           { text: '🔄 Reboot', callback_data: `reboot_confirm_${minerName}` },
-          { text: '🔙 Back', callback_data: 'miners_list' },
+          { text: '🌊 Pools', callback_data: `pools_${minerName}` },
+        ],
+        [
+          { text: '🔙 Back to List', callback_data: 'miners_list' },
+          { text: '📊 Farm Status', callback_data: 'action_status' },
         ],
       ],
     };
@@ -442,7 +484,20 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
       if (index < result.pools!.length - 1) message += '\n';
     });
 
-    await bot?.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    // Add navigation buttons
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '🔙 Back to Miner', callback_data: `miner_${minerName}` },
+          { text: '⛏️ All Miners', callback_data: 'miners_list' },
+        ],
+      ],
+    };
+
+    await bot?.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
     logger.info('Telegram: Pool configuration sent', { service: 'telegram', chatId, minerName, poolCount: result.pools!.length });
   } catch (error) {
     logger.error('Telegram: Error sending pool configuration', { service: 'telegram', chatId, minerName, error });
