@@ -480,7 +480,7 @@ async def main():
     # Paths
     base_path = Path(__file__).parent.parent
     config_path = base_path / 'etc' / 'miners.yaml'
-    output_path = base_path / 'textfile' / 'pyasic_metrics.prom'
+    output_path = base_path / 'textfile' / 'universal_metrics.prom'
     
     # Load miner configuration
     logger.info(f"Loading miner configuration from {config_path}")
