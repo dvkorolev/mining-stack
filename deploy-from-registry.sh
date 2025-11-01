@@ -81,7 +81,7 @@ copy_files() {
 # 1. Create necessary directories
 echo -e "${BLUE}📁 Creating directories...${NC}"
 run_cmd "
-  sudo mkdir -p $REMOTE_DIR/{docker/prometheus,logs,etc,textfile,bin}
+  sudo mkdir -p $REMOTE_DIR/{docker/prometheus,logs,data,etc,textfile,bin}
   sudo chown -R $PI_USER:$PI_USER $REMOTE_DIR
   chmod -R 755 $REMOTE_DIR
 "
@@ -143,7 +143,33 @@ run_cmd "
 echo -e "${BLUE}🧹 Cleaning up old Docker resources...${NC}"
 run_cmd "docker system prune -f"
 
-# 8. Start services
+# 8. Fix permissions for data directories
+echo -e "${BLUE}🔐 Setting up data directory permissions...${NC}"
+run_cmd "
+  cd $REMOTE_DIR
+  mkdir -p ./data ./logs ./etc
+  chmod -R 755 ./data ./logs ./etc
+  
+  # Create default miners.yaml if it doesn't exist
+  if [ ! -f ./etc/miners.yaml ]; then
+    cat > ./etc/miners.yaml << 'EOFMINERS'
+miners:
+  - name: \"miner-1\"
+    ip: \"192.168.1.100\"
+    model: \"Antminer S19j Pro\"
+    alias: \"Miner 1\"
+    owner: \"Farm Owner\"
+  - name: \"miner-2\"
+    ip: \"192.168.1.101\"
+    model: \"Antminer S19j Pro\"
+    alias: \"Miner 2\"
+    owner: \"Farm Owner\"
+EOFMINERS
+    chmod 644 ./etc/miners.yaml
+  fi
+"
+
+# 9. Start services
 echo -e "${BLUE}🚀 Starting services...${NC}"
 run_cmd "
   cd $REMOTE_DIR
@@ -152,11 +178,11 @@ run_cmd "
   docker compose -f docker-compose.prod.yml up -d
 "
 
-# 9. Wait for services to start
+# 10. Wait for services to start
 echo -e "${BLUE}⏳ Waiting for services to start...${NC}"
 sleep 10
 
-# 10. Show status
+# 11. Show status
 echo -e "${BLUE}📊 Service Status:${NC}"
 run_cmd "cd $REMOTE_DIR && docker compose -f docker-compose.prod.yml ps"
 

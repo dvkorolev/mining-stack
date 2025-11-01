@@ -9,10 +9,25 @@ A comprehensive monitoring and control system for cryptocurrency mining operatio
 
 ## ✨ Features
 
+### Core Monitoring
 - **Real-time Monitoring**: Track mining statistics (hashrate, active miners, total mined)
 - **Historical Data**: Beautiful charts and graphs for performance analysis
 - **WebSocket Support**: Real-time updates without page refreshes
 - **Responsive Design**: Material-UI based interface that works on desktop and mobile
+
+### Remote Control & Alerts
+- **🤖 Telegram Bot Integration**: Control miners and receive alerts via Telegram
+  - Remote miner reboot with confirmation dialogs
+  - Real-time farm statistics on demand
+  - Interactive command interface with inline keyboards
+  - Automatic alert notifications
+- **🔔 Alert Management**: Comprehensive alerting system
+  - Active alerts dashboard with real-time updates
+  - Alert history tracking and filtering
+  - Integration with Prometheus Alertmanager
+  - Severity-based routing (Critical/Warning/Info)
+
+### Infrastructure
 - **Dockerized**: Easy deployment with Docker Compose
 - **Advanced Monitoring**: Integrated with Prometheus and Grafana for metrics and alerting
 - **Miner Discovery**: Automatically detect miners on your network using pyasic
@@ -43,6 +58,15 @@ docker compose -f docker-compose.dev.yml up --build
 - ⚙️ **Backend API**: http://localhost:5000
 - 📊 **Prometheus**: http://localhost:9090
 - 📈 **Grafana**: http://localhost:3001 (admin/mining123)
+- 🔔 **Alertmanager**: http://localhost:9093
+
+**Optional: Set up Telegram Bot** (see [TELEGRAM_SETUP.md](./TELEGRAM_SETUP.md))
+```bash
+# Add to .env file
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+TELEGRAM_ENABLED=true
+```
 
 ### Production Deployment (Raspberry Pi)
 
@@ -97,11 +121,13 @@ chmod +x deploy-from-registry.sh
 - **[🚀 Quick Start](./docs/QUICKSTART.md)** - Get up and running in 5 minutes
 - **[📖 Deployment Guide](./docs/DEPLOYMENT.md)** - Production deployment to Raspberry Pi
 - **[⚙️ Configuration](./docs/CONFIGURATION.md)** - Configure miners, monitoring, and alerts
+- **[🤖 Telegram Bot Setup](./TELEGRAM_SETUP.md)** - Quick guide to enable Telegram bot
 
 ### Operations
 - **[🔍 Troubleshooting](./docs/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[🏥 Health Checks](./docs/HEALTH_CHECKS.md)** - Monitor system health
 - **[📊 Monitoring](./docs/MONITORING.md)** - Prometheus, Grafana, and metrics
+- **[🤖 Telegram Bot Guide](./docs/TELEGRAM_BOT.md)** - Complete Telegram bot documentation
 
 ### Development
 - **[🔌 API Reference](./docs/API.md)** - Backend API documentation

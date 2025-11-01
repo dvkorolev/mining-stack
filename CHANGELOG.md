@@ -8,6 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Telegram Bot Integration** - Complete bot for remote miner control and monitoring
+  - Interactive command handlers (`/start`, `/status`, `/miners`, `/miner`, `/reboot`, `/alerts`, `/help`)
+  - Inline keyboards and confirmation dialogs for safe operations
+  - Custom keyboard shortcuts for quick access
+  - Real-time alert notifications via Telegram
+  - Miner reboot capability from Telegram
+  - Detailed miner statistics on demand
+  - Farm-wide status overview
+- **Alert Management System** - Comprehensive alerting infrastructure
+  - Alertmanager integration with webhook support
+  - Alert history tracking and persistence
+  - Per-miner alert filtering
+  - Alert statistics dashboard
+  - Automatic alert forwarding to Telegram
+  - Severity-based alert routing (Critical/Warning/Info)
+- **Alerts Page** - New frontend page for alert management
+  - Real-time active alerts display
+  - Alert history with filtering and sorting
+  - Statistics cards (Active, Critical, Warning, 24h total)
+  - Auto-refresh every 30 seconds
+  - Tabbed interface (Active/History)
+  - Severity indicators and color coding
+- **Settings Page Enhancement** - Telegram bot configuration UI
+  - Bot token and chat ID configuration
+  - Real-time bot status monitoring
+  - Test connection functionality
+  - Embedded setup instructions
+  - Command reference cards
+  - Secure token input with show/hide toggle
+- **Backend Services**
+  - Telegram bot service with full command handling
+  - Alert service for webhook processing and notification
+  - 12 new API endpoints for Telegram and alert management
+- **Documentation**
+  - Complete Telegram bot setup guide (`TELEGRAM_SETUP.md`)
+  - Comprehensive bot documentation (`docs/TELEGRAM_BOT.md`)
+  - Implementation summary with architecture diagrams
 - Comprehensive documentation structure
 - API documentation with detailed endpoint descriptions
 - Configuration guide with environment variables
@@ -21,11 +58,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-platform support (x86_64 and ARM64)
 
 ### Changed
+- Enhanced Settings page from placeholder to full Telegram configuration
+- Updated Sidebar navigation with Alerts menu item
+- Extended mining routes with Telegram and alert endpoints
+- Alertmanager configuration to support webhook notifications
 - Improved README with better organization
 - Enhanced project structure documentation
 - Updated deployment instructions
 
 ### Fixed
+- Added missing `node-telegram-bot-api` dependency to package.json
+- TypeScript build errors in Telegram service
 - Various bug fixes and improvements
 
 ## [1.0.0] - 2023-10-31

@@ -145,6 +145,31 @@ docker compose -f docker-compose.prod.yml down
 echo -e "${BLUE}🧹 Cleaning up old Docker resources...${NC}"
 docker system prune -f
 
+# Fix permissions for data directories
+echo -e "${BLUE}🔐 Ensuring data directory permissions...${NC}"
+mkdir -p ./data ./logs ./etc
+chmod -R 755 ./data ./logs ./etc
+
+# Create default miners.yaml if it doesn't exist
+if [ ! -f ./etc/miners.yaml ]; then
+    echo -e "${YELLOW}⚠️  Creating default miners.yaml...${NC}"
+    cat > ./etc/miners.yaml << 'EOF'
+miners:
+  - name: "miner-1"
+    ip: "192.168.1.100"
+    model: "Antminer S19j Pro"
+    alias: "Miner 1"
+    owner: "Farm Owner"
+  - name: "miner-2"
+    ip: "192.168.1.101"
+    model: "Antminer S19j Pro"
+    alias: "Miner 2"
+    owner: "Farm Owner"
+EOF
+    chmod 644 ./etc/miners.yaml
+    echo -e "${GREEN}✓ Default miners.yaml created${NC}"
+fi
+
 # Start services
 echo -e "${BLUE}🚀 Starting services...${NC}"
 docker compose -f docker-compose.prod.yml up -d

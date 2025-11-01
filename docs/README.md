@@ -26,6 +26,9 @@ Welcome to the Mining Stack documentation! This guide will help you set up, conf
 - **[📊 Monitoring](./MONITORING.md)**  
   Set up Prometheus and Grafana for advanced monitoring, metrics, and alerting.
 
+- **[🤖 Telegram Bot](./TELEGRAM_BOT.md)**  
+  Complete guide for Telegram bot integration - remote miner control, alerts, and monitoring.
+
 - **[🏭 Mining Farm Setup](./MINING_FARM.md)**  
   Best practices for managing large-scale mining operations.
 
@@ -42,6 +45,7 @@ Welcome to the Mining Stack documentation! This guide will help you set up, conf
 ### Common Tasks
 
 - **Add a new miner**: See [Configuration Guide](./CONFIGURATION.md#adding-miners)
+- **Set up Telegram bot**: See [Telegram Bot Guide](./TELEGRAM_BOT.md) or [Quick Setup](../TELEGRAM_SETUP.md)
 - **Update the system**: See [Deployment Guide](./DEPLOYMENT.md#updating)
 - **View logs**: See [Troubleshooting](./TROUBLESHOOTING.md#checking-logs)
 - **Set up alerts**: See [Monitoring Guide](./MONITORING.md#alerting)
@@ -51,17 +55,23 @@ Welcome to the Mining Stack documentation! This guide will help you set up, conf
 ```
 ┌─────────────────────────────────────────────────┐
 │                  Frontend (React)                │
-│              nginx + WebSocket proxy             │
+│         nginx + WebSocket proxy + Alerts         │
 └──────────────────┬──────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────┐
 │              Backend (Node.js)                   │
-│         Express + WebSocket Server               │
+│    Express + WebSocket + Telegram Bot Service   │
 └──────────────────┬──────────────────────────────┘
+                   │                               │
+                   │                    ┌──────────▼──────────┐
+                   │                    │   Telegram Bot API  │
+                   │                    │  (Remote Control &  │
+                   │                    │   Notifications)    │
+                   │                    └─────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────┐
 │            Monitoring Stack                      │
-│  Prometheus + Grafana + Node Exporter            │
+│  Prometheus + Grafana + Alertmanager + Exporter │
 └──────────────────┬──────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────┐

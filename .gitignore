@@ -36,3 +36,20 @@ yarn-error.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Temporary documentation files (working notes)
+*_FIXES.md
+*_SUMMARY.md
+*_COMPLETE.md
+*_ENHANCEMENTS.md
+*_OPTIMIZATION.md
+*_MANAGEMENT.md
+*_UPDATE.md
+.cleanup-list.txt
+
+# Keep these documentation files:
+# README.md
+# CHANGELOG.md
+# TELEGRAM_SETUP.md
+# IMPLEMENTATION_SUMMARY.md
+# DOCS_INDEX.md
