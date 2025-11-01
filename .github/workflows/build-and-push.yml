@@ -33,6 +33,10 @@ jobs:
             context: ./frontend
             dockerfile: ./frontend/Dockerfile
             platforms: linux/arm64,linux/amd64
+          - service: python-scheduler
+            context: ./python-scheduler
+            dockerfile: ./python-scheduler/Dockerfile
+            platforms: linux/arm64
 
     steps:
       - name: Checkout code
