@@ -1,0 +1,5 @@
+# Universal Miner Collector Requirements
+# Minimal dependencies for direct API access
+
+aiohttp>=3.9.0
+PyYAML>=6.0
