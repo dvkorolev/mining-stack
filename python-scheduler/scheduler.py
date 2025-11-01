@@ -52,7 +52,7 @@ JOB_ALLOWLIST = {
     'discover_miners': {
         'scripts': ['/app/bin/farm_init.py'],
         'description': 'Discover miners on network',
-        'timeout': 180
+        'timeout': 30  # Reduced from 180s - network scan should be quick or async
     },
     'reboot_miner': {
         'scripts': ['/app/bin/reboot_miner.py'],
