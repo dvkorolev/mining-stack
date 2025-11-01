@@ -43,10 +43,9 @@ app = FastAPI(title="Job Runner Service", version="1.0.0")
 JOB_ALLOWLIST = {
     'collect_metrics': {
         'scripts': [
-            '/app/bin/pyasic_textfile.py',
             '/app/bin/universal_miner_collector.py'
         ],
-        'description': 'Collect metrics from all miners',
+        'description': 'Collect metrics from all miners (universal collector only)',
         'timeout': 120
     },
     'discover_miners': {
@@ -147,9 +146,9 @@ def collect_metrics():
     
     results = []
     
-    # Run pyasic collector
-    pyasic_result = run_script('/app/bin/pyasic_textfile.py', 'pyasic_collector')
-    results.append(pyasic_result)
+    # Only run universal collector (pyasic disabled due to label conflicts)
+    # pyasic_result = run_script('/app/bin/pyasic_textfile.py', 'pyasic_collector')
+    # results.append(pyasic_result)
     
     # Run universal collector
     universal_result = run_script('/app/bin/universal_miner_collector.py', 'universal_collector')
