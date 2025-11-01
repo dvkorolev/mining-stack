@@ -25,12 +25,12 @@ async def get_miner_data(ip: str, name: str, model: str):
         try:
             miner = await asyncio.wait_for(get_miner(ip), timeout=15)
             if not miner:
-                lines.append(f'miner_scrape_success{{{format_labels({"reason": "init_failed"})}}} 0')
+                lines.append(f'miner_scrape_success{{{format_labels()}}} 0')
                 return lines
 
             data = await asyncio.wait_for(miner.get_data(), timeout=15)
             if not data:
-                lines.append(f'miner_scrape_success{{{format_labels({"reason": "no_data"})}}} 0')
+                lines.append(f'miner_scrape_success{{{format_labels()}}} 0')
                 return lines
 
             # --- Group 1: General Metrics ---
@@ -96,7 +96,7 @@ async def get_miner_data(ip: str, name: str, model: str):
                 lines.append(f'miner_pool_rejected_total{{{labels_str}}} {rejected_total}')
 
         except Exception as e:
-            lines.append(f'miner_scrape_success{{{format_labels({"reason": "exception"})}}} 0')
+            lines.append(f'miner_scrape_success{{{format_labels()}}} 0')
 
         return lines
 
