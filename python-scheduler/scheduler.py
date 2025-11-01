@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Python Scheduler Service
-Runs metric collection scripts on schedule and provides API for manual triggers
+Job Runner Service
+Generalized service for executing predefined Python scripts via API
+Implements the "Job Runner" pattern with security allowlist
 """
 
 import os
@@ -11,7 +12,8 @@ import logging
 import subprocess
 import threading
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from pydantic import BaseModel
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -34,7 +36,50 @@ MINERS_CONFIG = os.getenv('MINERS_CONFIG', '/app/etc/miners.yaml')
 COLLECTION_INTERVAL = int(os.getenv('COLLECTION_INTERVAL', '2'))  # minutes
 
 # FastAPI app
-app = FastAPI(title="Mining Metrics Scheduler", version="1.0.0")
+app = FastAPI(title="Job Runner Service", version="1.0.0")
+
+# SECURITY: Allowlist of permitted jobs
+# Only scripts in this dict can be executed
+JOB_ALLOWLIST = {
+    'collect_metrics': {
+        'scripts': [
+            '/app/bin/pyasic_textfile.py',
+            '/app/bin/universal_miner_collector.py'
+        ],
+        'description': 'Collect metrics from all miners',
+        'timeout': 120
+    },
+    'discover_miners': {
+        'scripts': ['/app/bin/farm_init.py'],
+        'description': 'Discover miners on network',
+        'timeout': 180
+    },
+    'reboot_miner': {
+        'scripts': ['/app/bin/reboot_miner.py'],
+        'description': 'Reboot a specific miner',
+        'timeout': 60,
+        'requires_args': True
+    },
+    'update_pools': {
+        'scripts': ['/app/bin/update_pools.py'],
+        'description': 'Update miner pool configuration',
+        'timeout': 60,
+        'requires_args': True
+    }
+}
+
+# Request/Response models
+class JobRequest(BaseModel):
+    job: str
+    args: Optional[Dict[str, Any]] = None
+
+class JobResponse(BaseModel):
+    success: bool
+    job: str
+    message: str
+    duration: float
+    output: Optional[str] = None
+    error: Optional[str] = None
 
 # Track last collection
 last_collection = {
@@ -175,28 +220,144 @@ async def status():
     }
 
 
+@app.get("/jobs")
+async def list_jobs():
+    """List all available jobs"""
+    return {
+        "jobs": {
+            job_name: {
+                "description": job_config["description"],
+                "timeout": job_config["timeout"],
+                "requires_args": job_config.get("requires_args", False)
+            }
+            for job_name, job_config in JOB_ALLOWLIST.items()
+        }
+    }
+
+
+@app.post("/run", response_model=JobResponse)
+async def run_job(request: JobRequest):
+    """
+    Generalized Job Runner Endpoint
+    
+    Execute any job from the allowlist by name.
+    This is the core of the Job Runner pattern.
+    
+    Example:
+        POST /run
+        {"job": "discover_miners"}
+        
+        POST /run
+        {"job": "reboot_miner", "args": {"miner_name": "miner-1"}}
+    """
+    job_name = request.job
+    job_args = request.args or {}
+    
+    # SECURITY: Check if job is in allowlist
+    if job_name not in JOB_ALLOWLIST:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job '{job_name}' not found. Available jobs: {list(JOB_ALLOWLIST.keys())}"
+        )
+    
+    job_config = JOB_ALLOWLIST[job_name]
+    
+    # Check if job requires arguments
+    if job_config.get('requires_args', False) and not job_args:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job '{job_name}' requires arguments"
+        )
+    
+    logger.info(f"Executing job: {job_name}")
+    start_time = time.time()
+    
+    try:
+        results = []
+        
+        # Execute all scripts for this job
+        for script_path in job_config['scripts']:
+            # Build command with args if provided
+            cmd = ['python3', script_path]
+            if job_args:
+                # Pass args as JSON string
+                import json
+                cmd.extend(['--args', json.dumps(job_args)])
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=job_config['timeout'],
+                cwd='/app'
+            )
+            
+            results.append({
+                'script': os.path.basename(script_path),
+                'returncode': result.returncode,
+                'stdout': result.stdout,
+                'stderr': result.stderr
+            })
+        
+        duration = time.time() - start_time
+        
+        # Check if all scripts succeeded
+        all_success = all(r['returncode'] == 0 for r in results)
+        
+        if all_success:
+            logger.info(f"✓ Job '{job_name}' completed successfully in {duration:.1f}s")
+            return JobResponse(
+                success=True,
+                job=job_name,
+                message=f"Job completed successfully",
+                duration=duration,
+                output=results[0]['stdout'][:500] if results else None
+            )
+        else:
+            failed = [r for r in results if r['returncode'] != 0]
+            error_msg = failed[0]['stderr'][:500] if failed else "Unknown error"
+            logger.error(f"✗ Job '{job_name}' failed: {error_msg}")
+            return JobResponse(
+                success=False,
+                job=job_name,
+                message=f"Job failed",
+                duration=duration,
+                error=error_msg
+            )
+            
+    except subprocess.TimeoutExpired:
+        duration = time.time() - start_time
+        logger.error(f"✗ Job '{job_name}' timed out after {duration:.1f}s")
+        return JobResponse(
+            success=False,
+            job=job_name,
+            message=f"Job timed out",
+            duration=duration,
+            error=f"Execution exceeded {job_config['timeout']}s timeout"
+        )
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error(f"✗ Job '{job_name}' error: {e}")
+        return JobResponse(
+            success=False,
+            job=job_name,
+            message=f"Job failed with error",
+            duration=duration,
+            error=str(e)
+        )
+
+
+# Backward compatibility endpoints (delegate to /run)
 @app.post("/collect")
 async def trigger_collection():
-    """Manually trigger metrics collection"""
-    try:
-        logger.info("Manual collection triggered via API")
-        result = collect_metrics()
-        return JSONResponse(content=result)
-    except Exception as e:
-        logger.error(f"Collection failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Manually trigger metrics collection (delegates to /run)"""
+    return await run_job(JobRequest(job="collect_metrics"))
 
 
 @app.post("/discover")
 async def trigger_discovery():
-    """Manually trigger miner discovery"""
-    try:
-        logger.info("Manual discovery triggered via API")
-        result = discover_miners()
-        return JSONResponse(content=result)
-    except Exception as e:
-        logger.error(f"Discovery failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Manually trigger miner discovery (delegates to /run)"""
+    return await run_job(JobRequest(job="discover_miners"))
 
 
 def main():

@@ -813,26 +813,28 @@ const backupDatabase = (backupPath: string) => {
 };
 
 /**
- * Trigger auto-discovery via Python Scheduler Service
+ * Trigger auto-discovery via Job Runner Service
  * 
- * Architecture:
- * - Backend calls Python Scheduler Service API
- * - Python Scheduler runs farm_init.py with pyasic
- * - Discovered miners written to etc/miners.yaml
- * - Backend automatically reloads configuration
+ * Architecture (Job Runner Pattern):
+ * - Backend calls Job Runner's /run endpoint
+ * - Job Runner validates job against allowlist
+ * - Executes farm_init.py with pyasic
+ * - Returns result to backend
+ * - Backend reloads miners configuration
  */
 const discoverMiners = async (): Promise<{ success: boolean; message: string; miners: any[] }> => {
   try {
-    logger.info('Triggering miner discovery via Python Scheduler Service...');
+    logger.info('Triggering miner discovery via Job Runner Service...');
     
-    const schedulerUrl = process.env.PYTHON_SCHEDULER_URL || 'http://python-scheduler:8000';
-    const response = await fetch(`${schedulerUrl}/discover`, {
+    const jobRunnerUrl = process.env.JOB_RUNNER_URL || 'http://python-scheduler:8000';
+    const response = await fetch(`${jobRunnerUrl}/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job: 'discover_miners' })
     });
     
     if (!response.ok) {
-      throw new Error(`Python Scheduler returned ${response.status}`);
+      throw new Error(`Job Runner returned ${response.status}`);
     }
     
     const result = await response.json();
