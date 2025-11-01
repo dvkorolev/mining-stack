@@ -827,30 +827,47 @@ const discoverMiners = async (): Promise<{ success: boolean; message: string; mi
     logger.info('Triggering miner discovery via Job Runner Service...');
     
     const jobRunnerUrl = process.env.JOB_RUNNER_URL || 'http://python-scheduler:8000';
-    const response = await fetch(`${jobRunnerUrl}/run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job: 'discover_miners' })
-    });
     
-    if (!response.ok) {
-      throw new Error(`Job Runner returned ${response.status}`);
-    }
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-    const result = await response.json();
-    
-    if (result.success) {
-      // Reload miners configuration
-      const newMiners = getMiners();
-      logger.info(`Discovery completed: ${newMiners.length} miners configured`);
+    try {
+      const response = await fetch(`${jobRunnerUrl}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job: 'discover_miners' }),
+        signal: controller.signal
+      });
       
-      return {
-        success: true,
-        message: `Discovered miners successfully`,
-        miners: newMiners
-      };
-    } else {
-      throw new Error(result.error || 'Discovery failed');
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Job Runner returned ${response.status}: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Reload miners configuration
+        const newMiners = getMiners();
+        logger.info(`Discovery completed: ${newMiners.length} miners configured`);
+        
+        return {
+          success: true,
+          message: `Discovered miners successfully`,
+          miners: newMiners
+        };
+      } else {
+        throw new Error(result.error || 'Discovery failed');
+      }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        throw new Error('Discovery request timed out after 30 seconds');
+      }
+      throw fetchError;
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
