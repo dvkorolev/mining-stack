@@ -13,6 +13,7 @@ Exports to Prometheus textfile format without hardcoded values.
 
 import asyncio
 import json
+import os
 import socket
 import time
 import yaml
@@ -480,7 +481,10 @@ async def main():
     # Paths
     base_path = Path(__file__).parent.parent
     config_path = base_path / 'etc' / 'miners.yaml'
-    output_path = base_path / 'textfile' / 'universal_metrics.prom'
+    
+    # Use METRICS_DIR environment variable or fallback to textfile
+    metrics_dir = os.getenv('METRICS_DIR', str(base_path / 'textfile'))
+    output_path = Path(metrics_dir) / 'universal_metrics.prom'
     
     # Load miner configuration
     logger.info(f"Loading miner configuration from {config_path}")

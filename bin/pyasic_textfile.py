@@ -7,7 +7,8 @@ from pyasic import get_miner
 
 # --- Configuration ---
 INVENTORY_PATH = "/opt/mining-stack/etc/miners.yaml"
-OUT_PATH = "/opt/mining-stack/textfile/pyasic_metrics.prom"
+METRICS_DIR = os.getenv('METRICS_DIR', '/opt/mining-stack/textfile')
+OUT_PATH = f"{METRICS_DIR}/pyasic_metrics.prom"
 MAX_CONCURRENT_REQUESTS = 5
 # ---------------------
 
