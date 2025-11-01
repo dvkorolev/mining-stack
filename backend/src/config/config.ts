@@ -38,6 +38,7 @@ const config = {
   // Paths
   paths: {
     logs: process.env.LOGS_DIR || path.join(__dirname, '../../logs'),
+    data: process.env.DATA_DIR || path.join(__dirname, '../../data'),
     minerConfig: process.env.MINER_CONFIG_PATH || '/opt/mining-stack/etc/miners.yaml',
     minerConfigFallback: path.join(process.cwd(), 'etc', 'miners.yaml'),
   }

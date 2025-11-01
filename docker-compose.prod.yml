@@ -39,8 +39,10 @@ services:
       - LOG_LEVEL=info
       - CORS_ORIGIN=*
       - MINER_CONFIG_PATH=/opt/mining-stack/etc/miners.yaml
+      - DATA_DIR=/app/data
     volumes:
       - ./logs:/app/logs
+      - ./data:/app/data
       - ./etc/miners.yaml:/opt/mining-stack/etc/miners.yaml:ro
     deploy:
       resources:

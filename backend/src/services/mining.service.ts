@@ -16,6 +16,7 @@ import { config } from '../config/config';
 import { broadcast } from './websocket.service';
 import { getMiners, updateMinerStatus, getMinerById } from '../config/miners.config';
 import { logger } from '../utils/logger';
+import { getDatabase, StatsRecord } from './database.service';
 
 const execAsync = promisify(exec);
 
@@ -71,6 +72,11 @@ let miningStats: MiningStats = {
 
 // Track mining simulation intervals
 let simulationInterval: NodeJS.Timeout | null = null;
+let aggregationInterval: NodeJS.Timeout | null = null;
+let cleanupInterval: NodeJS.Timeout | null = null;
+
+// Get database instance
+const db = getDatabase();
 
 // Persistent miner state to avoid constant status changes
 const minerPersistentState = new Map<string, {
@@ -205,6 +211,17 @@ const simulateMiningStats = (): MiningStats => {
   const timeFraction = updateIntervalSeconds / 86400; // fraction of a day
   const btcMined = (totalHashrate / networkHashrate) * dailyBTC * timeFraction;
   
+  // Calculate additional metrics for database
+  const avgTemperature = minerStats.length > 0
+    ? minerStats.reduce((sum, m) => sum + (m.hardware?.temperature || 0), 0) / minerStats.length
+    : 0;
+  
+  const avgPower = minerStats.reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0);
+  
+  const totalShares = minerStats.reduce((sum, m) => sum + m.shares.accepted + m.shares.rejected, 0);
+  const rejectedShares = minerStats.reduce((sum, m) => sum + m.shares.rejected, 0);
+  const rejectionRate = totalShares > 0 ? (rejectedShares / totalShares) * 100 : 0;
+
   // Update global stats
   const stats: MiningStats = {
     totalHashrate,
@@ -215,6 +232,24 @@ const simulateMiningStats = (): MiningStats => {
     timestamp: Date.now(),
     statsHistory
   };
+
+  // Save to database
+  try {
+    const dbRecord: StatsRecord = {
+      timestamp: stats.timestamp,
+      totalHashrate: stats.totalHashrate,
+      averageHashrate24h: stats.averageHashrate24h,
+      activeMiners: stats.activeMiners,
+      totalMiners: miners.length,
+      totalMined: stats.totalMined,
+      avgTemperature,
+      avgPower,
+      rejectionRate,
+    };
+    db.insertStats(dbRecord);
+  } catch (error) {
+    logger.error('Error saving stats to database:', error);
+  }
 
   return stats;
 };
@@ -229,9 +264,15 @@ const startMining = async (minerConfig: any = {}) => {
   try {
     logger.info('Starting mining simulation');
     
-    // Clear any existing interval
+    // Clear any existing intervals
     if (simulationInterval) {
       clearInterval(simulationInterval);
+    }
+    if (aggregationInterval) {
+      clearInterval(aggregationInterval);
+    }
+    if (cleanupInterval) {
+      clearInterval(cleanupInterval);
     }
     
     // Start simulation
@@ -245,9 +286,35 @@ const startMining = async (minerConfig: any = {}) => {
       }
     }, config.mining.updateInterval);
 
+    // Start hourly aggregation (every hour)
+    aggregationInterval = setInterval(() => {
+      try {
+        logger.info('Running hourly aggregation');
+        db.aggregateHourly();
+        db.aggregateDaily();
+      } catch (error) {
+        logger.error('Error in aggregation:', error);
+      }
+    }, 60 * 60 * 1000); // 1 hour
+
+    // Start cleanup (every 6 hours)
+    cleanupInterval = setInterval(() => {
+      try {
+        logger.info('Running data cleanup');
+        db.cleanupOldRawData();
+        db.cleanupOldHourlyData();
+      } catch (error) {
+        logger.error('Error in cleanup:', error);
+      }
+    }, 6 * 60 * 60 * 1000); // 6 hours
+
     // Initial stats update
     const initialStats = simulateMiningStats();
     miningStats = initialStats;
+    
+    // Run initial aggregation
+    db.aggregateHourly();
+    db.aggregateDaily();
     
     return { 
       success: true, 
@@ -265,10 +332,18 @@ const stopMining = async () => {
   try {
     logger.info('Stopping mining simulation');
     
-    // Clear the simulation interval
+    // Clear all intervals
     if (simulationInterval) {
       clearInterval(simulationInterval);
       simulationInterval = null;
+    }
+    if (aggregationInterval) {
+      clearInterval(aggregationInterval);
+      aggregationInterval = null;
+    }
+    if (cleanupInterval) {
+      clearInterval(cleanupInterval);
+      cleanupInterval = null;
     }
     
     // Update all miners to offline status
@@ -376,9 +451,50 @@ const getMinerStats = (minerId: string) => {
   };
 };
 
+// Get historical stats from database
+const getHistoricalStats = (startTime: number, endTime: number, granularity: 'raw' | 'hourly' | 'daily' = 'raw') => {
+  try {
+    switch (granularity) {
+      case 'hourly':
+        return db.getHourlyStats(startTime, endTime);
+      case 'daily':
+        return db.getDailyStats(startTime, endTime);
+      default:
+        return db.getStats(startTime, endTime);
+    }
+  } catch (error) {
+    logger.error('Error fetching historical stats:', error);
+    throw new Error('Failed to fetch historical stats');
+  }
+};
+
+// Get database statistics
+const getDatabaseInfo = () => {
+  try {
+    return db.getDatabaseStats();
+  } catch (error) {
+    logger.error('Error fetching database info:', error);
+    throw new Error('Failed to fetch database info');
+  }
+};
+
+// Backup database
+const backupDatabase = (backupPath: string) => {
+  try {
+    db.backup(backupPath);
+    return { success: true, message: `Database backed up to ${backupPath}` };
+  } catch (error) {
+    logger.error('Error backing up database:', error);
+    throw new Error('Failed to backup database');
+  }
+};
+
 export {
   getMiningStats,
   getMinerStats,
+  getHistoricalStats,
+  getDatabaseInfo,
+  backupDatabase,
   startMining,
   stopMining,
   restartMiner,
