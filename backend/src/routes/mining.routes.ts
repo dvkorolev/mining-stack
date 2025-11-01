@@ -196,15 +196,17 @@ router.delete('/mining/miners/:minerId', async (req, res, next) => {
   }
 });
 
-// Trigger auto-discovery
-router.post('/mining/discover', async (req, res, next) => {
-  try {
-    const result = await discoverMiners();
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
+// Auto-discovery disabled in production (use manual miner configuration)
+// Network scanning takes 3-5 minutes and is not suitable for production use
+// To add miners, edit /opt/mining-stack/etc/miners.yaml directly
+// router.post('/mining/discover', async (req, res, next) => {
+//   try {
+//     const result = await discoverMiners();
+//     res.json(result);
+//   } catch (error) {
+//     next(error);
+//   }
+// });
 
 // ===== Miner Control APIs =====
 
