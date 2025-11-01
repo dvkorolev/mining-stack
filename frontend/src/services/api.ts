@@ -9,12 +9,22 @@ const api = axios.create({
   },
 });
 
+export interface MinerError {
+  code: string;
+  message: string;
+  description: string;
+  severity: 'critical' | 'warning' | 'info';
+  timestamp: number;
+  details?: Record<string, any>;
+}
+
 export interface MinerStats {
   minerId: string;
   name: string;
   model: string;
   ip: string;
   status: 'online' | 'offline' | 'error';
+  statusMessage?: string;
   lastSeen: string;
   currentHashrate: number;
   averageHashrate: number;
@@ -28,7 +38,9 @@ export interface MinerStats {
     powerUsage: number;
   };
   uptime: number;
-  errors: string[];
+  errors: MinerError[];
+  errorCount: number;
+  lastError?: MinerError;
 }
 
 export interface MiningStatsResponse {
