@@ -113,6 +113,30 @@ services:
       - mining-network
     restart: unless-stopped
 
+  alertmanager:
+    image: prom/alertmanager:latest
+    platform: linux/arm64
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./docker/alertmanager:/etc/alertmanager
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    networks:
+      - mining-network
+    restart: unless-stopped
+
   grafana:
     image: grafana/grafana:latest
     platform: linux/arm64
@@ -146,3 +170,4 @@ networks:
 volumes:
   prometheus_data:
   grafana-storage:
+  alertmanager_data:
