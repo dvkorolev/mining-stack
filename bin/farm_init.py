@@ -68,7 +68,7 @@ def generate_alias(owner, model, ip):
     last_octet = ip.split(".")[-1].zfill(3)
     return f"{owner}-{model_clean}-{last_octet}"
 
-def get_model_thresholds(model: str, hashrate: float = None, power: float = None):
+def get_model_thresholds(model: str, hashrate = None, power = None):
     """
     Suggest thresholds based on miner model and actual performance.
     Returns None to use global defaults, or dict with suggested values.
@@ -81,15 +81,36 @@ def get_model_thresholds(model: str, hashrate: float = None, power: float = None
     # Only set expected hashrate and power if we have real data
     thresholds = {}
     
-    if hashrate and hashrate > 0:
-        thresholds["hashrate"] = {
-            "expected": round(hashrate, 1)
-        }
+    # Convert pyasic hashrate objects to float
+    if hashrate is not None:
+        try:
+            # pyasic returns HashRate objects, convert to TH/s
+            hashrate_value = float(hashrate.into(pyasic.HashUnit.SHA256.TH))
+            if hashrate_value > 0:
+                thresholds["hashrate"] = {
+                    "expected": round(hashrate_value, 1)
+                }
+        except (AttributeError, ValueError, TypeError):
+            # If conversion fails, try direct float conversion
+            try:
+                hashrate_value = float(hashrate)
+                if hashrate_value > 0:
+                    thresholds["hashrate"] = {
+                        "expected": round(hashrate_value, 1)
+                    }
+            except:
+                pass
     
-    if power and power > 0:
-        thresholds["power"] = {
-            "expected": round(power, 0)
-        }
+    # Convert power to float
+    if power is not None:
+        try:
+            power_value = float(power)
+            if power_value > 0:
+                thresholds["power"] = {
+                    "expected": round(power_value, 0)
+                }
+        except (ValueError, TypeError):
+            pass
     
     # Return None if no thresholds to set (use global defaults)
     return thresholds if thresholds else None
