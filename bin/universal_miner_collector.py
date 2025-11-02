@@ -466,6 +466,41 @@ def export_to_prometheus(all_stats: List[Dict[str, Any]], output_path: Path):
             for i, fan_speed in enumerate(stats['fan_speeds'], 1):
                 lines.append(f'miner_fan_speed_rpm{{ip="{ip}",name="{alias}",model="{model}",fan="{i}"}} {fan_speed}')
     
+    # Pool share metrics
+    lines.append("\n# HELP miner_pool_accepted_total Total accepted shares")
+    lines.append("# TYPE miner_pool_accepted_total counter")
+    
+    for stats in all_stats:
+        if stats.get('online'):
+            ip = stats['ip']
+            model = stats['model'].replace(' ', '_').replace('(', '').replace(')', '')
+            alias = stats['alias'].replace(' ', '_').replace('(', '').replace(')', '')
+            accepted = stats.get('accepted_shares', 0)
+            lines.append(f'miner_pool_accepted_total{{ip="{ip}",name="{alias}",model="{model}"}} {accepted}')
+    
+    lines.append("\n# HELP miner_pool_rejected_total Total rejected shares")
+    lines.append("# TYPE miner_pool_rejected_total counter")
+    
+    for stats in all_stats:
+        if stats.get('online'):
+            ip = stats['ip']
+            model = stats['model'].replace(' ', '_').replace('(', '').replace(')', '')
+            alias = stats['alias'].replace(' ', '_').replace('(', '').replace(')', '')
+            rejected = stats.get('rejected_shares', 0)
+            lines.append(f'miner_pool_rejected_total{{ip="{ip}",name="{alias}",model="{model}"}} {rejected}')
+    
+    # Hardware error metrics
+    lines.append("\n# HELP miner_hw_errors_total Total hardware errors")
+    lines.append("# TYPE miner_hw_errors_total counter")
+    
+    for stats in all_stats:
+        if stats.get('online'):
+            ip = stats['ip']
+            model = stats['model'].replace(' ', '_').replace('(', '').replace(')', '')
+            alias = stats['alias'].replace(' ', '_').replace('(', '').replace(')', '')
+            hw_errors = stats.get('hw_errors', 0)
+            lines.append(f'miner_hw_errors_total{{ip="{ip}",name="{alias}",model="{model}"}} {hw_errors}')
+    
     # Write to file
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w') as f:

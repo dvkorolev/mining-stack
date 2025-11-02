@@ -172,34 +172,152 @@
       },
       {
         "id": 7,
-        "gridPos": {"h": 10, "w": 24, "x": 0, "y": 12},
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+        "type": "graph",
+        "title": "Farm Rejection Rate",
+        "targets": [{
+          "expr": "100 * (sum(rate(miner_pool_rejected_total[5m])) / (sum(rate(miner_pool_accepted_total[5m])) + sum(rate(miner_pool_rejected_total[5m]))))",
+          "legendFormat": "Rejection Rate"
+        }],
+        "yaxes": [
+          {"format": "percent", "label": "Rejection Rate"},
+          {"format": "short"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 2, "color": "yellow"},
+                {"value": 5, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "gridPos": {"h": 12, "w": 24, "x": 0, "y": 20},
         "type": "table",
         "title": "Miner Status",
-        "targets": [{
-          "expr": "max by (ip, name, model) (miner_hashrate_ths)",
-          "format": "table",
-          "instant": true
-        }],
+        "targets": [
+          {
+            "expr": "max by (ip, name, model) (miner_hashrate_ths)",
+            "format": "table",
+            "instant": true,
+            "refId": "A"
+          },
+          {
+            "expr": "max by (ip) (miner_power_watts)",
+            "format": "table",
+            "instant": true,
+            "refId": "B"
+          },
+          {
+            "expr": "max by (ip) (miner_temp_max_c)",
+            "format": "table",
+            "instant": true,
+            "refId": "C"
+          },
+          {
+            "expr": "100 * (max by (ip) (miner_pool_rejected_total) / (max by (ip) (miner_pool_accepted_total) + max by (ip) (miner_pool_rejected_total)))",
+            "format": "table",
+            "instant": true,
+            "refId": "D"
+          }
+        ],
         "transformations": [
+          {
+            "id": "merge",
+            "options": {}
+          },
           {
             "id": "organize",
             "options": {
-              "excludeByName": {"Time": true, "__name__": true, "job": true},
+              "excludeByName": {"Time": true, "__name__": true, "job": true, "instance": true},
               "indexByName": {
                 "name": 0,
                 "ip": 1,
                 "model": 2,
-                "Value": 3
+                "Value #A": 3,
+                "Value #B": 4,
+                "Value #C": 5,
+                "Value #D": 6
               },
               "renameByName": {
                 "name": "Miner",
-                "ip": "IP Address",
+                "ip": "IP",
                 "model": "Model",
-                "Value": "Hashrate (TH/s)"
+                "Value #A": "Hashrate (TH/s)",
+                "Value #B": "Power (W)",
+                "Value #C": "Temp (°C)",
+                "Value #D": "Rejection (%)"
               }
             }
           }
-        ]
+        ],
+        "fieldConfig": {
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "Temp (°C)"},
+              "properties": [
+                {
+                  "id": "custom.cellOptions",
+                  "value": {"type": "color-background"}
+                },
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [
+                      {"value": 0, "color": "green"},
+                      {"value": 75, "color": "yellow"},
+                      {"value": 85, "color": "orange"},
+                      {"value": 95, "color": "red"}
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Rejection (%)"},
+              "properties": [
+                {
+                  "id": "custom.cellOptions",
+                  "value": {"type": "color-background"}
+                },
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [
+                      {"value": 0, "color": "green"},
+                      {"value": 2, "color": "yellow"},
+                      {"value": 5, "color": "red"}
+                    ]
+                  }
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Hashrate (TH/s)"},
+              "properties": [
+                {"id": "decimals", "value": 1}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Power (W)"},
+              "properties": [
+                {"id": "decimals", "value": 0}
+              ]
+            }
+          ]
+        }
       }
     ]
 }
