@@ -24,7 +24,7 @@
         "type": "stat",
         "title": "Total Hashrate",
         "targets": [{
-          "expr": "sum(miner_hashrate_ths)",
+          "expr": "sum(max by (ip) (miner_hashrate_ths))",
           "legendFormat": "Total"
         }],
         "options": {
@@ -55,7 +55,7 @@
         "type": "stat",
         "title": "Active Miners",
         "targets": [{
-          "expr": "count(miner_is_mining == 1)",
+          "expr": "count(max by (ip) (miner_scrape_success) == 1)",
           "legendFormat": "Active"
         }],
         "options": {
@@ -86,7 +86,7 @@
         "type": "stat",
         "title": "Total Power",
         "targets": [{
-          "expr": "sum(miner_power_watts) / 1000",
+          "expr": "sum(max by (ip) (miner_power_watts)) / 1000",
           "legendFormat": "Power"
         }],
         "options": {
@@ -117,7 +117,7 @@
         "type": "stat",
         "title": "Avg Efficiency",
         "targets": [{
-          "expr": "avg(miner_efficiency_j_th)",
+          "expr": "avg(max by (ip) (miner_efficiency_j_th))",
           "legendFormat": "Efficiency"
         }],
         "options": {
@@ -148,7 +148,7 @@
         "type": "graph",
         "title": "Farm Hashrate Over Time",
         "targets": [{
-          "expr": "sum(miner_hashrate_ths)",
+          "expr": "sum(max by (ip) (miner_hashrate_ths))",
           "legendFormat": "Total Hashrate"
         }],
         "yaxes": [
@@ -162,7 +162,7 @@
         "type": "graph",
         "title": "Power Consumption Over Time",
         "targets": [{
-          "expr": "sum(miner_power_watts) / 1000",
+          "expr": "sum(max by (ip) (miner_power_watts)) / 1000",
           "legendFormat": "Total Power"
         }],
         "yaxes": [
@@ -176,7 +176,7 @@
         "type": "table",
         "title": "Miner Status",
         "targets": [{
-          "expr": "miner_hashrate_ths",
+          "expr": "max by (ip, name, model) (miner_hashrate_ths)",
           "format": "table",
           "instant": true
         }],

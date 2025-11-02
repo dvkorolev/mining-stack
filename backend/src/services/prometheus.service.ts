@@ -53,9 +53,10 @@ async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
 
 /**
  * Get all miner hashrates from Prometheus
+ * Uses max by (ip) to handle duplicate metrics from multiple collectors
  */
 export async function getMinerHashrates(): Promise<Map<string, number>> {
-  const results = await queryPrometheus('miner_hashrate_ths');
+  const results = await queryPrometheus('max by (ip) (miner_hashrate_ths)');
   const hashrates = new Map<string, number>();
 
   for (const result of results) {
@@ -71,9 +72,10 @@ export async function getMinerHashrates(): Promise<Map<string, number>> {
 
 /**
  * Get all miner temperatures from Prometheus
+ * Uses max by (ip) to handle duplicate metrics from multiple collectors
  */
 export async function getMinerTemperatures(): Promise<Map<string, number>> {
-  const results = await queryPrometheus('miner_temp_max_c');
+  const results = await queryPrometheus('max by (ip) (miner_temp_max_c)');
   const temperatures = new Map<string, number>();
 
   for (const result of results) {
@@ -89,9 +91,10 @@ export async function getMinerTemperatures(): Promise<Map<string, number>> {
 
 /**
  * Get all miner power consumption from Prometheus
+ * Uses max by (ip) to handle duplicate metrics from multiple collectors
  */
 export async function getMinerPower(): Promise<Map<string, number>> {
-  const results = await queryPrometheus('miner_power_watts');
+  const results = await queryPrometheus('max by (ip) (miner_power_watts)');
   const power = new Map<string, number>();
 
   for (const result of results) {
