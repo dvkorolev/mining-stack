@@ -92,6 +92,9 @@ miners:
     alias: EN-M30SppVH90-040
     owner: EN
     status: active
+    credentials:
+      username: admin
+      password: admin
     thresholds:
       hashrate:
         expected: 106.1
@@ -103,12 +106,20 @@ miners:
     alias: EN-S19Pro-064
     owner: EN
     status: active
+    credentials:
+      username: root
+      password: root
     thresholds:
       hashrate:
         expected: 110.0
       power:
         expected: 3250.0
 ```
+
+**Note**: Credentials are automatically set based on miner type:
+- **Whatsminer** (M30, M50): admin/admin
+- **Antminer** (S19, S17): root/root
+- **Other miners**: root/root (default)
 
 ## Customization
 
@@ -149,6 +160,8 @@ Check:
 - Correct models
 - Aliases are readable
 - Thresholds are reasonable
+- **Credentials are correct** (change if you've customized passwords)
+- **Add `useHttps: true`** for miners using HTTPS
 
 ### 2. Restart Services
 
@@ -177,6 +190,10 @@ miners:
     alias: EN-S19Pro-150
     owner: EN
     status: active
+    credentials:
+      username: root
+      password: root  # Change if you've customized the password
+    # useHttps: true  # Uncomment if miner uses HTTPS
     thresholds:
       hashrate:
         expected: 110.0

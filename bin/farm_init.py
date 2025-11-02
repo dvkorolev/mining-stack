@@ -137,12 +137,25 @@ async def identify_miner(ip: str, default_owner: str):
             # Get suggested thresholds based on model and actual performance
             thresholds = get_model_thresholds(miner.model, hashrate, power)
             
+            # Detect miner type for default credentials
+            model_lower = miner.model.lower()
+            is_whatsminer = 'm30' in model_lower or 'm50' in model_lower or 'm20' in model_lower
+            is_antminer = 's19' in model_lower or 's17' in model_lower or 't19' in model_lower
+            
+            # Set default credentials based on miner type
+            default_username = 'admin' if is_whatsminer else 'root'
+            default_password = 'admin' if is_whatsminer else 'root'
+            
             entry = {
                 "ip": ip, 
                 "model": miner.model, 
                 "alias": alias, 
                 "owner": default_owner, 
-                "status": "active"
+                "status": "active",
+                "credentials": {
+                    "username": default_username,
+                    "password": default_password
+                }
             }
             
             # Only add thresholds if we have suggestions
