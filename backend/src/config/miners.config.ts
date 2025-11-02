@@ -51,6 +51,7 @@ export interface MinerConfig {
   alias?: string;
   owner?: string;  // Support for owner field
   credentials?: MinerCredentials;  // Login credentials for miner web interface
+  useHttps?: boolean;  // Use HTTPS instead of HTTP (default: false)
   status?: 'online' | 'offline' | 'error';
   lastSeen?: Date;
   thresholds?: MinerThresholds;  // Per-miner threshold overrides

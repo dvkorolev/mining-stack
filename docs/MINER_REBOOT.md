@@ -126,13 +126,46 @@ reboot
 ### Whatsminer
 - **Username**: admin
 - **Password**: admin
+- **HTTPS**: Some models support HTTPS (port 443)
 
 ### Antminer
 - **Username**: root
 - **Password**: root
+- **HTTPS**: Newer models (S19 XP, S19k Pro) support HTTPS
 
 ### ⚠️ Security Note
 Change default passwords after initial setup! Default credentials are a security risk.
+
+## HTTPS Support
+
+Some miners use HTTPS instead of HTTP for their web interface.
+
+### Configuration
+
+Add `useHttps: true` to your miner config:
+
+```yaml
+miners:
+  - ip: 192.168.1.100
+    model: Antminer S19 XP
+    useHttps: true  # Use HTTPS instead of HTTP
+    credentials:
+      username: root
+      password: root
+```
+
+### Self-Signed Certificates
+
+Most miners use self-signed SSL certificates. The system automatically accepts these certificates, so no additional configuration is needed.
+
+### Testing HTTPS Connection
+
+```bash
+# Test if miner uses HTTPS
+curl -k https://192.168.1.100
+
+# If it works, add useHttps: true to config
+```
 
 ## API Endpoints Reference
 

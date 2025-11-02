@@ -27,27 +27,30 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
     const username = miner.credentials?.username || defaultUsername;
     const password = miner.credentials?.password || defaultPassword;
     
+    // Determine protocol (HTTP or HTTPS)
+    const protocol = miner.useHttps ? 'https' : 'http';
+    
     // Try miner-specific endpoints first
     const endpoints = [];
     
     if (isWhatsminer) {
-      // Whatsminer uses HTTP API on port 80
+      // Whatsminer uses HTTP/HTTPS API on port 80/443
       endpoints.push(
-        { url: `http://${miner.ip}/cgi-bin/luci/admin/network/iface_reconnect/lan`, method: 'get', desc: 'Whatsminer reboot' }
+        { url: `${protocol}://${miner.ip}/cgi-bin/luci/admin/network/iface_reconnect/lan`, method: 'get', desc: 'Whatsminer reboot' }
       );
     }
     
     if (isAntminer) {
       // Antminer uses CGI
       endpoints.push(
-        { url: `http://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Antminer reboot' }
+        { url: `${protocol}://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Antminer reboot' }
       );
     }
     
     // Generic fallbacks
     endpoints.push(
-      { url: `http://${miner.ip}/api/reboot`, method: 'post', desc: 'Generic API reboot' },
-      { url: `http://${miner.ip}/reboot`, method: 'post', desc: 'Generic reboot' }
+      { url: `${protocol}://${miner.ip}/api/reboot`, method: 'post', desc: 'Generic API reboot' },
+      { url: `${protocol}://${miner.ip}/reboot`, method: 'post', desc: 'Generic reboot' }
     );
 
     for (const endpoint of endpoints) {
@@ -61,6 +64,10 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
             username,
             password,
           },
+          // Accept self-signed certificates (common for miners)
+          httpsAgent: miner.useHttps ? new (require('https').Agent)({
+            rejectUnauthorized: false
+          }) : undefined,
         });
 
         logger.info(`Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);
