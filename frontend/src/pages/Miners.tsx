@@ -41,6 +41,8 @@ import { useSelector } from 'react-redux';
 import { selectMiners } from '../features/mining/miningSlice';
 import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, discoverMiners as discoverMinersAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
+import { useIsMobile } from '../hooks/useIsMobile';
+import MinerCardList from '../components/MinerCardList';
 
 interface MinerError {
   code: string;
@@ -80,6 +82,7 @@ const Miners: React.FC = () => {
   }));
   
   const { showSuccess, showError, showWarning, showInfo } = useNotification();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
@@ -432,9 +435,18 @@ const Miners: React.FC = () => {
         </Paper>
       )}
 
-      <Paper>
-        <TableContainer>
-          <Table>
+      {/* Mobile View: Card List */}
+      {isMobile ? (
+        <MinerCardList
+          miners={miners as any[]}
+          onReboot={handleRebootMiner}
+          onEdit={(miner) => handleOpenDialog(miner as any)}
+        />
+      ) : (
+        /* Desktop View: Table */
+        <Paper>
+          <TableContainer>
+            <Table>
             <TableHead>
               <TableRow>
                 <TableCell padding="checkbox">
@@ -549,9 +561,16 @@ const Miners: React.FC = () => {
           </Table>
         </TableContainer>
       </Paper>
+      )}
 
       {/* Add/Edit Dialog */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+      <Dialog 
+        open={openDialog} 
+        onClose={handleCloseDialog} 
+        maxWidth="sm" 
+        fullWidth
+        fullScreen={isMobile}
+      >
         <DialogTitle>
           {editingMiner ? 'Edit Miner' : 'Add New Miner'}
         </DialogTitle>

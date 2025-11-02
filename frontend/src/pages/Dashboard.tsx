@@ -7,6 +7,8 @@ import { selectMiningStats, selectIsConnected, selectError } from '../features/m
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import DashboardSkeleton from '../components/DashboardSkeleton';
+import MobileDashboard from '../components/MobileDashboard';
+import { useIsMobile } from '../hooks/useIsMobile';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -38,6 +40,7 @@ const Dashboard: React.FC = () => {
   const stats = useSelector(selectMiningStats);
   const isConnected = useSelector(selectIsConnected);
   const error = useSelector(selectError);
+  const isMobile = useIsMobile();
   
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'1h' | '6h' | '24h'>('24h');
@@ -243,6 +246,19 @@ const Dashboard: React.FC = () => {
     );
   }
 
+  // Mobile view
+  if (isMobile && stats) {
+    return (
+      <MobileDashboard
+        stats={stats}
+        isConnected={isConnected}
+        hashrateTrend={hashrateTrend}
+        minersTrend={minersTrend}
+      />
+    );
+  }
+
+  // Desktop view
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
