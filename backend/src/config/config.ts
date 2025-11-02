@@ -32,9 +32,9 @@ const config = {
   // Global default thresholds for all miners
   thresholds: {
     temperature: {
-      warning: parseInt(process.env.THRESHOLD_TEMP_WARNING || '75', 10), // 75°C
-      critical: parseInt(process.env.THRESHOLD_TEMP_CRITICAL || '85', 10), // 85°C
-      shutdown: parseInt(process.env.THRESHOLD_TEMP_SHUTDOWN || '90', 10), // 90°C
+      warning: parseInt(process.env.THRESHOLD_TEMP_WARNING || '85', 10), // 85°C
+      critical: parseInt(process.env.THRESHOLD_TEMP_CRITICAL || '95', 10), // 95°C
+      shutdown: parseInt(process.env.THRESHOLD_TEMP_SHUTDOWN || '105', 10), // 105°C
     },
     hashrate: {
       warningPercent: parseInt(process.env.THRESHOLD_HASHRATE_WARNING_PCT || '20', 10), // 20% below expected
