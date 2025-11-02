@@ -6,6 +6,7 @@ import { useSelector } from 'react-redux';
 import { selectMiningStats, selectIsConnected, selectError } from '../features/mining/miningSlice';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import DashboardSkeleton from '../components/DashboardSkeleton';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -223,10 +224,21 @@ const Dashboard: React.FC = () => {
   //   },
   // };
 
+  // Show skeleton while loading
   if (loading && !stats) {
+    return <DashboardSkeleton />;
+  }
+
+  // Show empty state if no data
+  if (!loading && !stats) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
+      <Box>
+        <Typography variant="h4" gutterBottom>
+          Mining Dashboard
+        </Typography>
+        <Alert severity="info" sx={{ mt: 2 }}>
+          No mining data available. Waiting for first collection...
+        </Alert>
       </Box>
     );
   }

@@ -40,6 +40,7 @@ import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import { useSelector } from 'react-redux';
 import { selectMiners } from '../features/mining/miningSlice';
 import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, discoverMiners as discoverMinersAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
 
 interface MinerError {
   code: string;
@@ -78,6 +79,7 @@ const Miners: React.FC = () => {
     lastSeen: new Date(m.lastSeen),
   }));
   
+  const { showSuccess, showError, showWarning, showInfo } = useNotification();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
@@ -230,11 +232,11 @@ const Miners: React.FC = () => {
       setLoading(true);
       setError(null);
       const result = await discoverMinersAPI();
-      alert(`Success! Discovered ${result.miners?.length || 0} miners`);
+      showSuccess(`Success! Discovered ${result.miners?.length || 0} miners`);
       await loadMiners();
     } catch (error) {
       console.error('Error during auto-discovery:', error);
-      setError('Failed to auto-discover miners. Make sure Python and pyasic are installed.');
+      showError('Failed to auto-discover miners. Make sure Python and pyasic are installed.');
     } finally {
       setLoading(false);
     }
@@ -249,20 +251,20 @@ const Miners: React.FC = () => {
     try {
       const result = await rebootMinerAPI(minerId);
       if (result.success) {
-        alert(result.message);
+        showSuccess(result.message);
       } else {
-        setError(result.message);
+        showError(result.message);
       }
     } catch (error) {
       console.error('Error rebooting miner:', error);
-      setError('Failed to reboot miner');
+      showError('Failed to reboot miner');
     }
   };
 
   // Bulk reboot selected miners
   const handleBulkReboot = async () => {
     if (selectedMiners.length === 0) {
-      alert('Please select miners to reboot');
+      showWarning('Please select miners to reboot');
       return;
     }
 
@@ -273,11 +275,11 @@ const Miners: React.FC = () => {
     try {
       const result = await bulkRebootMiners(selectedMiners);
       const successCount = result.results.filter((r: any) => r.success).length;
-      alert(`Rebooted ${successCount} of ${selectedMiners.length} miners`);
+      showSuccess(`Rebooted ${successCount} of ${selectedMiners.length} miners`);
       setSelectedMiners([]);
     } catch (error) {
       console.error('Error bulk rebooting:', error);
-      setError('Failed to reboot miners');
+      showError('Failed to reboot miners');
     }
   };
 
@@ -292,11 +294,11 @@ const Miners: React.FC = () => {
     try {
       const result = await rebootAllMiners();
       const successCount = result.results.filter((r: any) => r.success).length;
-      alert(`Rebooted ${successCount} of ${totalMiners} miners`);
+      showSuccess(`Rebooted ${successCount} of ${totalMiners} miners`);
       setSelectedMiners([]);
     } catch (error) {
       console.error('Error rebooting all miners:', error);
-      setError('Failed to reboot all miners');
+      showError('Failed to reboot all miners');
     }
   };
 
