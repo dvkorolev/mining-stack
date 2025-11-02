@@ -36,6 +36,7 @@ import socket
 import subprocess
 import re
 import json
+import requests
 
 # Setup logging
 logging.basicConfig(
@@ -49,6 +50,8 @@ logger = logging.getLogger(__name__)
 MINERS_CONFIG = os.getenv('MINERS_CONFIG', '/app/etc/miners.yaml')
 COLLECTION_INTERVAL = int(os.getenv('COLLECTION_INTERVAL', '2'))  # minutes
 MAX_CONCURRENT_REQUESTS = 5
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://backend:5000')
+PUSH_TO_BACKEND = os.getenv('PUSH_TO_BACKEND', 'true').lower() == 'true'
 
 # FastAPI app
 app = FastAPI(title="Mining Metrics Collector Service", version="2.0.0")
@@ -701,6 +704,61 @@ def clear_miner_metrics(ip: str, name: str, model: str):
     miner_pool_rejected.labels(ip=ip, name=name, model=model).set(0)
 
 
+def push_metrics_to_backend(miners: List[Dict], collection_result: Dict):
+    """Push collected metrics to backend for real-time UI updates"""
+    if not PUSH_TO_BACKEND:
+        return
+    
+    try:
+        # Extract metrics from Prometheus gauges for each miner
+        miners_data = []
+        for miner in miners:
+            ip = miner['ip']
+            name = miner['name']
+            model = miner['model'].replace(" ", "_")
+            
+            # Get current values from gauges
+            miner_data = {
+                'ip': ip,
+                'name': name,
+                'model': model,
+                'hashrate': miner_hashrate.labels(ip=ip, name=name, model=model)._value._value,
+                'power': miner_power.labels(ip=ip, name=name, model=model)._value._value,
+                'temp_max': miner_temp_max.labels(ip=ip, name=name, model=model)._value._value,
+                'is_mining': miner_is_mining.labels(ip=ip, name=name, model=model)._value._value,
+                'uptime': miner_uptime.labels(ip=ip, name=name, model=model)._value._value,
+                'efficiency': miner_efficiency.labels(ip=ip, name=name, model=model)._value._value,
+                'fault_light': miner_fault_light.labels(ip=ip, name=name, model=model)._value._value,
+                'errors_count': miner_errors_count.labels(ip=ip, name=name, model=model)._value._value,
+                'scrape_success': miner_scrape_success.labels(ip=ip, name=name, model=model)._value._value,
+                'state': miner_state.labels(ip=ip, name=name, model=model)._value._value,
+                'pool_accepted': miner_pool_accepted.labels(ip=ip, name=name, model=model)._value._value,
+                'pool_rejected': miner_pool_rejected.labels(ip=ip, name=name, model=model)._value._value,
+            }
+            miners_data.append(miner_data)
+        
+        # Push to backend
+        payload = {
+            'miners': miners_data,
+            'timestamp': int(time.time() * 1000),  # milliseconds
+            'collection_info': collection_result
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/api/internal/metrics",
+            json=payload,
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            logger.info(f"✓ Pushed metrics to backend: {len(miners_data)} miners")
+        else:
+            logger.warning(f"Backend push failed: {response.status_code} - {response.text}")
+            
+    except Exception as e:
+        logger.warning(f"Failed to push metrics to backend: {e}")
+
+
 async def collect_all_metrics():
     """Collect all metrics and update in-memory gauges (with lock)"""
     global last_collection, collection_in_progress
@@ -746,6 +804,9 @@ async def collect_all_metrics():
                     'pool_network': pool_result
                 }
             }
+            
+            # Push metrics to backend for real-time UI updates
+            push_metrics_to_backend(miners, pyasic_result)
             
             logger.info("=" * 60)
             logger.info("Collection complete: All collectors successful")

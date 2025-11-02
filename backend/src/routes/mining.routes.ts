@@ -10,7 +10,8 @@ import {
   startMining, 
   stopMining, 
   restartMiner, 
-  updateMinerConfig 
+  updateMinerConfig,
+  updateMetricsFromScheduler 
 } from '../services/mining.service';
 import { getMiners, addMiner, updateMiner, deleteMiner } from '../config/miners.config';
 import { 
@@ -417,6 +418,32 @@ router.get('/miners/:minerId/stats', async (req, res, next) => {
     const stats = getMinerStats(minerId);
     res.json(stats);
   } catch (error) {
+    next(error);
+  }
+});
+
+// ===== Internal API (for python-scheduler) =====
+
+// Receive metrics push from python-scheduler
+router.post('/internal/metrics', async (req, res, next) => {
+  try {
+    const { miners, timestamp, collection_info } = req.body;
+    
+    if (!miners || !Array.isArray(miners)) {
+      return res.status(400).json({ error: 'miners array is required' });
+    }
+    
+    logger.info(`Received metrics push from scheduler: ${miners.length} miners`);
+    
+    await updateMetricsFromScheduler(miners, timestamp, collection_info);
+    
+    res.json({ 
+      success: true, 
+      message: `Updated metrics for ${miners.length} miners`,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Error processing metrics push:', error);
     next(error);
   }
 });

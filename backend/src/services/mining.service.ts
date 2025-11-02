@@ -875,6 +875,127 @@ const discoverMiners = async (): Promise<{ success: boolean; message: string; mi
   }
 };
 
+/**
+ * Update metrics from python-scheduler push
+ * This replaces polling Prometheus - scheduler pushes metrics directly
+ */
+const updateMetricsFromScheduler = async (
+  miners: any[],
+  timestamp?: number,
+  collectionInfo?: any
+): Promise<void> => {
+  try {
+    logger.info(`Processing metrics push: ${miners.length} miners`);
+    
+    // Convert scheduler format to our MinerStats format
+    const minerStats: MinerStats[] = miners.map(m => {
+      // Determine status from scheduler data
+      let status: 'online' | 'offline' | 'error' = 'offline';
+      if (m.scrape_success) {
+        status = m.state === 2 ? 'online' : (m.state === 1 ? 'offline' : 'error');
+      }
+      
+      // Build error list
+      const errors: MinerError[] = [];
+      if (m.errors_count > 0 && m.state === 0) {
+        errors.push({
+          code: 'MINER_ERROR',
+          message: 'Miner Error',
+          description: 'Miner reported error state',
+          severity: 'critical',
+          timestamp: Date.now(),
+        });
+      }
+      
+      return {
+        minerId: m.name || m.ip,
+        name: m.name || m.ip,
+        model: m.model || 'Unknown',
+        ip: m.ip,
+        status,
+        statusMessage: status.toUpperCase(),
+        lastSeen: new Date(),
+        currentHashrate: m.hashrate || 0,
+        averageHashrate: m.hashrate * 0.98 || 0,
+        shares: {
+          accepted: m.pool_accepted || 0,
+          rejected: m.pool_rejected || 0,
+        },
+        hardware: {
+          temperature: m.temp_max || 0,
+          fanSpeed: m.fan_speed || 0,
+          powerUsage: m.power || 0,
+        },
+        uptime: m.uptime || 0,
+        errors,
+        errorCount: errors.length,
+        lastError: errors.length > 0 ? errors[0] : undefined,
+      };
+    });
+    
+    // Calculate aggregates
+    const totalHashrate = minerStats.reduce((sum, m) => sum + m.currentHashrate, 0);
+    const activeMiners = minerStats.filter(m => m.status === 'online' || m.status === 'error').length;
+    
+    // Update stats history
+    const statsHistory = [
+      ...miningStats.statsHistory,
+      { timestamp: timestamp || Date.now(), hashrate: totalHashrate }
+    ].slice(-config.mining.maxHistoryPoints);
+    
+    const averageHashrate24h = statsHistory.length > 0
+      ? statsHistory.reduce((sum, stat) => sum + stat.hashrate, 0) / statsHistory.length
+      : totalHashrate;
+    
+    // Update global stats
+    miningStats = {
+      totalHashrate,
+      averageHashrate24h,
+      activeMiners,
+      totalMined: miningStats.totalMined, // Keep existing total
+      miners: minerStats,
+      timestamp: timestamp || Date.now(),
+      statsHistory
+    };
+    
+    // Save to database
+    try {
+      const avgTemperature = minerStats.length > 0
+        ? minerStats.reduce((sum, m) => sum + (m.hardware?.temperature || 0), 0) / minerStats.length
+        : 0;
+      
+      const avgPower = minerStats.reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0);
+      
+      const totalShares = minerStats.reduce((sum, m) => sum + m.shares.accepted + m.shares.rejected, 0);
+      const rejectedShares = minerStats.reduce((sum, m) => sum + m.shares.rejected, 0);
+      const rejectionRate = totalShares > 0 ? (rejectedShares / totalShares) * 100 : 0;
+      
+      const dbRecord: StatsRecord = {
+        timestamp: miningStats.timestamp,
+        totalHashrate: miningStats.totalHashrate,
+        averageHashrate24h: miningStats.averageHashrate24h,
+        activeMiners: miningStats.activeMiners,
+        totalMiners: miners.length,
+        totalMined: miningStats.totalMined,
+        avgTemperature,
+        avgPower,
+        rejectionRate,
+      };
+      db.insertStats(dbRecord);
+    } catch (error) {
+      logger.error('Error saving stats to database:', error);
+    }
+    
+    // Broadcast to WebSocket clients
+    broadcast({ type: 'mining-stats', data: miningStats });
+    
+    logger.info(`✓ Metrics updated: ${activeMiners}/${miners.length} miners active, ${totalHashrate.toFixed(2)} TH/s`);
+  } catch (error) {
+    logger.error('Error updating metrics from scheduler:', error);
+    throw error;
+  }
+};
+
 export {
   getMiningStats,
   getMinerStats,
@@ -885,5 +1006,6 @@ export {
   startMining,
   stopMining,
   restartMiner,
-  updateMinerConfig
+  updateMinerConfig,
+  updateMetricsFromScheduler
 };
