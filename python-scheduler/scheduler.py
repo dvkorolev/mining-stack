@@ -680,7 +680,17 @@ def load_miners_config() -> List[Dict]:
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
-    miners_config_cache = config.get('miners', [])
+    miners = config.get('miners', [])
+    
+    # Ensure each miner has a 'name' field (use alias or IP as fallback)
+    for miner in miners:
+        if 'name' not in miner:
+            if 'alias' in miner:
+                miner['name'] = miner['alias']
+            else:
+                miner['name'] = f"miner-{miner['ip'].replace('.', '-')}"
+    
+    miners_config_cache = miners
     last_config_load = current_time
     return miners_config_cache
 
