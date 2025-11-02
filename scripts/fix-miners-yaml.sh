@@ -30,11 +30,11 @@ if grep -q "^  name:" "$MINERS_FILE"; then
 fi
 
 # Use Python to parse and fix the YAML properly
-python3 << 'EOF'
+python3 - "$MINERS_FILE" << 'EOF'
 import yaml
 import sys
 
-miners_file = sys.argv[1] if len(sys.argv) > 1 else 'etc/miners.yaml'
+miners_file = sys.argv[1]
 
 try:
     # Read the YAML file
@@ -75,8 +75,7 @@ try:
 except Exception as e:
     print(f"❌ Error: {e}")
     sys.exit(1)
-
-EOF "$MINERS_FILE"
+EOF
 
 if [ $? -eq 0 ]; then
     echo ""
