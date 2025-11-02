@@ -240,7 +240,9 @@ const getRealMinerStats = async (
   
   // Check for error conditions
   if (isOnline) {
-    if (temperature > 85) {
+    // Use configured temperature threshold (default 95°C for critical)
+    const tempThreshold = config.thresholds.temperature.critical;
+    if (temperature > tempThreshold) {
       status = 'error';
       const error: MinerError = {
         ...ERROR_CODES.HIGH_TEMP,
@@ -514,7 +516,8 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
     const minerStats = await Promise.all(minerStatsPromises);
     
     const totalHashrate = minerStats.reduce((sum, miner) => sum + miner.currentHashrate, 0);
-    const activeMiners = minerStats.filter(m => m.status === 'online').length;
+    // Count miners that are online OR have errors (they're still mining, just with issues)
+    const activeMiners = minerStats.filter(m => m.status === 'online' || m.status === 'error').length;
     
     // Calculate 24h average hashrate from history
     const statsHistory = [
