@@ -22,10 +22,9 @@ from pydantic import BaseModel
 import yaml
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import Response
 import uvicorn
-import schedule
 
 # Prometheus client
 from prometheus_client import Gauge, Counter, Info, generate_latest, REGISTRY, CollectorRegistry
@@ -53,6 +52,10 @@ MAX_CONCURRENT_REQUESTS = 5
 
 # FastAPI app
 app = FastAPI(title="Mining Metrics Collector Service", version="2.0.0")
+
+# Collection lock to prevent concurrent collections
+collection_lock = asyncio.Lock()
+collection_in_progress = False
 
 # ============================================================================
 # PROMETHEUS METRICS DEFINITIONS (In-Memory)
@@ -656,67 +659,128 @@ last_collection = {
     'details': {}
 }
 
+# Cache miners config at startup
+miners_config_cache = None
+last_config_load = 0
+CONFIG_CACHE_TTL = 300  # 5 minutes
+
+
+def load_miners_config() -> List[Dict]:
+    """Load miners configuration with caching"""
+    global miners_config_cache, last_config_load
+    
+    current_time = time.time()
+    if miners_config_cache and (current_time - last_config_load) < CONFIG_CACHE_TTL:
+        return miners_config_cache
+    
+    config_path = Path(MINERS_CONFIG)
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    miners_config_cache = config.get('miners', [])
+    last_config_load = current_time
+    return miners_config_cache
+
+
+def clear_miner_metrics(ip: str, name: str, model: str):
+    """Clear all metrics for a specific miner (for stale data prevention)"""
+    model = model.replace(" ", "_")
+    
+    # Clear all miner metrics by setting to 0 or -1 (to indicate no data)
+    miner_scrape_success.labels(ip=ip, name=name, model=model).set(0)
+    miner_state.labels(ip=ip, name=name, model=model).set(0)  # 0 = faulty/offline
+    miner_hashrate.labels(ip=ip, name=name, model=model).set(0)
+    miner_power.labels(ip=ip, name=name, model=model).set(0)
+    miner_temp_max.labels(ip=ip, name=name, model=model).set(0)
+    miner_is_mining.labels(ip=ip, name=name, model=model).set(0)
+    miner_uptime.labels(ip=ip, name=name, model=model).set(0)
+    miner_efficiency.labels(ip=ip, name=name, model=model).set(0)
+    miner_fault_light.labels(ip=ip, name=name, model=model).set(0)
+    miner_errors_count.labels(ip=ip, name=name, model=model).set(0)
+    miner_pool_accepted.labels(ip=ip, name=name, model=model).set(0)
+    miner_pool_rejected.labels(ip=ip, name=name, model=model).set(0)
+
 
 async def collect_all_metrics():
-    """Collect all metrics and update in-memory gauges"""
-    global last_collection
+    """Collect all metrics and update in-memory gauges (with lock)"""
+    global last_collection, collection_in_progress
     
-    logger.info("=" * 60)
-    logger.info(f"Starting metrics collection at {datetime.now()}")
-    logger.info("=" * 60)
-    
-    try:
-        # Load miners configuration
-        config_path = Path(MINERS_CONFIG)
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        
-        miners = config.get('miners', [])
-        logger.info(f"Found {len(miners)} miners in configuration")
-        
-        # Collect pyasic metrics
-        pyasic_result = await collect_pyasic_metrics(miners)
-        
-        # Collect pool network metrics
-        pool_result = await collect_pool_network_metrics(miners)
-        
-        # Update last collection status
-        last_collection = {
-            'timestamp': datetime.now().isoformat(),
-            'success': True,
-            'message': 'All collections successful',
-            'details': {
-                'pyasic': pyasic_result,
-                'pool_network': pool_result
-            }
-        }
-        
-        logger.info("=" * 60)
-        logger.info("Collection complete: All collectors successful")
-        logger.info("=" * 60)
-        
-    except Exception as e:
-        logger.error(f"Collection error: {e}")
-        last_collection = {
-            'timestamp': datetime.now().isoformat(),
+    # Try to acquire lock (non-blocking)
+    if collection_lock.locked():
+        logger.warning("Collection already in progress, skipping this run")
+        return {
             'success': False,
-            'message': f'Collection failed: {str(e)}',
-            'details': {}
+            'message': 'Collection already in progress',
+            'skipped': True
         }
+    
+    async with collection_lock:
+        collection_in_progress = True
+        try:
+            logger.info("=" * 60)
+            logger.info(f"Starting metrics collection at {datetime.now()}")
+            logger.info("=" * 60)
+            
+            # Load miners configuration (cached)
+            miners = load_miners_config()
+            logger.info(f"Found {len(miners)} miners in configuration")
+            
+            # Clear metrics for all miners before collection (prevent stale data)
+            logger.debug("Clearing stale metrics...")
+            for miner in miners:
+                clear_miner_metrics(miner['ip'], miner['name'], miner['model'])
+            
+            # Collect pyasic metrics
+            pyasic_result = await collect_pyasic_metrics(miners)
+            
+            # Collect pool network metrics
+            pool_result = await collect_pool_network_metrics(miners)
+            
+            # Update last collection status
+            last_collection = {
+                'timestamp': datetime.now().isoformat(),
+                'success': True,
+                'message': 'All collections successful',
+                'details': {
+                    'pyasic': pyasic_result,
+                    'pool_network': pool_result
+                }
+            }
+            
+            logger.info("=" * 60)
+            logger.info("Collection complete: All collectors successful")
+            logger.info("=" * 60)
+            
+            return last_collection
+            
+        except Exception as e:
+            logger.error(f"Collection error: {e}")
+            last_collection = {
+                'timestamp': datetime.now().isoformat(),
+                'success': False,
+                'message': f'Collection failed: {str(e)}',
+                'details': {}
+            }
+            return last_collection
+        finally:
+            collection_in_progress = False
 
 
-def collect_metrics_sync():
-    """Synchronous wrapper for scheduled collection"""
-    asyncio.run(collect_all_metrics())
-
-
-def schedule_loop():
-    """Run the schedule loop in a separate thread"""
-    logger.info(f"Starting scheduler loop (interval: {COLLECTION_INTERVAL} minutes)")
+async def scheduler_loop():
+    """Async scheduler loop (runs as background task)"""
+    logger.info(f"Starting async scheduler loop (interval: {COLLECTION_INTERVAL} minutes)")
+    
+    # Run initial collection
+    logger.info("Running initial metrics collection...")
+    await collect_all_metrics()
+    
+    # Schedule periodic collections
+    interval_seconds = COLLECTION_INTERVAL * 60
     
     while True:
-        schedule.run_pending()
-        time.sleep(1)
+        await asyncio.sleep(interval_seconds)
+        logger.info(f"Scheduled collection triggered (every {COLLECTION_INTERVAL} minutes)")
+        await collect_all_metrics()
 
 
 # ============================================================================
@@ -753,22 +817,31 @@ async def status():
     """Get collector status"""
     return {
         "last_collection": last_collection,
-        "next_run": schedule.next_run().isoformat() if schedule.next_run() else None,
-        "collection_interval": COLLECTION_INTERVAL,
-        "architecture": "v2_in_memory_metrics"
+        "collection_in_progress": collection_in_progress,
+        "collection_interval_minutes": COLLECTION_INTERVAL,
+        "architecture": "v2_in_memory_metrics_with_lock",
+        "miners_count": len(miners_config_cache) if miners_config_cache else 0
     }
 
 
 @app.post("/collect")
-async def trigger_collection():
-    """Manually trigger metrics collection"""
-    logger.info("Manual collection triggered via API")
-    await collect_all_metrics()
+async def trigger_collection(background_tasks: BackgroundTasks):
+    """Manually trigger metrics collection (runs in background)"""
+    if collection_in_progress:
+        return {
+            "success": False,
+            "message": "Collection already in progress",
+            "timestamp": last_collection.get('timestamp')
+        }
+    
+    logger.info("Manual collection triggered via API (background)")
+    background_tasks.add_task(collect_all_metrics)
+    
     return {
         "success": True,
-        "message": "Collection completed",
-        "timestamp": last_collection.get('timestamp'),
-        "details": last_collection.get('details')
+        "message": "Collection started in background",
+        "timestamp": datetime.now().isoformat(),
+        "note": "Check /status endpoint for completion"
     }
 
 
@@ -785,30 +858,26 @@ async def metrics():
 # MAIN
 # ============================================================================
 
-def main():
-    """Main entry point"""
+@app.on_event("startup")
+async def startup_event():
+    """Start background scheduler on app startup"""
     logger.info("=" * 60)
     logger.info("Mining Metrics Collector Service V2 Starting")
     logger.info("=" * 60)
     logger.info(f"Miners config: {MINERS_CONFIG}")
     logger.info(f"Collection interval: {COLLECTION_INTERVAL} minutes")
-    logger.info(f"Architecture: Direct Prometheus scraping (no Node Exporter)")
+    logger.info(f"Architecture: Direct Prometheus scraping (async scheduler + lock)")
     logger.info("=" * 60)
     
-    # Schedule metrics collection
-    schedule.every(COLLECTION_INTERVAL).minutes.do(collect_metrics_sync)
+    # Start async scheduler as background task
+    asyncio.create_task(scheduler_loop())
     
-    # Run initial collection
-    logger.info("Running initial metrics collection...")
-    asyncio.run(collect_all_metrics())
-    
-    # Start scheduler in background thread
-    scheduler_thread = threading.Thread(target=schedule_loop, daemon=True)
-    scheduler_thread.start()
-    
-    # Start FastAPI server
     logger.info("Starting API server on port 8000...")
     logger.info("Prometheus metrics available at: http://0.0.0.0:8000/metrics")
+
+
+def main():
+    """Main entry point"""
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
 
 
