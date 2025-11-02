@@ -1,8 +1,7 @@
 {
-  "dashboard": {
-    "id": null,
-    "uid": "mining-farm-overview",
-    "title": "Mining Farm Overview",
+  "id": null,
+  "uid": "mining-farm-overview",
+  "title": "Mining Farm Overview",
     "tags": ["mining", "overview"],
     "timezone": "browser",
     "schemaVersion": 38,
@@ -203,8 +202,4 @@
         ]
       }
     ]
-  },
-  "overwrite": true,
-  "folderUid": "",
-  "message": "Mining Farm Overview Dashboard"
 }
