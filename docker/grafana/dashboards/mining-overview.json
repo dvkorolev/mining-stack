@@ -145,46 +145,129 @@
       {
         "id": 5,
         "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
-        "type": "graph",
+        "type": "timeseries",
         "title": "Farm Hashrate Over Time",
         "targets": [{
           "expr": "sum(max by (ip) (miner_hashrate_ths))",
           "legendFormat": "Total Hashrate"
         }],
-        "yaxes": [
-          {"format": "TH/s", "label": "Hashrate"},
-          {"format": "short"}
-        ]
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "lineWidth": 2,
+              "fillOpacity": 20,
+              "showPoints": "never",
+              "spanNulls": true,
+              "axisPlacement": "auto",
+              "axisLabel": "Hashrate (TH/s)",
+              "scaleDistribution": {
+                "type": "linear"
+              }
+            },
+            "unit": "TH/s",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"}
+              ]
+            }
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "calcs": ["lastNotNull", "mean", "max"]
+          }
+        }
       },
       {
         "id": 6,
         "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
-        "type": "graph",
+        "type": "timeseries",
         "title": "Power Consumption Over Time",
         "targets": [{
           "expr": "sum(max by (ip) (miner_power_watts)) / 1000",
           "legendFormat": "Total Power"
         }],
-        "yaxes": [
-          {"format": "kW", "label": "Power"},
-          {"format": "short"}
-        ]
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "lineWidth": 2,
+              "fillOpacity": 20,
+              "showPoints": "never",
+              "spanNulls": true,
+              "axisPlacement": "auto",
+              "axisLabel": "Power (kW)",
+              "scaleDistribution": {
+                "type": "linear"
+              }
+            },
+            "unit": "kW",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 60, "color": "yellow"},
+                {"value": 70, "color": "red"}
+              ]
+            }
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "calcs": ["lastNotNull", "mean", "max"]
+          }
+        }
       },
       {
         "id": 7,
         "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
-        "type": "graph",
+        "type": "timeseries",
         "title": "Farm Rejection Rate - Lifetime",
         "targets": [{
           "expr": "100 * (sum(max by (ip) (miner_pool_rejected_total)) / (sum(max by (ip) (miner_pool_accepted_total)) + sum(max by (ip) (miner_pool_rejected_total))))",
           "legendFormat": "Rejection Rate"
         }],
-        "yaxes": [
-          {"format": "percent", "label": "Rejection Rate"},
-          {"format": "short"}
-        ],
         "fieldConfig": {
           "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "lineWidth": 2,
+              "fillOpacity": 20,
+              "showPoints": "never",
+              "spanNulls": true,
+              "axisPlacement": "auto",
+              "axisLabel": "Rejection Rate (%)",
+              "scaleDistribution": {
+                "type": "linear"
+              }
+            },
+            "unit": "percent",
+            "color": {
+              "mode": "thresholds"
+            },
             "thresholds": {
               "mode": "absolute",
               "steps": [
@@ -193,6 +276,17 @@
                 {"value": 5, "color": "red"}
               ]
             }
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "calcs": ["lastNotNull", "mean", "max"]
           }
         }
       },
