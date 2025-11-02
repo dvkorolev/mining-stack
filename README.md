@@ -5,7 +5,11 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB)](https://reactjs.org/)
 
-A comprehensive monitoring and control system for cryptocurrency mining operations, built with React, Node.js, and Docker. Designed to run on a Raspberry Pi or any Linux system with real-time monitoring, advanced analytics, and automated miner discovery.
+**One dashboard to monitor and control your entire mining farm.**
+
+A comprehensive monitoring and control system for cryptocurrency mining operations. Monitor 20+ miners from a single interface, get instant alerts, analyze performance trends, and control everything remotely. Built with React, Node.js, and Docker. Designed to run on a Raspberry Pi.
+
+**📖 [Read the Complete Overview](docs/OVERVIEW.md)** - Understand the full system architecture and capabilities
 
 ## ✨ Features
 
