@@ -37,6 +37,8 @@ import TuneIcon from '@mui/icons-material/Tune';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import { useSelector } from 'react-redux';
+import { selectMiners } from '../features/mining/miningSlice';
 import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, discoverMiners as discoverMinersAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
 
 interface MinerError {
@@ -69,8 +71,14 @@ interface Miner {
 }
 
 const Miners: React.FC = () => {
-  const [miners, setMiners] = useState<Miner[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Get miners from Redux store (updated in real-time via WebSocket)
+  const minersFromStore = useSelector(selectMiners);
+  const miners = minersFromStore.map(m => ({
+    ...m,
+    lastSeen: new Date(m.lastSeen),
+  }));
+  
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [editingMiner, setEditingMiner] = useState<Miner | null>(null);
@@ -91,17 +99,11 @@ const Miners: React.FC = () => {
     },
   });
 
-  // Load miners data
+  // Load miners data (only for manual refresh)
   const loadMiners = async () => {
     try {
       setLoading(true);
-      const stats = await fetchMiningStats();
-      // Convert MinerStats to Miner interface
-      const minersData = (stats.miners || []).map(m => ({
-        ...m,
-        lastSeen: new Date(m.lastSeen),
-      }));
-      setMiners(minersData);
+      await fetchMiningStats();
       setError(null);
     } catch (error) {
       console.error('Error loading miners:', error);
@@ -110,13 +112,6 @@ const Miners: React.FC = () => {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    loadMiners();
-    // Refresh every 30 seconds
-    const interval = setInterval(loadMiners, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Open add/edit dialog
   const handleOpenDialog = (miner?: Miner) => {
@@ -515,8 +510,8 @@ const Miners: React.FC = () => {
                     <TableCell>{miner.name}</TableCell>
                     <TableCell>{miner.ip}</TableCell>
                     <TableCell>{miner.model}</TableCell>
-                    <TableCell>{miner.alias || '-'}</TableCell>
-                    <TableCell>{miner.owner || '-'}</TableCell>
+                    <TableCell>{(miner as any).alias || '-'}</TableCell>
+                    <TableCell>{(miner as any).owner || '-'}</TableCell>
                     <TableCell align="right">
                       <Tooltip title="Reboot miner">
                         <IconButton

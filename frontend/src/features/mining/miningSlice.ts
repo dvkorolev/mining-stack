@@ -1,37 +1,62 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { MiningStatsResponse } from '../../services/api';
 
-interface MiningStats {
-  currentHashrate: number | null;
-  activeMiners: number | null;
-  totalMined: number | null;
-  hashrateHistory: number[];
+interface MiningState {
+  stats: MiningStatsResponse | null;
+  isConnected: boolean;
+  lastUpdate: number | null;
+  error: string | null;
 }
 
-const initialState: MiningStats = {
-  currentHashrate: null,
-  activeMiners: null,
-  totalMined: null,
-  hashrateHistory: [],
+const initialState: MiningState = {
+  stats: null,
+  isConnected: false,
+  lastUpdate: null,
+  error: null,
 };
 
 const miningSlice = createSlice({
   name: 'mining',
   initialState,
   reducers: {
-    setStats: (state, action: PayloadAction<Partial<MiningStats>>) => {
-      return { ...state, ...action.payload };
+    // Update stats from WebSocket or API
+    updateStats: (state, action: PayloadAction<MiningStatsResponse>) => {
+      state.stats = action.payload;
+      state.lastUpdate = Date.now();
+      state.error = null;
     },
-    updateHashrate: (state, action: PayloadAction<number>) => {
-      const newHistory = [...state.hashrateHistory, action.payload].slice(-60); // Keep last 60 readings
-      return {
-        ...state,
-        currentHashrate: action.payload,
-        hashrateHistory: newHistory,
-      };
+    
+    // Set WebSocket connection status
+    setConnectionStatus: (state, action: PayloadAction<boolean>) => {
+      state.isConnected = action.payload;
+    },
+    
+    // Set error message
+    setError: (state, action: PayloadAction<string>) => {
+      state.error = action.payload;
+    },
+    
+    // Clear error
+    clearError: (state) => {
+      state.error = null;
     },
   },
 });
 
-export const { setStats, updateHashrate } = miningSlice.actions;
-export const selectMiningStats = (state: { mining: MiningStats }) => state.mining;
+export const { 
+  updateStats, 
+  setConnectionStatus, 
+  setError, 
+  clearError 
+} = miningSlice.actions;
+
+// Selectors
+export const selectMiningStats = (state: { mining: MiningState }) => state.mining.stats;
+export const selectIsConnected = (state: { mining: MiningState }) => state.mining.isConnected;
+export const selectLastUpdate = (state: { mining: MiningState }) => state.mining.lastUpdate;
+export const selectError = (state: { mining: MiningState }) => state.mining.error;
+export const selectMiners = (state: { mining: MiningState }) => state.mining.stats?.miners || [];
+export const selectTotalHashrate = (state: { mining: MiningState }) => state.mining.stats?.totalHashrate || 0;
+export const selectActiveMiners = (state: { mining: MiningState }) => state.mining.stats?.activeMiners || 0;
+
 export default miningSlice.reducer;

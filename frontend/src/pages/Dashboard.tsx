@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Grid, Typography, Paper, Box, CircularProgress, Alert, Chip, ToggleButton, ToggleButtonGroup, Card, CardContent } from '@mui/material';
 import { Line, Bar } from 'react-chartjs-2';
 import { fetchMiningStats, MiningStatsResponse } from '../services/api';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useSelector } from 'react-redux';
+import { selectMiningStats, selectIsConnected, selectError } from '../features/mining/miningSlice';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import {
@@ -31,67 +32,39 @@ ChartJS.register(
   Filler
 );
 
-const UPDATE_INTERVAL = parseInt(process.env.REACT_APP_UPDATE_INTERVAL || '5000', 10);
-// Use relative WebSocket URL to work with nginx proxy
-const WS_URL = process.env.REACT_APP_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
-
 const Dashboard: React.FC = () => {
-  const [stats, setStats] = useState<MiningStatsResponse | null>(null);
+  // Get data from Redux store
+  const stats = useSelector(selectMiningStats);
+  const isConnected = useSelector(selectIsConnected);
+  const error = useSelector(selectError);
+  
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<'1h' | '6h' | '24h'>('24h');
   const [previousStats, setPreviousStats] = useState<MiningStatsResponse | null>(null);
 
-  // WebSocket with automatic reconnection
-  const { isConnected, reconnectCount } = useWebSocket({
-    url: WS_URL,
-    onMessage: (message) => {
-      if (message.type === 'mining-stats') {
-        setStats(message.data);
-        setError(null);
-      }
-    },
-    onOpen: () => {
-      console.log('WebSocket connected');
-      setError(null);
-    },
-    onClose: () => {
-      console.log('WebSocket disconnected');
-    },
-    onError: (error) => {
-      console.error('WebSocket error:', error);
-      setError('WebSocket connection error - attempting to reconnect...');
-    },
-    reconnectAttempts: 10,
-    reconnectInterval: 2000,
-  });
-
   useEffect(() => {
-    // Initial data load
+    // Initial data load (only once)
     const loadData = async () => {
       try {
         setLoading(true);
         const data = await fetchMiningStats();
-        setPreviousStats(stats); // Store previous for comparison
-        setStats(data);
-        setError(null);
+        setPreviousStats(data);
       } catch (error) {
-        console.error('Error fetching mining stats:', error);
-        setError('Failed to load mining statistics');
+        console.error('Error fetching initial mining stats:', error);
       } finally {
         setLoading(false);
       }
     };
 
     loadData();
-
-    // Fallback polling if WebSocket fails
-    const pollInterval = setInterval(loadData, UPDATE_INTERVAL);
-
-    return () => {
-      clearInterval(pollInterval);
-    };
   }, []);
+
+  // Track previous stats for trend calculation
+  useEffect(() => {
+    if (stats) {
+      setPreviousStats(stats);
+    }
+  }, [stats]);
 
   // Calculate trends
   const calculateTrend = (current: number, previous: number | undefined) => {
@@ -265,7 +238,7 @@ const Dashboard: React.FC = () => {
           Mining Dashboard
         </Typography>
         <Chip 
-          label={isConnected ? 'Connected' : `Reconnecting... (${reconnectCount})`}
+          label={isConnected ? 'Connected' : 'Reconnecting...'}
           color={isConnected ? 'success' : 'warning'}
           size="small"
         />
