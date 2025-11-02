@@ -526,12 +526,8 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
       ? statsHistory.reduce((sum, stat) => sum + stat.hashrate, 0) / statsHistory.length
       : totalHashrate;
     
-    // Realistic BTC mining calculation
-    const networkHashrate = 600000000; // 600 EH/s in TH/s
-    const dailyBTC = 450;
-    const updateIntervalSeconds = config.mining.updateInterval / 1000;
-    const timeFraction = updateIntervalSeconds / 86400;
-    const btcMined = (totalHashrate / networkHashrate) * dailyBTC * timeFraction;
+    // BTC calculation removed - not useful for monitoring
+    const btcMined = 0;
     
     // Calculate additional metrics
     const avgTemperature = minerStats.length > 0

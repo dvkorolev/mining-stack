@@ -142,33 +142,33 @@ const Dashboard: React.FC = () => {
   };
 
   // BTC earnings chart
-  const btcChartData = {
-    labels: filteredHistory.map((item) => 
-      new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    ),
-    datasets: [
-      {
-        label: 'BTC Mined (Cumulative)',
-        data: filteredHistory.map((_, index) => {
-          // Calculate cumulative BTC for this time range
-          const networkHashrate = 600000000;
-          const dailyBTC = 450;
-          const updateInterval = 5000;
-          const timeFraction = updateInterval / 1000 / 86400;
-          const avgHashrate = filteredHistory[index]?.hashrate || 0;
-          const btcPerUpdate = (avgHashrate / networkHashrate) * dailyBTC * timeFraction;
-          return filteredHistory.slice(0, index + 1).reduce((sum, h) => 
-            sum + ((h.hashrate / networkHashrate) * dailyBTC * timeFraction), 0
-          );
-        }),
-        borderColor: 'rgb(255, 205, 86)',
-        backgroundColor: 'rgba(255, 205, 86, 0.1)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 2,
-      },
-    ],
-  };
+  // BTC chart removed - not useful for monitoring
+  // const btcChartData = {
+  //   labels: filteredHistory.map((item) => 
+  //     new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  //   ),
+  //   datasets: [
+  //     {
+  //       label: 'BTC Mined (Cumulative)',
+  //       data: filteredHistory.map((_, index) => {
+  //         const networkHashrate = 600000000;
+  //         const dailyBTC = 450;
+  //         const updateInterval = 5000;
+  //         const timeFraction = updateInterval / 1000 / 86400;
+  //         const avgHashrate = filteredHistory[index]?.hashrate || 0;
+  //         const btcPerUpdate = (avgHashrate / networkHashrate) * dailyBTC * timeFraction;
+  //         return filteredHistory.slice(0, index + 1).reduce((sum, h) => 
+  //           sum + ((h.hashrate / networkHashrate) * dailyBTC * timeFraction), 0
+  //         );
+  //       }),
+  //       borderColor: 'rgb(255, 205, 86)',
+  //       backgroundColor: 'rgba(255, 205, 86, 0.1)',
+  //       fill: true,
+  //       tension: 0.4,
+  //       pointRadius: 2,
+  //     },
+  //   ],
+  // };
 
   const hashrateChartOptions = {
     responsive: true,
@@ -209,45 +209,46 @@ const Dashboard: React.FC = () => {
     },
   };
 
-  const btcChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'BTC Earnings (Cumulative)',
-        font: { size: 16 },
-      },
-      tooltip: {
-        callbacks: {
-          label: (context: any) => {
-            return `BTC: ${context.parsed.y.toFixed(8)}`;
-          },
-        },
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        title: {
-          display: true,
-          text: 'BTC',
-        },
-        ticks: {
-          callback: (value: any) => value.toFixed(8),
-        },
-      },
-      x: {
-        ticks: {
-          maxRotation: 45,
-          minRotation: 45,
-        },
-      },
-    },
-  };
+  // BTC chart options removed - not useful for monitoring
+  // const btcChartOptions = {
+  //   responsive: true,
+  //   maintainAspectRatio: false,
+  //   plugins: {
+  //     legend: {
+  //       position: 'top' as const,
+  //     },
+  //     title: {
+  //       display: true,
+  //       text: 'BTC Earnings (Cumulative)',
+  //       font: { size: 16 },
+  //     },
+  //     tooltip: {
+  //       callbacks: {
+  //         label: (context: any) => {
+  //           return `BTC: ${context.parsed.y.toFixed(8)}`;
+  //         },
+  //       },
+  //     },
+  //   },
+  //   scales: {
+  //     y: {
+  //       beginAtZero: true,
+  //       title: {
+  //         display: true,
+  //         text: 'BTC',
+  //       },
+  //       ticks: {
+  //         callback: (value: any) => value.toFixed(8),
+  //       },
+  //     },
+  //     x: {
+  //       ticks: {
+  //         maxRotation: 45,
+  //         minRotation: 45,
+  //       },
+  //     },
+  //   },
+  // };
 
   if (loading && !stats) {
     return (
@@ -350,8 +351,8 @@ const Dashboard: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Total Mined Card */}
-        <Grid item xs={12} md={3}>
+        {/* Total Mined Card - Hidden (not useful for monitoring) */}
+        {/* <Grid item xs={12} md={3}>
           <Paper sx={{ p: 2, height: '100%' }}>
             <Typography variant="h6" color="textSecondary" gutterBottom>
               Total Mined (24h)
@@ -360,7 +361,7 @@ const Dashboard: React.FC = () => {
               {stats?.totalMined ? `${stats.totalMined.toFixed(8)} BTC` : 'N/A'}
             </Typography>
           </Paper>
-        </Grid>
+        </Grid> */}
 
         {/* Time Range Selector */}
         <Grid item xs={12}>
@@ -387,14 +388,14 @@ const Dashboard: React.FC = () => {
           </Paper>
         </Grid>
 
-        {/* BTC Earnings Chart */}
-        <Grid item xs={12} md={6}>
+        {/* BTC Earnings Chart - Removed (not useful for monitoring) */}
+        {/* <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2 }}>
             <Box sx={{ height: '350px' }}>
               <Line data={btcChartData} options={btcChartOptions} />
             </Box>
           </Paper>
-        </Grid>
+        </Grid> */}
 
         {/* Performance Metrics */}
         <Grid item xs={12}>
