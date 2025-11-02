@@ -434,7 +434,9 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str):
     model = model.replace(" ", "_")
     
     # Determine state
-    hashrate = data.get('hashrate', 0) or 0
+    # Convert hashrate to float (handles both pyasic objects and plain numbers)
+    hashrate_raw = data.get('hashrate', 0) or 0
+    hashrate = float(hashrate_raw) if hashrate_raw else 0.0
     is_mining = data.get('is_mining', True)
     
     if hashrate == 0 and not is_mining:
@@ -455,15 +457,22 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str):
     else:
         miner_hashrate.labels(ip=ip, name=name, model=model).set(hashrate)
     
-    miner_power.labels(ip=ip, name=name, model=model).set(data.get('power', 0) or 0)
-    miner_temp_max.labels(ip=ip, name=name, model=model).set(data.get('temperature', 0) or 0)
+    # Convert all numeric values to float to handle pyasic objects
+    power = float(data.get('power', 0) or 0)
+    temperature = float(data.get('temperature', 0) or 0)
+    uptime = float(data.get('uptime', 0) or 0)
+    
+    miner_power.labels(ip=ip, name=name, model=model).set(power)
+    miner_temp_max.labels(ip=ip, name=name, model=model).set(temperature)
     miner_is_mining.labels(ip=ip, name=name, model=model).set(1 if is_mining else 0)
-    miner_uptime.labels(ip=ip, name=name, model=model).set(data.get('uptime', 0) or 0)
+    miner_uptime.labels(ip=ip, name=name, model=model).set(uptime)
     
     # Efficiency
-    efficiency = data.get('efficiency', 0) or 0
-    if efficiency == 0 and hashrate > 0 and data.get('power', 0) and data.get('power') > 0:
-        efficiency = data['power'] / hashrate if hashrate > 0 else 0
+    efficiency_raw = data.get('efficiency', 0) or 0
+    efficiency = float(efficiency_raw) if efficiency_raw else 0.0
+    power = float(data.get('power', 0) or 0)
+    if efficiency == 0 and hashrate > 0 and power > 0:
+        efficiency = power / hashrate if hashrate > 0 else 0
     miner_efficiency.labels(ip=ip, name=name, model=model).set(efficiency)
     
     miner_fault_light.labels(ip=ip, name=name, model=model).set(1 if data.get('fault_light') else 0)
