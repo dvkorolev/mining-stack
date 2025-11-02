@@ -174,9 +174,9 @@
         "id": 7,
         "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
         "type": "graph",
-        "title": "Farm Rejection Rate",
+        "title": "Farm Rejection Rate - Lifetime",
         "targets": [{
-          "expr": "100 * (sum(rate(miner_pool_rejected_total[5m])) / (sum(rate(miner_pool_accepted_total[5m])) + sum(rate(miner_pool_rejected_total[5m]))))",
+          "expr": "100 * (sum(max by (ip) (miner_pool_rejected_total)) / (sum(max by (ip) (miner_pool_accepted_total)) + sum(max by (ip) (miner_pool_rejected_total))))",
           "legendFormat": "Rejection Rate"
         }],
         "yaxes": [
@@ -221,7 +221,7 @@
             "refId": "C"
           },
           {
-            "expr": "100 * (max by (ip) (miner_pool_rejected_total) / (max by (ip) (miner_pool_accepted_total) + max by (ip) (miner_pool_rejected_total)))",
+            "expr": "100 * (miner_pool_rejected_total / (miner_pool_accepted_total + miner_pool_rejected_total))",
             "format": "table",
             "instant": true,
             "refId": "D"

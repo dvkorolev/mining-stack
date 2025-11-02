@@ -96,9 +96,9 @@
       "id": 3,
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 20},
       "type": "timeseries",
-      "title": "Rejection Rate by Miner (%)",
+      "title": "Rejection Rate by Miner (%) - Lifetime",
       "targets": [{
-        "expr": "100 * (rate(miner_pool_rejected_total[5m]) / (rate(miner_pool_accepted_total[5m]) + rate(miner_pool_rejected_total[5m])))",
+        "expr": "100 * (max by (ip, name) (miner_pool_rejected_total) / (max by (ip, name) (miner_pool_accepted_total) + max by (ip, name) (miner_pool_rejected_total)))",
         "legendFormat": "{{name}} ({{ip}})"
       }],
       "fieldConfig": {
