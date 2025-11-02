@@ -164,6 +164,17 @@ export const bulkRebootMiners = async (minerIds: string[]) => {
   }
 };
 
+// Reboot all miners
+export const rebootAllMiners = async () => {
+  try {
+    const response = await api.post('/mining/miners/reboot-all');
+    return response.data;
+  } catch (error) {
+    console.error('Error rebooting all miners:', error);
+    throw error;
+  }
+};
+
 // Get miner pools
 export const getMinerPools = async (minerId: string) => {
   try {

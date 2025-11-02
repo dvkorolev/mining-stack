@@ -37,7 +37,7 @@ import TuneIcon from '@mui/icons-material/Tune';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
-import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, discoverMiners as discoverMinersAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, getMinerPools } from '../services/api';
+import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, discoverMiners as discoverMinersAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
 
 interface MinerError {
   code: string;
@@ -286,6 +286,25 @@ const Miners: React.FC = () => {
     }
   };
 
+  // Reboot all miners
+  const handleRebootAll = async () => {
+    const totalMiners = miners.length;
+    
+    if (!window.confirm(`⚠️ REBOOT ALL ${totalMiners} MINERS?\n\nThis will temporarily interrupt mining on your entire farm.\n\nAre you sure?`)) {
+      return;
+    }
+
+    try {
+      const result = await rebootAllMiners();
+      const successCount = result.results.filter((r: any) => r.success).length;
+      alert(`Rebooted ${successCount} of ${totalMiners} miners`);
+      setSelectedMiners([]);
+    } catch (error) {
+      console.error('Error rebooting all miners:', error);
+      setError('Failed to reboot all miners');
+    }
+  };
+
   // Toggle miner selection
   const handleToggleSelect = (minerId: string) => {
     setSelectedMiners(prev =>
@@ -395,6 +414,15 @@ const Miners: React.FC = () => {
                 sx={{ mr: 1 }}
               >
                 Reboot Selected
+              </Button>
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<RestartAltIcon />}
+                onClick={handleRebootAll}
+                sx={{ mr: 1 }}
+              >
+                Reboot All ({miners.length})
               </Button>
               <Button
                 variant="outlined"

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { logger } from '../utils/logger';
 import { 
   getMiningStats, 
   getMinerStats,
@@ -230,6 +231,20 @@ router.post('/mining/miners/bulk/reboot', async (req, res, next) => {
       return res.status(400).json({ error: 'minerIds array is required' });
     }
     
+    const result = await rebootMiners(minerIds);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Reboot all miners
+router.post('/mining/miners/reboot-all', async (req, res, next) => {
+  try {
+    const allMiners = getMiners();
+    const minerIds = allMiners.map(m => m.name || m.ip);
+    
+    logger.info(`Reboot all requested: ${minerIds.length} miners`);
     const result = await rebootMiners(minerIds);
     res.json(result);
   } catch (error) {

@@ -21,6 +21,12 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
     const isWhatsminer = model.includes('m30') || model.includes('m50') || model.includes('m20');
     const isAntminer = model.includes('s19') || model.includes('s17') || model.includes('t19');
     
+    // Get credentials from config or use defaults
+    const defaultUsername = isWhatsminer ? 'admin' : 'root';
+    const defaultPassword = isWhatsminer ? 'admin' : 'root';
+    const username = miner.credentials?.username || defaultUsername;
+    const password = miner.credentials?.password || defaultPassword;
+    
     // Try miner-specific endpoints first
     const endpoints = [];
     
@@ -46,38 +52,22 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
 
     for (const endpoint of endpoints) {
       try {
-        logger.debug(`Trying ${endpoint.desc} for ${miner.name}`);
+        logger.debug(`Trying ${endpoint.desc} for ${miner.name} with credentials from config`);
         await axios({
           method: endpoint.method as 'get' | 'post',
           url: endpoint.url,
           timeout: 5000,
           auth: {
-            username: 'admin',
-            password: 'admin', // Try admin first
+            username,
+            password,
           },
         });
 
         logger.info(`Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);
         return { success: true, message: `Reboot command sent to ${miner.name}` };
       } catch (error) {
-        // Try with root credentials
-        try {
-          await axios({
-            method: endpoint.method as 'get' | 'post',
-            url: endpoint.url,
-            timeout: 5000,
-            auth: {
-              username: 'root',
-              password: 'root',
-            },
-          });
-          
-          logger.info(`Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);
-          return { success: true, message: `Reboot command sent to ${miner.name}` };
-        } catch (rootError) {
-          // Try next endpoint
-          continue;
-        }
+        // Try next endpoint
+        continue;
       }
     }
 

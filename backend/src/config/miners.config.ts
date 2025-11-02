@@ -39,12 +39,18 @@ export interface PoolConfig {
   password?: string;
 }
 
+export interface MinerCredentials {
+  username: string;
+  password: string;
+}
+
 export interface MinerConfig {
   ip: string;
   name?: string;  // Optional - will be auto-generated from IP if not provided
   model: string;
   alias?: string;
   owner?: string;  // Support for owner field
+  credentials?: MinerCredentials;  // Login credentials for miner web interface
   status?: 'online' | 'offline' | 'error';
   lastSeen?: Date;
   thresholds?: MinerThresholds;  // Per-miner threshold overrides
