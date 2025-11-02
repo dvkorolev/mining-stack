@@ -760,7 +760,7 @@ def push_metrics_to_backend(miners: List[Dict], collection_result: Dict):
         payload = {
             'miners': miners_data,
             'timestamp': int(time.time() * 1000),  # milliseconds
-            'collection_info': collection_result
+            'collection_info': collection_result if isinstance(collection_result, dict) else {}
         }
         
         response = requests.post(
