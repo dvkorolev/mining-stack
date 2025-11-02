@@ -89,10 +89,11 @@ class MinerAPI:
             # Parse JSON response (handle multiple responses from Antminer)
             response = self._parse_json_response(data.decode())
             
-            # Also get summary for additional data
+            # Also get summary and pools for additional data
             summary = await self._get_cgminer_summary()
+            pools = await self._get_cgminer_pools()
             
-            return self._parse_cgminer_response(response, summary)
+            return self._parse_cgminer_response(response, summary, pools)
             
         except asyncio.TimeoutError:
             logger.warning(f"cgminer API timeout for {self.ip} after 10s")
@@ -121,6 +122,28 @@ class MinerAPI:
             
         except Exception as e:
             logger.debug(f"cgminer summary failed for {self.ip}: {e}")
+            return None
+    
+    async def _get_cgminer_pools(self) -> Optional[Dict[str, Any]]:
+        """Get pool stats via cgminer API"""
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(self.ip, 4028),
+                timeout=10.0
+            )
+            
+            command = json.dumps({"command": "pools"})
+            writer.write(command.encode())
+            await writer.drain()
+            
+            data = await asyncio.wait_for(reader.read(65536), timeout=10.0)
+            writer.close()
+            await writer.wait_closed()
+            
+            return self._parse_json_response(data.decode())
+            
+        except Exception as e:
+            logger.debug(f"cgminer pools failed for {self.ip}: {e}")
             return None
     
     def _parse_json_response(self, data: str) -> Dict[str, Any]:
@@ -158,7 +181,7 @@ class MinerAPI:
             logger.debug(f"HTTP API failed for {self.ip}: {e}")
             return None
     
-    def _parse_cgminer_response(self, stats: Dict, summary: Optional[Dict]) -> Dict[str, Any]:
+    def _parse_cgminer_response(self, stats: Dict, summary: Optional[Dict], pools: Optional[Dict] = None) -> Dict[str, Any]:
         """Parse cgminer stats response into unified format"""
         result = {
             'ip': self.ip,
@@ -256,11 +279,22 @@ class MinerAPI:
                         result['hashrate_ghs'] = float(summary_data['GHS 5s'])
                         result['hashrate_ths'] = result['hashrate_ghs'] / 1000.0
                 
-                # Shares
+                # Shares - try multiple field names
+                # Antminer uses: Accepted, Rejected
+                # Whatsminer may use: accepted, rejected (lowercase) or other variants
                 if 'Accepted' in summary_data:
                     result['accepted_shares'] = int(summary_data['Accepted'])
+                elif 'accepted' in summary_data:
+                    result['accepted_shares'] = int(summary_data['accepted'])
+                
                 if 'Rejected' in summary_data:
                     result['rejected_shares'] = int(summary_data['Rejected'])
+                elif 'rejected' in summary_data:
+                    result['rejected_shares'] = int(summary_data['rejected'])
+                
+                # Log summary data for debugging if shares not found
+                if result['accepted_shares'] == 0 and result['rejected_shares'] == 0:
+                    logger.debug(f"No share data in summary for {self.ip}. Available fields: {list(summary_data.keys())}")
                 
                 # Power (Whatsminer specific)
                 if 'Power' in summary_data:
@@ -280,6 +314,29 @@ class MinerAPI:
                 # Uptime from summary (fallback)
                 if result['uptime'] == 0 and 'Elapsed' in summary_data:
                     result['uptime'] = int(summary_data['Elapsed'])
+            
+            # Get pool data for shares (Whatsminer provides this in pools command)
+            if pools and 'POOLS' in pools:
+                accepted_total = 0
+                rejected_total = 0
+                
+                for pool in pools['POOLS']:
+                    # Pool data may have Accepted/Rejected or accepted/rejected
+                    if 'Accepted' in pool:
+                        accepted_total += int(pool['Accepted'])
+                    elif 'accepted' in pool:
+                        accepted_total += int(pool['accepted'])
+                    
+                    if 'Rejected' in pool:
+                        rejected_total += int(pool['Rejected'])
+                    elif 'rejected' in pool:
+                        rejected_total += int(pool['rejected'])
+                
+                # Use pool data if we didn't get it from summary
+                if result['accepted_shares'] == 0 and accepted_total > 0:
+                    result['accepted_shares'] = accepted_total
+                if result['rejected_shares'] == 0 and rejected_total > 0:
+                    result['rejected_shares'] = rejected_total
             
         except Exception as e:
             logger.error(f"Error parsing cgminer response for {self.ip}: {e}")
