@@ -16,34 +16,75 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
 
     logger.info(`Rebooting miner: ${miner.name} (${miner.ip})`);
 
-    // Try different reboot endpoints based on miner type
-    const endpoints = [
-      { url: `http://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get' },  // Antminer
-      { url: `http://${miner.ip}/api/reboot`, method: 'post' },         // Whatsminer
-      { url: `http://${miner.ip}/reboot`, method: 'post' },             // Generic
-    ];
+    // Detect miner type from model
+    const model = miner.model?.toLowerCase() || '';
+    const isWhatsminer = model.includes('m30') || model.includes('m50') || model.includes('m20');
+    const isAntminer = model.includes('s19') || model.includes('s17') || model.includes('t19');
+    
+    // Try miner-specific endpoints first
+    const endpoints = [];
+    
+    if (isWhatsminer) {
+      // Whatsminer uses HTTP API on port 80
+      endpoints.push(
+        { url: `http://${miner.ip}/cgi-bin/luci/admin/network/iface_reconnect/lan`, method: 'get', desc: 'Whatsminer reboot' }
+      );
+    }
+    
+    if (isAntminer) {
+      // Antminer uses CGI
+      endpoints.push(
+        { url: `http://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Antminer reboot' }
+      );
+    }
+    
+    // Generic fallbacks
+    endpoints.push(
+      { url: `http://${miner.ip}/api/reboot`, method: 'post', desc: 'Generic API reboot' },
+      { url: `http://${miner.ip}/reboot`, method: 'post', desc: 'Generic reboot' }
+    );
 
     for (const endpoint of endpoints) {
       try {
+        logger.debug(`Trying ${endpoint.desc} for ${miner.name}`);
         await axios({
           method: endpoint.method as 'get' | 'post',
           url: endpoint.url,
           timeout: 5000,
           auth: {
-            username: 'root',
-            password: 'root', // Default credentials - should be configurable
+            username: 'admin',
+            password: 'admin', // Try admin first
           },
         });
 
-        logger.info(`Miner ${miner.name} reboot command sent successfully`);
+        logger.info(`Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);
         return { success: true, message: `Reboot command sent to ${miner.name}` };
       } catch (error) {
-        // Try next endpoint
-        continue;
+        // Try with root credentials
+        try {
+          await axios({
+            method: endpoint.method as 'get' | 'post',
+            url: endpoint.url,
+            timeout: 5000,
+            auth: {
+              username: 'root',
+              password: 'root',
+            },
+          });
+          
+          logger.info(`Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);
+          return { success: true, message: `Reboot command sent to ${miner.name}` };
+        } catch (rootError) {
+          // Try next endpoint
+          continue;
+        }
       }
     }
 
-    return { success: false, message: `Failed to reboot ${miner.name} - no compatible API found` };
+    return { 
+      success: false, 
+      message: `Failed to reboot ${miner.name} - no compatible API found. Try rebooting manually via miner web interface at http://${miner.ip}` 
+    };
   } catch (error) {
     logger.error(`Error rebooting miner ${minerId}:`, error);
     return { success: false, message: `Error rebooting miner: ${error}` };
