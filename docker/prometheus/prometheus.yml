@@ -15,18 +15,13 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # Node Exporter for system metrics
-  - job_name: "node"
+  # Mining metrics - Direct scrape from Python Collector Service (V2)
+  - job_name: "mining"
     static_configs:
-      - targets: ["node-exporter:9100"]
-
-  # Textfile collector for miner metrics
-  - job_name: "node-textfile"
-    static_configs:
-      - targets: ["node-exporter:9100"]
+      - targets: ["python-scheduler:8000"]
     metrics_path: /metrics
-    params:
-      collect[]: ["textfile"]
+    scrape_interval: 30s
+    scrape_timeout: 10s
 
   # Backend API metrics
   - job_name: "backend"

@@ -2,20 +2,17 @@
 # Uses pre-built images from GitHub Container Registry
 
 services:
-  # Python Scheduler Service - Runs metric collection scripts
+  # Python Collector Service V2 - Direct Prometheus metrics
   python-scheduler:
     image: ghcr.io/${GITHUB_REPOSITORY:-dvkorolev/mining-stack}/python-scheduler:${IMAGE_TAG:-latest}
     platform: linux/arm64
     ports:
       - "8000:8000"
     environment:
-      - METRICS_DIR=/metrics
       - MINERS_CONFIG=/app/etc/miners.yaml
       - COLLECTION_INTERVAL=2  # minutes
     volumes:
-      - metrics-data:/metrics
       - ./etc:/app/etc
-      - ./bin:/app/bin:ro
     networks:
       - mining-network
     restart: unless-stopped
@@ -122,31 +119,7 @@ services:
       - mining-network
     restart: unless-stopped
 
-  node-exporter:
-    image: prom/node-exporter:latest
-    platform: linux/arm64
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 128M
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-      - metrics-data:/textfile:ro  # Shared volume with python-scheduler
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.rootfs=/rootfs'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-      - '--collector.textfile.directory=/textfile'
-    networks:
-      - mining-network
-    restart: unless-stopped
+  # Note: node-exporter removed in V2 - metrics served directly by python-scheduler
 
   alertmanager:
     image: prom/alertmanager:latest
@@ -206,4 +179,4 @@ volumes:
   prometheus_data:
   grafana-storage:
   alertmanager_data:
-  metrics-data:  # Shared volume for Python scheduler → Node Exporter
+  # Note: metrics-data volume removed in V2 - metrics served directly from memory

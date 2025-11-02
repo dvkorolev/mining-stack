@@ -1,0 +1,360 @@
+{
+  "id": null,
+  "uid": "pool-network-quality",
+  "title": "Pool Network Quality",
+  "tags": ["mining", "network", "pools"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "1m",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": false,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "panels": [
+    {
+      "id": 1,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "type": "timeseries",
+      "title": "Pool Latency (Ping Average)",
+      "targets": [{
+        "expr": "pool_network_ping_avg_ms",
+        "legendFormat": "{{pool}}:{{port}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "auto",
+            "axisLabel": "Latency (ms)",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 50, "color": "yellow"},
+              {"value": 100, "color": "orange"},
+              {"value": 200, "color": "red"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["lastNotNull", "mean", "max"]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "type": "timeseries",
+      "title": "Pool Packet Loss",
+      "targets": [{
+        "expr": "pool_network_packet_loss_percent",
+        "legendFormat": "{{pool}}:{{port}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "auto",
+            "axisLabel": "Packet Loss (%)",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 1, "color": "yellow"},
+              {"value": 5, "color": "orange"},
+              {"value": 10, "color": "red"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["lastNotNull", "mean", "max"]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "type": "timeseries",
+      "title": "Pool Connection Time",
+      "targets": [{
+        "expr": "pool_network_connect_time_ms",
+        "legendFormat": "{{pool}}:{{port}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "auto",
+            "axisLabel": "Connection Time (ms)",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 100, "color": "yellow"},
+              {"value": 500, "color": "orange"},
+              {"value": 1000, "color": "red"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["lastNotNull", "mean", "max"]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "type": "stat",
+      "title": "Pool Reachability",
+      "targets": [{
+        "expr": "pool_network_reachable",
+        "legendFormat": "{{pool}}:{{port}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "value": "0", "text": "Unreachable", "color": "red"},
+            {"type": "value", "value": "1", "text": "Reachable", "color": "green"}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 1, "color": "green"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "background",
+        "orientation": "vertical",
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 5,
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 16},
+      "type": "table",
+      "title": "Pool Network Statistics",
+      "targets": [
+        {
+          "expr": "pool_network_reachable",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "pool_network_ping_avg_ms",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "pool_network_ping_min_ms",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        },
+        {
+          "expr": "pool_network_ping_max_ms",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        },
+        {
+          "expr": "pool_network_packet_loss_percent",
+          "format": "table",
+          "instant": true,
+          "refId": "E"
+        },
+        {
+          "expr": "pool_network_connect_time_ms",
+          "format": "table",
+          "instant": true,
+          "refId": "F"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {"Time": true, "__name__": true, "job": true, "instance": true},
+            "indexByName": {
+              "pool": 0,
+              "port": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5,
+              "Value #E": 6,
+              "Value #F": 7
+            },
+            "renameByName": {
+              "pool": "Pool",
+              "port": "Port",
+              "Value #A": "Reachable",
+              "Value #B": "Ping Avg (ms)",
+              "Value #C": "Ping Min (ms)",
+              "Value #D": "Ping Max (ms)",
+              "Value #E": "Packet Loss (%)",
+              "Value #F": "Connect Time (ms)"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Reachable"},
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {"type": "value", "value": "0", "text": "❌ No"},
+                  {"type": "value", "value": "1", "text": "✅ Yes"}
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {"type": "color-background"}
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "red"},
+                    {"value": 1, "color": "green"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Packet Loss (%)"},
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {"type": "color-background"}
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "green"},
+                    {"value": 1, "color": "yellow"},
+                    {"value": 5, "color": "red"}
+                  ]
+                }
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Ping Avg (ms)"},
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {"type": "color-background"}
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "green"},
+                    {"value": 50, "color": "yellow"},
+                    {"value": 100, "color": "red"}
+                  ]
+                }
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+groups:
+  - name: pool_network
+    interval: 30s
+    rules:
+      # Critical: Pool unreachable
+      - alert: PoolUnreachable
+        expr: pool_network_reachable == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: network
+        annotations:
+          summary: "Mining pool {{ $labels.pool }} is unreachable"
+          description: "Pool {{ $labels.pool }}:{{ $labels.port }} has been unreachable for 5 minutes"
+      
+      # Critical: High packet loss
+      - alert: PoolHighPacketLoss
+        expr: pool_network_packet_loss_percent > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: network
+        annotations:
+          summary: "High packet loss to pool {{ $labels.pool }}"
+          description: "Pool {{ $labels.pool }}:{{ $labels.port }} has {{ $value }}% packet loss"
+      
+      # Warning: Elevated latency
+      - alert: PoolHighLatency
+        expr: pool_network_ping_avg_ms > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "High latency to pool {{ $labels.pool }}"
+          description: "Pool {{ $labels.pool }}:{{ $labels.port }} latency is {{ $value }}ms (threshold: 100ms)"
+      
+      # Warning: Packet loss detected
+      - alert: PoolPacketLoss
+        expr: pool_network_packet_loss_percent > 1 and pool_network_packet_loss_percent <= 10
+        for: 10m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "Packet loss detected to pool {{ $labels.pool }}"
+          description: "Pool {{ $labels.pool }}:{{ $labels.port }} has {{ $value }}% packet loss"
+      
+      # Warning: Slow connection
+      - alert: PoolSlowConnection
+        expr: pool_network_connect_time_ms > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "Slow connection to pool {{ $labels.pool }}"
+          description: "Pool {{ $labels.pool }}:{{ $labels.port }} connection time is {{ $value }}ms"
+      
+      # Warning: DNS resolution failure
+      - alert: PoolDNSFailure
+        expr: pool_network_dns_resolved == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "DNS resolution failed for pool {{ $labels.pool }}"
+          description: "Cannot resolve hostname {{ $labels.pool }}"

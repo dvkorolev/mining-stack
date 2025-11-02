@@ -96,415 +96,103 @@ collection_duration = Gauge('mining_collection_duration_seconds', 'Time taken fo
 collection_success = Gauge('mining_collection_success', 'Collection success status', ['collector'])
 collection_timestamp = Gauge('mining_collection_timestamp_seconds', 'Last collection timestamp', ['collector'])
 
-# Miner State Metrics (NEW)
-miner_state = Gauge('miner_state', 'Miner state (0=faulty, 1=idle, 2=mining)', ['ip', 'name', 'model'])
-miner_hashrate_mhs = Gauge('miner_hashrate_mhs', 'Miner hashrate in MH/s (SCRYPT)', ['ip', 'name', 'model'])
-
 # ============================================================================
 # DATA COLLECTION FUNCTIONS
 # ============================================================================
 
-# Helper functions for gap detection and merging
-
-def _is_scrypt_miner(model: str) -> bool:
-    """Detect if miner is SCRYPT-based"""
-    model_lower = model.lower()
-    scrypt_keywords = ['dg1', 'l3', 'l7', 'scrypt', 'litecoin', 'doge']
-    return any(keyword in model_lower for keyword in scrypt_keywords)
-
-
-def _check_data_gaps(pyasic_data: Dict, model: str) -> Dict[str, bool]:
-    """
-    Check which metrics are missing from PyASIC data
-    Returns dict of gaps: {'power': True, 'rejected': True, ...}
-    """
-    gaps = {
-        'power': False,
-        'rejected': False,
-        'temperature': False,
-    }
-    
-    # Check power (common issue with Antminers)
-    if not pyasic_data.get('power') or pyasic_data.get('power') == 0:
-        # Antminers never report power via PyASIC
-        if 'antminer' in model.lower() or 's19' in model.lower() or 's17' in model.lower():
-            gaps['power'] = True
-        elif pyasic_data.get('hashrate', 0) > 0:  # Mining but no power = gap
-            gaps['power'] = True
-    
-    # Check rejected shares (common issue with Whatsminers)
-    pools = pyasic_data.get('pools', [])
-    if pools:
-        total_rejected = sum(getattr(p, 'rejected', 0) or 0 for p in pools)
-        total_accepted = sum(getattr(p, 'accepted', 0) or 0 for p in pools)
-        # If mining with accepted shares but 0 rejected, likely missing data
-        if total_accepted > 100 and total_rejected == 0:
-            if 'whatsminer' in model.lower() or 'm30' in model.lower() or 'm50' in model.lower():
-                gaps['rejected'] = True
-    
-    # Check temperature
-    if not pyasic_data.get('temperature') or pyasic_data.get('temperature') == 0:
-        if pyasic_data.get('hashrate', 0) > 0:  # Mining but no temp = gap
-            gaps['temperature'] = True
-    
-    return gaps
-
-
-def _get_max_temp(data) -> float:
-    """Get max temperature from PyASIC data"""
-    if not data or not hasattr(data, 'hashboards') or not data.hashboards:
-        return 0
-    
-    all_temps = [b.chip_temp for b in data.hashboards if b.chip_temp is not None] + \
-                [b.temp for b in data.hashboards if b.temp is not None]
-    
-    return max(all_temps) if all_temps else 0
-
-
-async def _cgminer_command(ip: str, command: str) -> Optional[Dict]:
-    """Send cgminer API command"""
-    try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, 4028),
-            timeout=10.0
-        )
-        
-        cmd = json.dumps({"command": command})
-        writer.write(cmd.encode())
-        await writer.drain()
-        
-        data = await asyncio.wait_for(reader.read(65536), timeout=10.0)
-        writer.close()
-        await writer.wait_closed()
-        
-        # Parse JSON (handle Antminer's multiple responses)
-        response_str = data.decode().strip('\x00')
-        try:
-            return json.loads(response_str)
-        except json.JSONDecodeError:
-            # Try to extract first JSON object
-            decoder = json.JSONDecoder()
-            obj, _ = decoder.raw_decode(response_str)
-            return obj
-            
-    except Exception:
-        return None
-
-
-def _parse_cgminer_response(stats: Dict, summary: Optional[Dict], pools: Optional[Dict], is_scrypt: bool) -> Dict:
-    """Parse cgminer response into unified format"""
-    result = {
-        'hashrate': 0,
-        'power': 0,
-        'temperature': 0,
-        'pools': [],
-    }
-    
-    # Parse stats for temperature
-    if 'STATS' in stats and len(stats['STATS']) > 1:
-        stat_data = stats['STATS'][1]
-        
-        # Temperature
-        temps = []
-        for i in range(1, 20):
-            for temp_key in [f'temp{i}', f'temp2_{i}', f'temp_chip{i}']:
-                if temp_key in stat_data and stat_data[temp_key]:
-                    temp = float(stat_data[temp_key])
-                    if temp > 0:
-                        temps.append(temp)
-        
-        if temps:
-            result['temperature'] = max(temps)
-    
-    # Parse summary for power and hashrate
-    if summary:
-        summary_data = None
-        if 'SUMMARY' in summary and len(summary['SUMMARY']) > 0:
-            summary_data = summary['SUMMARY'][0]
-        elif 'Msg' in summary and isinstance(summary['Msg'], dict):
-            summary_data = summary['Msg']
-        
-        if summary_data:
-            # Power (Whatsminer specific)
-            if 'Power' in summary_data:
-                result['power'] = float(summary_data['Power'])
-            
-            # Hashrate
-            if 'MHS av' in summary_data:
-                mhs = float(summary_data['MHS av'])
-                result['hashrate'] = mhs if is_scrypt else (mhs / 1000000.0)
-            elif 'GHS av' in summary_data:
-                result['hashrate'] = float(summary_data['GHS av']) / 1000.0
-    
-    # Parse pools for rejected shares
-    if pools and 'POOLS' in pools:
-        pool_list = []
-        for pool in pools['POOLS']:
-            accepted = pool.get('Accepted', pool.get('accepted', 0))
-            rejected = pool.get('Rejected', pool.get('rejected', 0))
-            pool_list.append({
-                'accepted': int(accepted),
-                'rejected': int(rejected)
-            })
-        result['pools'] = pool_list
-    
-    return result
-
-
-def _merge_data(pyasic_data: Dict, cgminer_data: Dict, gaps: Dict[str, bool]) -> Dict:
-    """Merge PyASIC and cgminer data, using cgminer to fill gaps"""
-    merged = pyasic_data.copy()
-    
-    # Fill power gap (Antminers)
-    if gaps.get('power') and cgminer_data.get('power', 0) > 0:
-        merged['power'] = cgminer_data['power']
-        logger.debug(f"Filled power gap: {cgminer_data['power']}W from cgminer")
-    
-    # Fill rejected shares gap (Whatsminers)
-    if gaps.get('rejected'):
-        cgminer_pools = cgminer_data.get('pools', [])
-        if cgminer_pools:
-            # Replace pool data with cgminer's more complete data
-            merged['pools'] = cgminer_pools
-            total_rejected = sum(p.get('rejected', 0) for p in cgminer_pools)
-            logger.debug(f"Filled rejected shares gap: {total_rejected} from cgminer")
-    
-    # Fill temperature gap
-    if gaps.get('temperature') and cgminer_data.get('temperature', 0) > 0:
-        merged['temperature'] = cgminer_data['temperature']
-        logger.debug(f"Filled temperature gap: {cgminer_data['temperature']}°C from cgminer")
-    
-    return merged
-
-
 async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
-    """
-    Batch collection with gap filling
-    Prometheus will timestamp all metrics when it scrapes /metrics
-    """
-    logger.info("Starting batch collection with gap filling...")
+    """Collect metrics using pyasic library"""
+    logger.info("Starting pyasic collection...")
     start_time = time.time()
     
     sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     
-    # Step 1: Batch collect PyASIC from ALL miners
-    async def collect_pyasic_one(miner_config: Dict):
+    async def get_miner_data(miner_config: Dict):
         async with sem:
             ip = miner_config['ip']
             name = miner_config['name']
-            model = miner_config['model']
+            model = miner_config['model'].replace(" ", "_")
             
             try:
-                miner_obj = await asyncio.wait_for(get_miner(ip), timeout=15)
-                if not miner_obj:
+                miner = await asyncio.wait_for(get_miner(ip), timeout=15)
+                if not miner:
+                    miner_scrape_success.labels(ip=ip, name=name, model=model).set(0)
                     return None
                 
-                data = await asyncio.wait_for(miner_obj.get_data(), timeout=15)
+                data = await asyncio.wait_for(miner.get_data(), timeout=15)
                 if not data:
+                    miner_scrape_success.labels(ip=ip, name=name, model=model).set(0)
                     return None
                 
-                # Convert to dict
-                pyasic_data = {
-                    'hashrate': data.hashrate,
-                    'power': data.wattage,
-                    'temperature': _get_max_temp(data),
-                    'is_mining': data.is_mining,
-                    'uptime': data.uptime,
-                    'efficiency': data.efficiency,
-                    'fault_light': data.fault_light,
-                    'errors': data.errors,
-                    'hashboards': data.hashboards,
-                    'fans': data.fans,
-                    'fan_psu': data.fan_psu,
-                    'pools': data.pools,
-                }
+                # Update general metrics
+                miner_hashrate.labels(ip=ip, name=name, model=model).set(data.hashrate or 0)
+                miner_power.labels(ip=ip, name=name, model=model).set(data.wattage or 0)
+                miner_is_mining.labels(ip=ip, name=name, model=model).set(1 if data.is_mining else 0)
+                miner_uptime.labels(ip=ip, name=name, model=model).set(data.uptime or 0)
+                miner_efficiency.labels(ip=ip, name=name, model=model).set(data.efficiency or 0)
+                miner_fault_light.labels(ip=ip, name=name, model=model).set(1 if data.fault_light else 0)
+                miner_errors_count.labels(ip=ip, name=name, model=model).set(len(data.errors) if data.errors else 0)
                 
-                # Check for gaps
-                gaps = _check_data_gaps(pyasic_data, model)
+                # Calculate max temperature
+                temp_max_val = 0
+                if data.hashboards:
+                    all_temps = [b.chip_temp for b in data.hashboards if b.chip_temp is not None] + \
+                               [b.temp for b in data.hashboards if b.temp is not None]
+                    if all_temps:
+                        temp_max_val = max(all_temps)
+                miner_temp_max.labels(ip=ip, name=name, model=model).set(temp_max_val)
                 
-                return {
-                    'data': pyasic_data,
-                    'has_gaps': any(gaps.values()),
-                    'gaps': gaps,
-                    'method': 'pyasic'
-                }
+                # Update board metrics
+                if data.hashboards:
+                    for board in data.hashboards:
+                        slot = str(board.slot)
+                        miner_board_hashrate.labels(ip=ip, name=name, model=model, slot=slot).set(board.hashrate or 0)
+                        
+                        board_temp = 0
+                        if board.chip_temp is not None:
+                            board_temp = board.chip_temp
+                        elif board.temp is not None:
+                            board_temp = board.temp
+                        miner_board_temp.labels(ip=ip, name=name, model=model, slot=slot).set(board_temp)
+                        
+                        miner_board_chips_count.labels(ip=ip, name=name, model=model, slot=slot).set(board.chips or 0)
+                        miner_board_chips_expected.labels(ip=ip, name=name, model=model, slot=slot).set(board.expected_chips or 0)
+                
+                # Update fan metrics
+                if data.fans:
+                    for i, fan in enumerate(data.fans):
+                        miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id=str(i)).set(fan.speed or 0)
+                
+                if data.fan_psu:
+                    miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id='psu').set(data.fan_psu[0].speed or 0)
+                
+                # Update pool metrics
+                if data.pools:
+                    accepted = sum(p.accepted for p in data.pools if p.accepted is not None)
+                    rejected = sum(p.rejected for p in data.pools if p.rejected is not None)
+                    miner_pool_accepted.labels(ip=ip, name=name, model=model).set(accepted)
+                    miner_pool_rejected.labels(ip=ip, name=name, model=model).set(rejected)
+                
+                miner_scrape_success.labels(ip=ip, name=name, model=model).set(1)
+                return {'ip': ip, 'success': True}
                 
             except Exception as e:
-                logger.debug(f"PyASIC failed for {ip}: {e}")
-                return None
+                logger.warning(f"Failed to collect from {ip}: {e}")
+                miner_scrape_success.labels(ip=ip, name=name, model=model).set(0)
+                return {'ip': ip, 'success': False, 'error': str(e)}
     
-    # Collect from all miners in parallel
-    tasks = [collect_pyasic_one(miner) for miner in miners]
-    pyasic_results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # Step 2: Identify miners with gaps
-    miners_with_gaps = []
-    for i, result in enumerate(pyasic_results):
-        if result and result.get('has_gaps'):
-            miners_with_gaps.append({
-                'index': i,
-                'miner': miners[i],
-                'gaps': result['gaps'],
-                'pyasic_data': result['data']
-            })
-    
-    # Step 3: Batch collect cgminer ONLY for miners with gaps
-    if miners_with_gaps:
-        logger.info(f"Filling gaps for {len(miners_with_gaps)} miners...")
-        
-        async def collect_cgminer_one(gap_info: Dict):
-            async with sem:
-                miner = gap_info['miner']
-                ip = miner['ip']
-                
-                try:
-                    stats = await _cgminer_command(ip, "stats")
-                    summary = await _cgminer_command(ip, "summary")
-                    pools = await _cgminer_command(ip, "pools")
-                    
-                    if not stats:
-                        return None
-                    
-                    is_scrypt = _is_scrypt_miner(miner['model'])
-                    return _parse_cgminer_response(stats, summary, pools, is_scrypt)
-                    
-                except Exception as e:
-                    logger.debug(f"cgminer failed for {ip}: {e}")
-                    return None
-        
-        tasks = [collect_cgminer_one(gap_info) for gap_info in miners_with_gaps]
-        cgminer_results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Step 4: Merge results
-        for i, cgminer_result in enumerate(cgminer_results):
-            if cgminer_result:
-                gap_info = miners_with_gaps[i]
-                merged = _merge_data(
-                    gap_info['pyasic_data'],
-                    cgminer_result,
-                    gap_info['gaps']
-                )
-                pyasic_results[gap_info['index']]['data'] = merged
-                pyasic_results[gap_info['index']]['method'] = 'merged'
-    
-    # Step 5: Update ALL metrics (Prometheus will add timestamp when it scrapes)
-    success_count = 0
-    for i, result in enumerate(pyasic_results):
-        if result and result.get('data'):
-            miner = miners[i]
-            _update_metrics(
-                result['data'],
-                miner['ip'],
-                miner['name'],
-                miner['model']
-            )
-            success_count += 1
-        else:
-            # Mark as failed
-            miner = miners[i]
-            miner_scrape_success.labels(ip=miner['ip'], name=miner['name'], model=miner['model']).set(0)
-            miner_state.labels(ip=miner['ip'], name=miner['name'], model=miner['model']).set(0)
+    tasks = [get_miner_data(miner) for miner in miners]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     
     duration = time.time() - start_time
+    success_count = sum(1 for r in results if r and r.get('success'))
     
-    collection_duration.labels(collector='hybrid').set(duration)
-    collection_success.labels(collector='hybrid').set(1 if success_count > 0 else 0)
-    collection_timestamp.labels(collector='hybrid').set(time.time())
+    collection_duration.labels(collector='pyasic').set(duration)
+    collection_success.labels(collector='pyasic').set(1 if success_count > 0 else 0)
+    collection_timestamp.labels(collector='pyasic').set(time.time())
     
-    logger.info(f"✓ Batch collection: {success_count}/{len(miners)} miners in {duration:.1f}s")
-    logger.info(f"  Miners with gaps filled: {len(miners_with_gaps)}")
-    
-    return {
-        'success': True,
-        'miners_collected': success_count,
-        'duration': duration,
-        'gaps_filled': len(miners_with_gaps)
-    }
-
-
-def _update_metrics(data: Dict, ip: str, name: str, model: str):
-    """Update Prometheus metrics (Prometheus adds timestamp when scraping)"""
-    is_scrypt = _is_scrypt_miner(model)
-    model = model.replace(" ", "_")
-    
-    # Determine state
-    hashrate = data.get('hashrate', 0) or 0
-    is_mining = data.get('is_mining', True)
-    
-    if hashrate == 0 and not is_mining:
-        state = 1  # idle
-    elif hashrate > 0:
-        state = 2  # mining
-    else:
-        state = 0  # faulty
-    
-    # Update metrics
-    miner_scrape_success.labels(ip=ip, name=name, model=model).set(1)
-    miner_state.labels(ip=ip, name=name, model=model).set(state)
-    
-    # Hashrate (handle SCRYPT vs SHA-256)
-    if is_scrypt:
-        miner_hashrate_mhs.labels(ip=ip, name=name, model=model).set(hashrate)
-        miner_hashrate.labels(ip=ip, name=name, model=model).set(hashrate / 1000000.0)
-    else:
-        miner_hashrate.labels(ip=ip, name=name, model=model).set(hashrate)
-    
-    miner_power.labels(ip=ip, name=name, model=model).set(data.get('power', 0) or 0)
-    miner_temp_max.labels(ip=ip, name=name, model=model).set(data.get('temperature', 0) or 0)
-    miner_is_mining.labels(ip=ip, name=name, model=model).set(1 if is_mining else 0)
-    miner_uptime.labels(ip=ip, name=name, model=model).set(data.get('uptime', 0) or 0)
-    
-    # Efficiency
-    efficiency = data.get('efficiency', 0) or 0
-    if efficiency == 0 and hashrate > 0 and data.get('power', 0) and data.get('power') > 0:
-        efficiency = data['power'] / hashrate if hashrate > 0 else 0
-    miner_efficiency.labels(ip=ip, name=name, model=model).set(efficiency)
-    
-    miner_fault_light.labels(ip=ip, name=name, model=model).set(1 if data.get('fault_light') else 0)
-    
-    errors = data.get('errors', [])
-    miner_errors_count.labels(ip=ip, name=name, model=model).set(len(errors) if errors else 0)
-    
-    # Fans
-    fans = data.get('fans', [])
-    if fans:
-        for i, fan in enumerate(fans):
-            if hasattr(fan, 'speed'):
-                miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id=str(i)).set(fan.speed or 0)
-    
-    fan_psu = data.get('fan_psu')
-    if fan_psu:
-        miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id='psu').set(fan_psu[0].speed or 0)
-    
-    # Pools
-    pools = data.get('pools', [])
-    if pools:
-        if hasattr(pools[0], 'accepted'):
-            # PyASIC pool objects
-            total_accepted = sum(p.accepted for p in pools if p.accepted is not None)
-            total_rejected = sum(p.rejected for p in pools if p.rejected is not None)
-        else:
-            # Dict pool data from cgminer
-            total_accepted = sum(p.get('accepted', 0) for p in pools)
-            total_rejected = sum(p.get('rejected', 0) for p in pools)
-        
-        miner_pool_accepted.labels(ip=ip, name=name, model=model).set(total_accepted)
-        miner_pool_rejected.labels(ip=ip, name=name, model=model).set(total_rejected)
-    
-    # Hashboards (if available from PyASIC)
-    hashboards = data.get('hashboards', [])
-    if hashboards and hasattr(hashboards[0], 'slot'):
-        for board in hashboards:
-            slot = str(board.slot)
-            miner_board_hashrate.labels(ip=ip, name=name, model=model, slot=slot).set(board.hashrate or 0)
-            
-            board_temp = board.chip_temp if board.chip_temp is not None else (board.temp or 0)
-            miner_board_temp.labels(ip=ip, name=name, model=model, slot=slot).set(board_temp)
-            
-            if hasattr(board, 'chips'):
-                miner_board_chips_count.labels(ip=ip, name=name, model=model, slot=slot).set(board.chips or 0)
-            if hasattr(board, 'expected_chips'):
-                miner_board_chips_expected.labels(ip=ip, name=name, model=model, slot=slot).set(board.expected_chips or 0)
+    logger.info(f"✓ PyASIC collection complete: {success_count}/{len(miners)} miners in {duration:.1f}s")
+    return {'success': True, 'miners_collected': success_count, 'duration': duration}
 
 
 async def collect_pool_network_metrics(miners: List[Dict]) -> Dict[str, Any]:

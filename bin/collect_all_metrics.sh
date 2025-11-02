@@ -51,12 +51,19 @@ PYASIC_PID=$!
 run_collector "universal" "$SCRIPT_DIR/universal_miner_collector.py" 60 &
 UNIVERSAL_PID=$!
 
-# Wait for both to complete
+# Start pool network monitor in background (one-time mode)
+RUN_ONCE=true run_collector "pool_network" "$SCRIPT_DIR/pool_network_monitor.py" 60 &
+POOL_NETWORK_PID=$!
+
+# Wait for all to complete
 wait $PYASIC_PID
 PYASIC_EXIT=$?
 
 wait $UNIVERSAL_PID
 UNIVERSAL_EXIT=$?
+
+wait $POOL_NETWORK_PID
+POOL_NETWORK_EXIT=$?
 
 # Summary
 echo ""
@@ -64,6 +71,7 @@ echo "=== Collection Summary ==="
 echo "Timestamp: $TIMESTAMP"
 echo "pyasic collector: $([ $PYASIC_EXIT -eq 0 ] && echo '✓ SUCCESS' || echo '✗ FAILED')"
 echo "universal collector: $([ $UNIVERSAL_EXIT -eq 0 ] && echo '✓ SUCCESS' || echo '✗ FAILED')"
+echo "pool network monitor: $([ $POOL_NETWORK_EXIT -eq 0 ] && echo '✓ SUCCESS' || echo '✗ FAILED')"
 
 # Check output files
 if [ -f "$PROJECT_ROOT/textfile/pyasic_metrics.prom" ]; then
@@ -76,10 +84,15 @@ if [ -f "$PROJECT_ROOT/textfile/universal_metrics.prom" ]; then
     echo "universal metrics: $UNIVERSAL_LINES lines"
 fi
 
+if [ -f "$PROJECT_ROOT/textfile/pool_network_metrics.prom" ]; then
+    POOL_NETWORK_LINES=$(wc -l < "$PROJECT_ROOT/textfile/pool_network_metrics.prom")
+    echo "pool network metrics: $POOL_NETWORK_LINES lines"
+fi
+
 echo "=========================="
 
-# Exit with error if either collector failed
-if [ $PYASIC_EXIT -ne 0 ] || [ $UNIVERSAL_EXIT -ne 0 ]; then
+# Exit with error if any collector failed
+if [ $PYASIC_EXIT -ne 0 ] || [ $UNIVERSAL_EXIT -ne 0 ] || [ $POOL_NETWORK_EXIT -ne 0 ]; then
     exit 1
 fi
 
