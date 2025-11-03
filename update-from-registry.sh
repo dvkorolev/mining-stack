@@ -60,13 +60,13 @@ echo ""
 # Navigate to project directory
 cd "$PROJECT_DIR" || exit 1
 
-# Load environment variables
-if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
+# Check if .env exists (Docker Compose will load it automatically)
+if [ ! -f .env ]; then
+    echo -e "${YELLOW}⚠️  No .env file found, using defaults${NC}"
 fi
 
-# Use provided tag or default from .env
-IMAGE_TAG="${IMAGE_TAG:-${IMAGE_TAG:-latest}}"
+# Use provided tag or default
+IMAGE_TAG="${IMAGE_TAG:-latest}"
 
 echo -e "${GREEN}Repository:${NC} $GITHUB_REPOSITORY"
 echo -e "${GREEN}Tag:${NC} $IMAGE_TAG"
@@ -118,8 +118,16 @@ if [ -d ".git" ] && [ "$SKIP_GIT" = false ]; then
                 echo -e "${GREEN}✓ Configuration restored${NC}"
                 echo -e "${GREEN}✓ Updated: docker-compose, python-scheduler, bin scripts${NC}"
             else
-                echo -e "${RED}✗ Failed to pull updates${NC}"
-                echo -e "${YELLOW}   Continuing with existing files...${NC}"
+                echo -e "${RED}✗ CRITICAL: Failed to pull updates${NC}"
+                echo -e "${RED}   Aborting to prevent inconsistent state${NC}"
+                
+                # Restore backups to maintain consistency
+                echo -e "${BLUE}🔄 Restoring original configuration...${NC}"
+                [ -f .env.backup ] && mv .env.backup .env
+                [ -f etc/miners.yaml.backup ] && mv etc/miners.yaml.backup etc/miners.yaml
+                
+                echo -e "${YELLOW}   System state preserved. Please check your network and try again.${NC}"
+                exit 1
             fi
         fi
     else
@@ -150,13 +158,10 @@ else
     docker compose -f docker-compose.prod.yml pull
 fi
 
-# Stop containers
+# Stop containers and remove old images for this project only
 echo -e "${BLUE}🛑 Stopping containers...${NC}"
-docker compose -f docker-compose.prod.yml down
-
-# Clean up
-echo -e "${BLUE}🧹 Cleaning up old Docker resources...${NC}"
-docker system prune -f
+echo -e "${BLUE}🧹 Removing old project images...${NC}"
+docker compose -f docker-compose.prod.yml down --rmi local
 
 # Fix permissions for data directories
 echo -e "${BLUE}🔐 Ensuring data directory permissions...${NC}"
