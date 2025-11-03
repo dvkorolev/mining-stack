@@ -229,20 +229,36 @@ async def _cgminer_command(ip: str, command: str) -> Optional[Dict]:
         return None
 
 
-def _parse_cgminer_response(stats: Dict, summary: Optional[Dict], pools: Optional[Dict], is_scrypt: bool) -> Dict:
+def _parse_cgminer_response(stats: Dict, summary: Optional[Dict], pools: Optional[Dict], devs: Optional[Dict], is_scrypt: bool) -> Dict:
     """Parse cgminer response into unified format"""
     result = {
         'hashrate': 0,
         'power': 0,
         'temperature': 0,
         'pools': [],
+        'board_temps': [],  # Per-board temperatures from DEVS
     }
     
-    # Parse stats for temperature
-    if 'STATS' in stats and len(stats['STATS']) > 1:
+    # Parse DEVS for per-board temperatures (Whatsminer: DEVS[*].Temperature)
+    # This is more reliable than chip temps which can be 0 on some firmwares
+    if devs and 'DEVS' in devs:
+        board_temps = []
+        for dev in devs['DEVS']:
+            # Whatsminer uses 'Temperature' field
+            if 'Temperature' in dev and dev['Temperature']:
+                temp = float(dev['Temperature'])
+                if temp > 0:
+                    board_temps.append(temp)
+        
+        if board_temps:
+            result['board_temps'] = board_temps
+            result['temperature'] = max(board_temps)
+    
+    # Fallback: Parse stats for temperature (chip temps - less reliable)
+    if result['temperature'] == 0 and 'STATS' in stats and len(stats['STATS']) > 1:
         stat_data = stats['STATS'][1]
         
-        # Temperature
+        # Temperature from chip temp fields
         temps = []
         for i in range(1, 20):
             for temp_key in [f'temp{i}', f'temp2_{i}', f'temp_chip{i}']:
@@ -253,6 +269,17 @@ def _parse_cgminer_response(stats: Dict, summary: Optional[Dict], pools: Optiona
         
         if temps:
             result['temperature'] = max(temps)
+    
+    # Final fallback: SUMMARY.Temperature (Whatsminer aggregate)
+    if result['temperature'] == 0 and summary:
+        summary_data = None
+        if 'SUMMARY' in summary and len(summary['SUMMARY']) > 0:
+            summary_data = summary['SUMMARY'][0]
+        
+        if summary_data and 'Temperature' in summary_data:
+            temp = float(summary_data['Temperature'])
+            if temp > 0:
+                result['temperature'] = temp
     
     # Parse summary for power and hashrate
     if summary:
@@ -431,12 +458,13 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     stats = await _cgminer_command(ip, "stats")
                     summary = await _cgminer_command(ip, "summary")
                     pools = await _cgminer_command(ip, "pools")
+                    devs = await _cgminer_command(ip, "devs")  # Get per-board data
                     
                     if not stats:
                         return None
                     
                     is_scrypt = _is_scrypt_miner(miner['model'])
-                    return _parse_cgminer_response(stats, summary, pools, is_scrypt)
+                    return _parse_cgminer_response(stats, summary, pools, devs, is_scrypt)
                     
                 except Exception as e:
                     logger.debug(f"cgminer failed for {ip}: {e}")
