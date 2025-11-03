@@ -334,20 +334,20 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 }
                 
             except asyncio.TimeoutError:
-                logger.debug(f"PyASIC timeout for {ip}")
-                return {'error': 'timeout', 'error_type': 'timeout'}
+                logger.warning(f"⏱️  Timeout collecting from {name} ({ip}) - miner may be hung or network issue")
+                return {'error': 'timeout', 'error_type': 'timeout', 'error_detail': 'Connection timed out after 15s'}
             except ConnectionRefusedError:
-                logger.debug(f"Connection refused for {ip} (API disabled)")
-                return {'error': 'connection_refused', 'error_type': 'refused'}
+                logger.warning(f"🚫 Connection refused by {name} ({ip}) - API may be disabled")
+                return {'error': 'connection_refused', 'error_type': 'refused', 'error_detail': 'Miner API is disabled or port blocked'}
             except OSError as e:
                 if 'refused' in str(e).lower():
-                    logger.debug(f"Connection refused for {ip}: {e}")
-                    return {'error': 'connection_refused', 'error_type': 'refused'}
-                logger.debug(f"PyASIC OS error for {ip}: {e}")
-                return {'error': str(e), 'error_type': 'other'}
+                    logger.warning(f"🚫 Connection refused by {name} ({ip}): {e}")
+                    return {'error': 'connection_refused', 'error_type': 'refused', 'error_detail': str(e)}
+                logger.warning(f"⚠️  OS error collecting from {name} ({ip}): {e}")
+                return {'error': str(e), 'error_type': 'other', 'error_detail': f'OS error: {e}'}
             except Exception as e:
-                logger.debug(f"PyASIC failed for {ip}: {e}")
-                return {'error': str(e), 'error_type': 'other'}
+                logger.error(f"❌ Unexpected error collecting from {name} ({ip}): {type(e).__name__}: {e}")
+                return {'error': str(e), 'error_type': 'other', 'error_detail': f'{type(e).__name__}: {e}'}
     
     # Collect from all miners in parallel
     tasks = [collect_pyasic_one(miner) for miner in miners]
@@ -508,8 +508,26 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
     collection_success.labels(collector='hybrid').set(1 if success_count > 0 else 0)
     collection_timestamp.labels(collector='hybrid').set(time.time())
     
+    # Count failure types for diagnostic logging
+    timeout_count = sum(1 for m in miners_data if m.get('scrape_status') == 0)
+    refused_count = sum(1 for m in miners_data if m.get('scrape_status') == -1)
+    error_count = sum(1 for m in miners_data if m.get('scrape_status') == -2)
+    partial_count = sum(1 for m in miners_data if m.get('scrape_status') == 1)
+    
     logger.info(f"✓ Batch collection: {success_count}/{len(miners)} miners in {duration:.1f}s")
     logger.info(f"  Miners with gaps filled: {len(miners_with_gaps)}")
+    
+    if timeout_count > 0 or refused_count > 0 or error_count > 0:
+        logger.warning(f"  Failed miners breakdown:")
+        if timeout_count > 0:
+            logger.warning(f"    ⏱️  Timeouts: {timeout_count}")
+        if refused_count > 0:
+            logger.warning(f"    🚫 Connection refused: {refused_count}")
+        if error_count > 0:
+            logger.warning(f"    ❌ Other errors: {error_count}")
+    
+    if partial_count > 0:
+        logger.info(f"  ⚠️  Partial success (gaps not filled): {partial_count}")
     
     return {
         'success': True,
@@ -797,22 +815,76 @@ def load_miners_config() -> List[Dict]:
 
 
 def clear_miner_metrics(ip: str, name: str, model: str):
-    """Clear all metrics for a specific miner (for stale data prevention)"""
+    """
+    Clear all metrics for a specific miner (for stale data prevention)
+    
+    Uses remove() to completely delete metric series from Prometheus,
+    preventing accumulation of stale 0 values in the time-series database.
+    Falls back to setting 0 if metric doesn't exist yet.
+    """
     model = model.replace(" ", "_")
     
-    # Clear all miner metrics by setting to 0 or -2 (to indicate no data yet)
-    miner_scrape_status.labels(ip=ip, name=name, model=model).set(-2)  # -2 = not yet collected
-    miner_state.labels(ip=ip, name=name, model=model).set(0)  # 0 = faulty/offline
-    miner_hashrate.labels(ip=ip, name=name, model=model).set(0)
-    miner_power.labels(ip=ip, name=name, model=model).set(0)
-    miner_temp_max.labels(ip=ip, name=name, model=model).set(0)
-    miner_is_mining.labels(ip=ip, name=name, model=model).set(0)
-    miner_uptime.labels(ip=ip, name=name, model=model).set(0)
-    miner_efficiency.labels(ip=ip, name=name, model=model).set(0)
-    miner_fault_light.labels(ip=ip, name=name, model=model).set(0)
-    miner_errors_count.labels(ip=ip, name=name, model=model).set(0)
-    miner_pool_accepted.labels(ip=ip, name=name, model=model).set(0)
-    miner_pool_rejected.labels(ip=ip, name=name, model=model).set(0)
+    # Try to remove metrics completely (best practice for decommissioned miners)
+    # If metric doesn't exist yet (KeyError), that's fine - just skip it
+    try:
+        miner_scrape_status.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_state.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_hashrate.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_power.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_temp_max.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_is_mining.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_uptime.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_efficiency.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_fault_light.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_errors_count.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_pool_accepted.remove(ip, name, model)
+    except KeyError:
+        pass
+    
+    try:
+        miner_pool_rejected.remove(ip, name, model)
+    except KeyError:
+        pass
 
 
 async def push_metrics_to_backend(miners_data: List[Dict], collection_info: Dict):
