@@ -27,7 +27,7 @@ from fastapi.responses import Response
 import uvicorn
 
 # Prometheus client
-from prometheus_client import Gauge, Counter, Info, generate_latest, REGISTRY, CollectorRegistry
+from prometheus_client import Gauge, Counter, generate_latest, REGISTRY
 
 # Import collector modules
 from pyasic import get_miner
@@ -48,12 +48,10 @@ logger = logging.getLogger(__name__)
 # Configuration
 MINERS_CONFIG = os.getenv('MINERS_CONFIG', '/app/etc/miners.yaml')
 COLLECTION_INTERVAL = int(os.getenv('COLLECTION_INTERVAL', '2'))  # minutes
+ENABLE_ICMP_PING = os.getenv('ENABLE_ICMP_PING', 'false').lower() == 'true'
 MAX_CONCURRENT_REQUESTS = 5
 BACKEND_URL = os.getenv('BACKEND_URL', 'http://backend:5000')
 PUSH_TO_BACKEND = os.getenv('PUSH_TO_BACKEND', 'true').lower() == 'true'
-
-# FastAPI app
-app = FastAPI(title="Mining Metrics Collector Service", version="2.0.0")
 
 # Collection lock to prevent concurrent collections
 collection_lock = asyncio.Lock()
@@ -103,6 +101,9 @@ collection_timestamp = Gauge('mining_collection_timestamp_seconds', 'Last collec
 # Miner State Metrics (NEW)
 miner_state = Gauge('miner_state', 'Miner state (0=faulty, 1=idle, 2=mining)', ['ip', 'name', 'model'])
 miner_hashrate_mhs = Gauge('miner_hashrate_mhs', 'Miner hashrate in MH/s (SCRYPT)', ['ip', 'name', 'model'])
+
+# Gap-filling observability
+miner_gaps_filled_total = Counter('miner_gaps_filled_total', 'Count of gaps filled by CGMiner', ['type'])
 
 # ============================================================================
 # DATA COLLECTION FUNCTIONS
@@ -199,16 +200,16 @@ def _get_max_temp(data) -> float:
     return max(all_temps) if all_temps else 0.0
 
 
-async def _cgminer_command(ip: str, command: str) -> Optional[Dict]:
-    """Send cgminer API command"""
+async def _cgminer_command(ip: str, command: str, port: int = 4028) -> Optional[Dict]:
+    """Send cgminer API command with newline terminator"""
     try:
         reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, 4028),
+            asyncio.open_connection(ip, port),
             timeout=10.0
         )
         
         cmd = json.dumps({"command": command})
-        writer.write(cmd.encode())
+        writer.write((cmd + "\n").encode())
         await writer.drain()
         
         data = await asyncio.wait_for(reader.read(65536), timeout=10.0)
@@ -229,7 +230,7 @@ async def _cgminer_command(ip: str, command: str) -> Optional[Dict]:
         return None
 
 
-def _parse_cgminer_response(stats: Dict, summary: Optional[Dict], pools: Optional[Dict], devs: Optional[Dict], is_scrypt: bool) -> Dict:
+def _parse_cgminer_response(stats: Optional[Dict], summary: Optional[Dict], pools: Optional[Dict], devs: Optional[Dict], is_scrypt: bool) -> Dict:
     """Parse cgminer response into unified format"""
     result = {
         'hashrate': 0,
@@ -255,7 +256,7 @@ def _parse_cgminer_response(stats: Dict, summary: Optional[Dict], pools: Optiona
             result['temperature'] = max(board_temps)
     
     # Fallback: Parse stats for temperature (chip temps - less reliable)
-    if result['temperature'] == 0 and 'STATS' in stats and len(stats['STATS']) > 1:
+    if result['temperature'] == 0 and stats and 'STATS' in stats and len(stats['STATS']) > 1:
         stat_data = stats['STATS'][1]
         
         # Temperature from chip temp fields
@@ -316,27 +317,32 @@ def _parse_cgminer_response(stats: Dict, summary: Optional[Dict], pools: Optiona
     return result
 
 
-def _merge_data(pyasic_data: Dict, cgminer_data: Dict, gaps: Dict[str, bool]) -> Dict:
+def _merge_data(pyasic_data: Dict, cgminer_data: Dict, gaps: Dict[str, bool], cgminer_board_temps: List[float]) -> Dict:
     """Merge PyASIC and cgminer data, using cgminer to fill gaps"""
     merged = pyasic_data.copy()
     
     # Fill power gap (Antminers)
     if gaps.get('power') and cgminer_data.get('power', 0) > 0:
         merged['power'] = cgminer_data['power']
+        miner_gaps_filled_total.labels(type='power').inc()
         logger.debug(f"Filled power gap: {cgminer_data['power']}W from cgminer")
     
     # Fill rejected shares gap (Whatsminers)
     if gaps.get('rejected'):
         cgminer_pools = cgminer_data.get('pools', [])
         if cgminer_pools:
+            total_rejected = sum(p.get('rejected', 0) for p in cgminer_pools)
+            if total_rejected > 0:
+                miner_gaps_filled_total.labels(type='rejected').inc()
             # Replace pool data with cgminer's more complete data
             merged['pools'] = cgminer_pools
-            total_rejected = sum(p.get('rejected', 0) for p in cgminer_pools)
             logger.debug(f"Filled rejected shares gap: {total_rejected} from cgminer")
     
     # Fill temperature gap
     if gaps.get('temperature') and cgminer_data.get('temperature', 0) > 0:
         merged['temperature'] = cgminer_data['temperature']
+        merged['cgminer_board_temps'] = cgminer_board_temps
+        miner_gaps_filled_total.labels(type='temperature').inc()
         logger.debug(f"Filled temperature gap: {cgminer_data['temperature']}°C from cgminer")
     
     return merged
@@ -453,18 +459,25 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             async with sem:
                 miner = gap_info['miner']
                 ip = miner['ip']
+                api_port = miner.get('api_port', 4028)
                 
                 try:
-                    stats = await _cgminer_command(ip, "stats")
-                    summary = await _cgminer_command(ip, "summary")
-                    pools = await _cgminer_command(ip, "pools")
-                    devs = await _cgminer_command(ip, "devs")  # Get per-board data
+                    # Collect all commands, accepting partial responses
+                    stats = await _cgminer_command(ip, "stats", api_port)
+                    summary = await _cgminer_command(ip, "summary", api_port)
+                    pools = await _cgminer_command(ip, "pools", api_port)
+                    devs = await _cgminer_command(ip, "devs", api_port)
                     
-                    if not stats:
+                    # Accept partial responses - only require devs or summary
+                    if not devs and not summary:
                         return None
                     
                     is_scrypt = _is_scrypt_miner(miner['model'])
-                    return _parse_cgminer_response(stats, summary, pools, devs, is_scrypt)
+                    cgminer_data = _parse_cgminer_response(stats, summary, pools, devs, is_scrypt)
+                    
+                    # Return both parsed data and raw board temps for per-board metrics
+                    cgminer_data['_board_temps_raw'] = cgminer_data.get('board_temps', [])
+                    return cgminer_data
                     
                 except Exception as e:
                     logger.debug(f"cgminer failed for {ip}: {e}")
@@ -477,10 +490,12 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
         for i, cgminer_result in enumerate(cgminer_results):
             if cgminer_result:
                 gap_info = miners_with_gaps[i]
+                board_temps_raw = cgminer_result.pop('_board_temps_raw', [])
                 merged = _merge_data(
                     gap_info['pyasic_data'],
                     cgminer_result,
-                    gap_info['gaps']
+                    gap_info['gaps'],
+                    board_temps_raw
                 )
                 pyasic_results[gap_info['index']]['data'] = merged
                 pyasic_results[gap_info['index']]['method'] = 'merged'
@@ -663,10 +678,13 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     miner_uptime.labels(ip=ip, name=name, model=model).set(uptime)
     
     # Efficiency
+    # SCRYPT miners: keep efficiency at 0.0 (no J/TH metric for SCRYPT)
     efficiency_raw = data.get('efficiency', 0) or 0
     efficiency = float(efficiency_raw) if efficiency_raw else 0.0
     power = float(data.get('power', 0) or 0)
-    if efficiency == 0 and hashrate > 0 and power > 0:
+    if is_scrypt:
+        efficiency = 0.0  # Do not calculate J/TH for SCRYPT
+    elif efficiency == 0 and hashrate > 0 and power > 0:
         efficiency = power / hashrate if hashrate > 0 else 0
     miner_efficiency.labels(ip=ip, name=name, model=model).set(efficiency)
     
@@ -709,6 +727,14 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
         miner_pool_rejected.labels(ip=ip, name=name, model=model).set(total_rejected)
     
     # Hashboards (defensive: check if list and non-empty before indexing)
+    # If PyASIC hashboards are absent but we have CGMiner board temps, publish them
+    cgminer_board_temps = data.get('cgminer_board_temps', [])
+    if cgminer_board_temps and isinstance(cgminer_board_temps, list):
+        for slot_idx, temp in enumerate(cgminer_board_temps):
+            if temp > 0:
+                slot = str(slot_idx)
+                miner_board_temp.labels(ip=ip, name=name, model=model, slot=slot).set(temp)
+    
     hashboards = data.get('hashboards', [])
     if hashboards and isinstance(hashboards, (list, tuple)) and len(hashboards) > 0:
         # Only iterate if first element has expected structure
@@ -782,40 +808,47 @@ async def collect_pool_network_metrics(miners: List[Dict]) -> Dict[str, Any]:
     # Test each pool
     async def test_pool(hostname: str, port: int):
         # Ping test
-        try:
-            result = subprocess.run(
-                ['ping', '-c', '5', '-W', '2', hostname],
-                capture_output=True,
-                text=True,
-                timeout=15
-            )
-            
-            output = result.stdout
-            
-            # Parse packet loss
-            packet_loss = 100.0
-            loss_match = re.search(r'(\d+)% packet loss', output)
-            if loss_match:
-                packet_loss = float(loss_match.group(1))
-            
-            # Parse RTT statistics
-            ping_avg = 0.0
-            ping_min = 0.0
-            ping_max = 0.0
-            rtt_match = re.search(r'rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)', output)
-            if rtt_match:
-                ping_min = float(rtt_match.group(1))
-                ping_avg = float(rtt_match.group(2))
-                ping_max = float(rtt_match.group(3))
-            
-            pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(ping_avg)
-            pool_network_ping_min.labels(pool=hostname, port=str(port)).set(ping_min)
-            pool_network_ping_max.labels(pool=hostname, port=str(port)).set(ping_max)
-            pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(packet_loss)
-            
-        except Exception as e:
-            logger.debug(f"Ping failed for {hostname}: {e}")
-            pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(100.0)
+        if ENABLE_ICMP_PING:
+            try:
+                result = subprocess.run(
+                    ['ping', '-c', '5', '-W', '2', hostname],
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                
+                output = result.stdout
+                
+                # Parse packet loss
+                packet_loss = 100.0
+                loss_match = re.search(r'(\d+)% packet loss', output)
+                if loss_match:
+                    packet_loss = float(loss_match.group(1))
+                
+                # Parse RTT statistics
+                ping_avg = 0.0
+                ping_min = 0.0
+                ping_max = 0.0
+                rtt_match = re.search(r'rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)', output)
+                if rtt_match:
+                    ping_min = float(rtt_match.group(1))
+                    ping_avg = float(rtt_match.group(2))
+                    ping_max = float(rtt_match.group(3))
+                
+                pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(ping_avg)
+                pool_network_ping_min.labels(pool=hostname, port=str(port)).set(ping_min)
+                pool_network_ping_max.labels(pool=hostname, port=str(port)).set(ping_max)
+                pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(packet_loss)
+                
+            except Exception as e:
+                logger.debug(f"Ping failed for {hostname}: {e}")
+                pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(100.0)
+        else:
+            # ICMP disabled - report 0 packet loss and rely on TCP connect times
+            pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(0.0)
+            pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(0.0)
+            pool_network_ping_min.labels(pool=hostname, port=str(port)).set(0.0)
+            pool_network_ping_max.labels(pool=hostname, port=str(port)).set(0.0)
         
         # TCP connection test
         try:
@@ -877,6 +910,10 @@ last_collection = {
     'details': {}
 }
 
+# Failure streak tracking (per miner)
+failure_streaks = {}  # {(ip, name, model): consecutive_failures}
+FAILURE_THRESHOLD = 5
+
 # Cache miners config at startup
 miners_config_cache = None
 last_config_load = 0
@@ -908,79 +945,6 @@ def load_miners_config() -> List[Dict]:
     miners_config_cache = miners
     last_config_load = current_time
     return miners_config_cache
-
-
-def clear_miner_metrics(ip: str, name: str, model: str):
-    """
-    Clear all metrics for a specific miner (for stale data prevention)
-    
-    Uses remove() to completely delete metric series from Prometheus,
-    preventing accumulation of stale 0 values in the time-series database.
-    Falls back to setting 0 if metric doesn't exist yet.
-    """
-    model = model.replace(" ", "_")
-    
-    # Try to remove metrics completely (best practice for decommissioned miners)
-    # If metric doesn't exist yet (KeyError), that's fine - just skip it
-    try:
-        miner_scrape_status.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_state.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_hashrate.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_power.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_temp_max.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_is_mining.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_uptime.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_efficiency.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_fault_light.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_errors_count.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_pool_accepted.remove(ip, name, model)
-    except KeyError:
-        pass
-    
-    try:
-        miner_pool_rejected.remove(ip, name, model)
-    except KeyError:
-        pass
 
 
 async def push_metrics_to_backend(miners_data: List[Dict], collection_info: Dict):
@@ -1017,7 +981,7 @@ async def push_metrics_to_backend(miners_data: List[Dict], collection_info: Dict
 
 async def collect_all_metrics():
     """Collect all metrics and update in-memory gauges (with lock)"""
-    global last_collection
+    global last_collection, failure_streaks
     
     # Try to acquire lock (non-blocking)
     if collection_lock.locked():
@@ -1038,11 +1002,6 @@ async def collect_all_metrics():
             miners = load_miners_config()
             logger.info(f"Found {len(miners)} miners in configuration")
             
-            # Clear metrics for all miners before collection (prevent stale data)
-            logger.debug("Clearing stale metrics...")
-            for miner in miners:
-                clear_miner_metrics(miner['ip'], miner['name'], miner['model'])
-            
             # Collect pyasic metrics (returns collected data + metadata)
             pyasic_result = await collect_pyasic_metrics(miners)
             
@@ -1055,6 +1014,27 @@ async def collect_all_metrics():
             
             # Collect pool network metrics
             pool_result = await collect_pool_network_metrics(miners)
+            
+            # Update failure streaks and remove stale metrics
+            for miner in miners:
+                key = (miner['ip'], miner['name'], miner['model'])
+                miner_data = next((m for m in miners_data if m['ip'] == miner['ip']), None)
+                
+                if miner_data and miner_data.get('scrape_status', -2) >= 1:
+                    # Success or partial success - reset streak
+                    failure_streaks[key] = 0
+                else:
+                    # Failure - increment streak
+                    failure_streaks[key] = failure_streaks.get(key, 0) + 1
+                    
+                    # Remove metrics after N consecutive failures
+                    if failure_streaks[key] >= FAILURE_THRESHOLD:
+                        model_normalized = miner['model'].replace(" ", "_")
+                        try:
+                            miner_scrape_status.remove(miner['ip'], miner['name'], model_normalized)
+                            miner_state.remove(miner['ip'], miner['name'], model_normalized)
+                        except KeyError:
+                            pass
             
             # Update last collection status
             last_collection = {
@@ -1119,7 +1099,9 @@ async def root():
             "metrics": "/metrics (Prometheus scrape endpoint)",
             "health": "/health",
             "status": "/status",
-            "collect": "/collect (manual trigger)"
+            "jobs": "/jobs (scheduler status)",
+            "collect": "/collect (manual trigger)",
+            "reload": "/reload (force config reload)"
         }
     }
 
@@ -1139,6 +1121,42 @@ async def status():
         "collection_interval_minutes": COLLECTION_INTERVAL,
         "architecture": "v2_in_memory_metrics_with_lock",
         "miners_count": len(miners_config_cache) if miners_config_cache else 0
+    }
+
+
+@app.get("/jobs")
+async def jobs():
+    """Scheduler status endpoint (minimal)"""
+    return {
+        "scheduler": "running",
+        "collection_interval_minutes": COLLECTION_INTERVAL,
+        "last_run": last_collection.get('timestamp'),
+        "next_run_in_seconds": COLLECTION_INTERVAL * 60 if last_collection.get('timestamp') else 0
+    }
+
+
+@app.post("/reload")
+async def reload_config(background_tasks: BackgroundTasks):
+    """Force config reload and immediate collection"""
+    global miners_config_cache, last_config_load
+    
+    # Invalidate cache
+    miners_config_cache = None
+    last_config_load = 0
+    
+    logger.info("Config reload triggered via API")
+    
+    if collection_lock.locked():
+        return {
+            "success": False,
+            "message": "Collection already in progress, config will reload on next cycle"
+        }
+    
+    background_tasks.add_task(collect_all_metrics)
+    
+    return {
+        "success": True,
+        "message": "Config reloaded, collection started in background"
     }
 
 
@@ -1176,22 +1194,35 @@ async def metrics():
 # MAIN
 # ============================================================================
 
-@app.on_event("startup")
-async def startup_event():
-    """Start background scheduler on app startup"""
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    """Lifespan context manager for startup/shutdown"""
     logger.info("=" * 60)
     logger.info("Mining Metrics Collector Service V2 Starting")
     logger.info("=" * 60)
     logger.info(f"Miners config: {MINERS_CONFIG}")
     logger.info(f"Collection interval: {COLLECTION_INTERVAL} minutes")
+    logger.info(f"ICMP ping enabled: {ENABLE_ICMP_PING}")
     logger.info(f"Architecture: Direct Prometheus scraping (async scheduler + lock)")
     logger.info("=" * 60)
     
     # Start async scheduler as background task
-    asyncio.create_task(scheduler_loop())
+    task = asyncio.create_task(scheduler_loop())
     
     logger.info("Starting API server on port 8000...")
     logger.info("Prometheus metrics available at: http://0.0.0.0:8000/metrics")
+    
+    yield
+    
+    # Shutdown
+    task.cancel()
+    logger.info("Scheduler stopped")
+
+
+# Initialize FastAPI app with lifespan
+app = FastAPI(title="Mining Metrics Collector Service", version="2.0.0", lifespan=lifespan)
 
 
 def main():

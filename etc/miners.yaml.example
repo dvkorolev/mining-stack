@@ -9,36 +9,111 @@
 #   python3 bin/farm_init.py
 
 miners:
-  # Example miner configuration
+  # Standard Antminer (PyASIC + CGMiner API)
   - ip: "192.168.1.100"
     name: "miner-01"
     model: "Antminer S19j Pro"
     alias: "Main Mining Rig 1"
+    # Optional: Custom CGMiner API port (default: 4028)
+    # api_port: 4028
     
+  # Antminer with CGI fallback credentials
+  # Used when port 4028 API fails, falls back to web interface
   - ip: "192.168.1.101"
     name: "miner-02"
     model: "Antminer S19"
     alias: "Main Mining Rig 2"
+    # Credentials for CGI fallback (HTTP digest auth)
+    username: "root"
+    password: "root"
     
+  # Whatsminer
   - ip: "192.168.1.102"
     name: "miner-03"
     model: "Whatsminer M30S"
     alias: "Backup Rig"
+    
+  # ElphaPex DG1 (SCRYPT miner with custom TCP protocol)
+  - ip: "192.168.1.103"
+    name: "dg1-01"
+    model: "ElphaPex DG1"
+    alias: "DG1 SCRYPT Miner"
 
-# Configuration Fields:
+# ============================================================================
+# Configuration Fields
+# ============================================================================
+
+# Required Fields:
 # - ip: IP address of the miner (required)
 # - name: Unique identifier for the miner (required)
 # - model: Model name of the miner (required)
-# - alias: Friendly display name (optional)
 
-# Supported Models:
-# - Antminer S19j Pro
-# - Antminer S19
-# - Antminer S19 XP
-# - Whatsminer M30S
-# - Whatsminer M30S+
-# - And more...
+# Optional Fields:
+# - alias: Friendly display name (optional, defaults to name)
+# - api_port: Custom CGMiner API port (optional, default: 4028)
+# - username: Username for CGI fallback (optional, default: 'root')
+# - password: Password for CGI fallback (optional, default: 'root')
 
-# Auto-Discovery:
+# ============================================================================
+# Collection Hierarchy
+# ============================================================================
+
+# 1. Primary: PyASIC + CGMiner API (port 4028)
+#    - Works for most modern ASIC miners
+#    - Automatic gap filling for missing data
+#
+# 2. Fallback Drivers (triggered on primary failure):
+#    - Antminer CGI: For Antminers/S19/S17 when port 4028 fails
+#      * Requires: username, password (defaults to root/root)
+#      * Uses: HTTP digest auth to /cgi-bin/stats.cgi
+#    
+#    - DG1 TCP: For ElphaPex DG1 SCRYPT miners
+#      * Uses: Custom TCP protocol on port 4028
+#      * No credentials needed
+
+# ============================================================================
+# Supported Models
+# ============================================================================
+
+# SHA-256 Miners:
+# - Antminer S19j Pro, S19, S19 XP, S19k Pro
+# - Antminer S17, S17+, S17 Pro
+# - Whatsminer M30S, M30S+, M30S++
+# - Whatsminer M50, M50S, M50S+
+# - AvalonMiner 1246, 1166, 1066
+
+# SCRYPT Miners:
+# - ElphaPex DG1
+# - Antminer L3+, L7
+# - Goldshell LT5, LT6
+
+# ============================================================================
+# Auto-Discovery
+# ============================================================================
+
 # Run 'python3 bin/farm_init.py' to automatically scan your network
 # and create miners.yaml with all detected miners.
+
+# ============================================================================
+# Examples
+# ============================================================================
+
+# Example 1: Antminer with custom port and credentials
+# - ip: "192.168.1.200"
+#   name: "s19-custom"
+#   model: "Antminer S19"
+#   api_port: 4029
+#   username: "admin"
+#   password: "secret123"
+
+# Example 2: DG1 SCRYPT miner
+# - ip: "192.168.1.201"
+#   name: "dg1-scrypt-01"
+#   model: "ElphaPex DG1"
+#   alias: "DG1 Litecoin Miner"
+
+# Example 3: Whatsminer (no credentials needed)
+# - ip: "192.168.1.202"
+#   name: "m30s-01"
+#   model: "Whatsminer M30S+"
+#   alias: "M30S+ Mining Rig"

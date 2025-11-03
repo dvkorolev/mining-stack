@@ -39,24 +39,21 @@ export interface PoolConfig {
   password?: string;
 }
 
-export interface MinerCredentials {
-  username: string;
-  password: string;
-}
-
 export interface MinerConfig {
   ip: string;
-  name?: string;  // Optional - will be auto-generated from IP if not provided
+  name: string;  // Required - will be auto-generated from IP if not provided
   model: string;
   alias?: string;
-  owner?: string;  // Support for owner field
-  credentials?: MinerCredentials;  // Login credentials for miner web interface
-  useHttps?: boolean;  // Use HTTPS instead of HTTP (default: false)
+  // Flat authentication fields (aligned with Python collectors)
+  username?: string;  // For CGI fallback (default: 'root')
+  password?: string;  // For CGI fallback (default: 'root')
+  api_port?: number;  // Custom CGMiner API port (default: 4028)
+  // Runtime fields (not saved to YAML)
   status?: 'online' | 'offline' | 'error';
   lastSeen?: Date;
+  // Optional configuration
   thresholds?: MinerThresholds;  // Per-miner threshold overrides
   pools?: PoolConfig[];  // Mining pool configuration
-  // Add more miner-specific configuration as needed
 }
 
 let miners: MinerConfig[] = [];
@@ -111,16 +108,33 @@ export const loadMinersConfig = (): MinerConfig[] => {
     
     if (config && Array.isArray(config.miners)) {
       const currentTime = new Date();
-      miners = config.miners.map(miner => {
+      miners = config.miners.map((miner: any) => {
         // Auto-generate name from IP if not provided
         const name = miner.name || `miner-${miner.ip.replace(/\./g, '-')}`;
         
-        return ({
-          ...miner,
+        // Migrate old nested credentials to flat fields (backward compatibility)
+        let username = miner.username;
+        let password = miner.password;
+        
+        if (!username && miner.credentials) {
+          username = miner.credentials.username;
+          password = miner.credentials.password;
+          logger.info(`Migrating credentials for ${name} to flat structure`);
+        }
+        
+        return {
+          ip: miner.ip,
           name,
-          status: 'offline',
-          lastSeen: currentTime
-        });
+          model: miner.model,
+          alias: miner.alias,
+          username,
+          password,
+          api_port: miner.api_port,
+          status: 'offline' as const,
+          lastSeen: currentTime,
+          thresholds: miner.thresholds,
+          pools: miner.pools
+        };
       });
       
       logger.info(`Loaded configuration for ${miners.length} miners`);
@@ -214,16 +228,17 @@ export const saveMinersConfig = (minersToSave: MinerConfig[]): void => {
     const minersData = minersToSave.map(m => {
       const data: any = {
         ip: m.ip,
-        name: m.name || `miner-${m.ip.replace(/\./g, '-')}`, // Ensure name is always set
+        name: m.name,
         model: m.model,
-        alias: m.alias,
-        owner: m.owner,
       };
       
-      // Include thresholds if they exist
-      if (m.thresholds) {
-        data.thresholds = m.thresholds;
-      }
+      // Add optional fields only if present (aligned with Python collectors)
+      if (m.alias) data.alias = m.alias;
+      if (m.username) data.username = m.username;
+      if (m.password) data.password = m.password;
+      if (m.api_port) data.api_port = m.api_port;
+      if (m.thresholds) data.thresholds = m.thresholds;
+      if (m.pools) data.pools = m.pools;
       
       return data;
     });

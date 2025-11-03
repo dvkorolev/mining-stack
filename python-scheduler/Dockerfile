@@ -13,8 +13,10 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy scheduler service
-COPY scheduler.py /app/
+# Copy application files
+COPY main.py config.py metrics.py /app/
+COPY collectors/ /app/collectors/
+COPY parsers/ /app/parsers/
 
 # Create directories for mounted volumes
 RUN mkdir -p /metrics /app/bin /app/etc
@@ -23,4 +25,4 @@ RUN mkdir -p /metrics /app/bin /app/etc
 EXPOSE 8000
 
 # Start scheduler service
-CMD ["python", "-u", "scheduler.py"]
+CMD ["python", "-u", "main.py"]
