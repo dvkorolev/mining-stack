@@ -117,6 +117,30 @@ def _is_scrypt_miner(model: str) -> bool:
     return any(keyword in model_lower for keyword in scrypt_keywords)
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """
+    Safely convert value to float, handling PyASIC custom types, None, NaN, and invalid data.
+    PyASIC returns custom objects like SHA256HashRate that need conversion.
+    """
+    if value is None:
+        return default
+    
+    try:
+        # Handle PyASIC custom types (SHA256HashRate, etc.)
+        if hasattr(value, '__float__'):
+            x = float(value)
+        elif isinstance(value, (int, float)):
+            x = float(value)
+        else:
+            # Try to extract numeric value from string or other types
+            x = float(value)
+        
+        # Check for NaN (x != x is True for NaN)
+        return default if x != x else x
+    except (TypeError, ValueError, AttributeError):
+        return default
+
+
 def _check_data_gaps(pyasic_data: Dict, model: str) -> Dict[str, bool]:
     """
     Check which metrics are missing from PyASIC data
@@ -128,12 +152,17 @@ def _check_data_gaps(pyasic_data: Dict, model: str) -> Dict[str, bool]:
         'temperature': False,
     }
     
+    # Safely convert hashrate for comparisons (handles PyASIC SHA256HashRate objects)
+    hashrate = _safe_float(pyasic_data.get('hashrate', 0))
+    power = _safe_float(pyasic_data.get('power', 0))
+    temperature = _safe_float(pyasic_data.get('temperature', 0))
+    
     # Check power (common issue with Antminers)
-    if not pyasic_data.get('power') or pyasic_data.get('power') == 0:
+    if not power or power == 0:
         # Antminers never report power via PyASIC
         if 'antminer' in model.lower() or 's19' in model.lower() or 's17' in model.lower():
             gaps['power'] = True
-        elif pyasic_data.get('hashrate', 0) > 0:  # Mining but no power = gap
+        elif hashrate > 0:  # Mining but no power = gap
             gaps['power'] = True
     
     # Check rejected shares (common issue with Whatsminers)
@@ -147,8 +176,8 @@ def _check_data_gaps(pyasic_data: Dict, model: str) -> Dict[str, bool]:
                 gaps['rejected'] = True
     
     # Check temperature
-    if not pyasic_data.get('temperature') or pyasic_data.get('temperature') == 0:
-        if pyasic_data.get('hashrate', 0) > 0:  # Mining but no temp = gap
+    if not temperature or temperature == 0:
+        if hashrate > 0:  # Mining but no temp = gap
             gaps['temperature'] = True
     
     return gaps
@@ -307,14 +336,14 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 if not data:
                     return {'error': 'no_data', 'error_type': 'other'}
                 
-                # Convert to dict
+                # Convert to dict with safe float conversion for PyASIC custom types
                 pyasic_data = {
-                    'hashrate': data.hashrate,
-                    'power': data.wattage,
-                    'temperature': _get_max_temp(data),
+                    'hashrate': _safe_float(data.hashrate),
+                    'power': _safe_float(data.wattage),
+                    'temperature': _safe_float(_get_max_temp(data)),
                     'is_mining': data.is_mining,
-                    'uptime': data.uptime,
-                    'efficiency': data.efficiency,
+                    'uptime': _safe_float(data.uptime),
+                    'efficiency': _safe_float(data.efficiency),
                     'fault_light': data.fault_light,
                     'errors': data.errors,
                     'hashboards': data.hashboards,
@@ -345,9 +374,19 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     return {'error': 'connection_refused', 'error_type': 'refused', 'error_detail': str(e)}
                 logger.warning(f"⚠️  OS error collecting from {name} ({ip}): {e}")
                 return {'error': str(e), 'error_type': 'other', 'error_detail': f'OS error: {e}'}
+            except TypeError as e:
+                # Catch PyASIC type comparison errors (SHA256HashRate vs int, etc.)
+                logger.error(f"❌ Type error collecting from {name} ({ip}): {e}")
+                logger.error(f"   This is likely a PyASIC custom type issue - check _safe_float() usage")
+                return {'error': str(e), 'error_type': 'other', 'error_detail': f'TypeError: {e}'}
             except Exception as e:
-                logger.error(f"❌ Unexpected error collecting from {name} ({ip}): {type(e).__name__}: {e}")
-                return {'error': str(e), 'error_type': 'other', 'error_detail': f'{type(e).__name__}: {e}'}
+                # Catch PyASIC APIError and other exceptions
+                error_name = type(e).__name__
+                if 'APIError' in error_name:
+                    logger.warning(f"⚠️  API error from {name} ({ip}): {e}")
+                    return {'error': str(e), 'error_type': 'api_error', 'error_detail': f'{error_name}: {e}'}
+                logger.error(f"❌ Unexpected error collecting from {name} ({ip}): {error_name}: {e}")
+                return {'error': str(e), 'error_type': 'other', 'error_detail': f'{error_name}: {e}'}
     
     # Collect from all miners in parallel
     tasks = [collect_pyasic_one(miner) for miner in miners]
@@ -437,20 +476,22 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             success_count += 1
             
             # Prepare clean data for backend (using collected data, not gauge internals)
+            # Use _safe_float to handle PyASIC custom types
+            hashrate_val = _safe_float(data.get('hashrate', 0))
             miner_data = {
                 'ip': miner['ip'],
                 'name': miner['name'],
                 'model': miner['model'],
-                'hashrate': float(data.get('hashrate', 0) or 0),
-                'power': float(data.get('power', 0) or 0),
-                'temp_max': float(data.get('temperature', 0) or 0),
+                'hashrate': hashrate_val,
+                'power': _safe_float(data.get('power', 0)),
+                'temp_max': _safe_float(data.get('temperature', 0)),
                 'is_mining': 1 if data.get('is_mining', True) else 0,
-                'uptime': float(data.get('uptime', 0) or 0),
-                'efficiency': float(data.get('efficiency', 0) or 0),
+                'uptime': _safe_float(data.get('uptime', 0)),
+                'efficiency': _safe_float(data.get('efficiency', 0)),
                 'fault_light': 1 if data.get('fault_light') else 0,
                 'errors_count': len(data.get('errors', [])) if data.get('errors') else 0,
                 'scrape_status': scrape_status,
-                'state': 2 if float(data.get('hashrate', 0) or 0) > 0 else (1 if not data.get('is_mining', True) else 0),
+                'state': 2 if hashrate_val > 0 else (1 if not data.get('is_mining', True) else 0),
                 'pool_accepted': 0,
                 'pool_rejected': 0,
             }
