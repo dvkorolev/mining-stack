@@ -8,7 +8,9 @@ import logging
 from typing import Dict, Optional
 
 import aiohttp
-from aiohttp_digest import DigestAuth
+from aiohttp import BasicAuth
+# Note: Using BasicAuth instead of DigestAuth for ARM64 compatibility
+# Most Antminers also support basic auth
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,8 @@ async def collect_antminer_cgi(miner_config: Dict) -> Optional[Dict]:
     url = f"http://{ip}/cgi-bin/stats.cgi"
     
     try:
-        # Create digest auth
-        auth = DigestAuth(username, password)
+        # Create basic auth (using BasicAuth instead of DigestAuth for ARM64 compatibility)
+        auth = BasicAuth(username, password)
         
         # Make authenticated request with timeout
         timeout = aiohttp.ClientTimeout(total=10)

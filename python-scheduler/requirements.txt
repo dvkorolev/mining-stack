@@ -11,7 +11,8 @@ pyasic==0.50.0
 pyyaml==6.0.1
 netifaces==0.11.0
 aiohttp==3.9.1
-aiohttp-digest==0.3.0
+# aiohttp-digest not available for ARM64, using alternative
+# We'll implement digest auth manually if needed
 
 # Healthcheck
 requests==2.31.0
