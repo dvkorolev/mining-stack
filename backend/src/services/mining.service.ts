@@ -889,10 +889,21 @@ const updateMetricsFromScheduler = async (
     
     // Convert scheduler format to our MinerStats format
     const minerStats: MinerStats[] = miners.map(m => {
-      // Determine status from scheduler data
+      // Determine status from scheduler data using new scrape_status field
+      // Status codes: 2=success, 1=partial, 0=timeout, -1=refused, -2=error
       let status: 'online' | 'offline' | 'error' = 'offline';
-      if (m.scrape_success) {
-        status = m.state === 2 ? 'online' : (m.state === 1 ? 'offline' : 'error');
+      if (m.scrape_status !== undefined && m.scrape_status >= 0) {
+        // Positive status means data was collected
+        if (m.scrape_status > 0 && m.state === 2) {
+          status = 'online';  // Mining
+        } else if (m.scrape_status > 0 && m.state === 1) {
+          status = 'offline'; // Idle
+        } else {
+          status = 'error';   // Timeout or other issue
+        }
+      } else if (m.scrape_status < 0) {
+        // Negative status means connection/API error
+        status = 'error';
       }
       
       // Build error list
