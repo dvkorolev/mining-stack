@@ -95,13 +95,6 @@ const Miners: React.FC = () => {
     model: '',
     alias: '',
     owner: '',
-    thresholds: {
-      temperature: { warning: '', critical: '', shutdown: '' },
-      hashrate: { expected: '', warningPercent: '', criticalPercent: '' },
-      power: { expected: '', warningPercent: '' },
-      rejectionRate: { warning: '', critical: '' },
-      fanSpeed: { warning: '', critical: '' },
-    },
   });
 
   // Load miners data (only for manual refresh)
@@ -128,30 +121,6 @@ const Miners: React.FC = () => {
         model: miner.model,
         alias: miner.alias || '',
         owner: miner.owner || '',
-        thresholds: {
-          temperature: { 
-            warning: (miner as any).thresholds?.temperature?.warning?.toString() || '', 
-            critical: (miner as any).thresholds?.temperature?.critical?.toString() || '', 
-            shutdown: (miner as any).thresholds?.temperature?.shutdown?.toString() || '' 
-          },
-          hashrate: { 
-            expected: (miner as any).thresholds?.hashrate?.expected?.toString() || '', 
-            warningPercent: (miner as any).thresholds?.hashrate?.warningPercent?.toString() || '', 
-            criticalPercent: (miner as any).thresholds?.hashrate?.criticalPercent?.toString() || '' 
-          },
-          power: { 
-            expected: (miner as any).thresholds?.power?.expected?.toString() || '', 
-            warningPercent: (miner as any).thresholds?.power?.warningPercent?.toString() || '' 
-          },
-          rejectionRate: { 
-            warning: (miner as any).thresholds?.rejectionRate?.warning?.toString() || '', 
-            critical: (miner as any).thresholds?.rejectionRate?.critical?.toString() || '' 
-          },
-          fanSpeed: { 
-            warning: (miner as any).thresholds?.fanSpeed?.warning?.toString() || '', 
-            critical: (miner as any).thresholds?.fanSpeed?.critical?.toString() || '' 
-          },
-        },
       });
     } else {
       setEditingMiner(null);
@@ -161,13 +130,6 @@ const Miners: React.FC = () => {
         model: '',
         alias: '',
         owner: '',
-        thresholds: {
-          temperature: { warning: '', critical: '', shutdown: '' },
-          hashrate: { expected: '', warningPercent: '', criticalPercent: '' },
-          power: { expected: '', warningPercent: '' },
-          rejectionRate: { warning: '', critical: '' },
-          fanSpeed: { warning: '', critical: '' },
-        },
       });
     }
     setOpenDialog(true);
@@ -183,13 +145,6 @@ const Miners: React.FC = () => {
       model: '',
       alias: '',
       owner: '',
-      thresholds: {
-        temperature: { warning: '', critical: '', shutdown: '' },
-        hashrate: { expected: '', warningPercent: '', criticalPercent: '' },
-        power: { expected: '', warningPercent: '' },
-        rejectionRate: { warning: '', critical: '' },
-        fanSpeed: { warning: '', critical: '' },
-      },
     });
   };
 
@@ -376,15 +331,6 @@ const Miners: React.FC = () => {
             </Button>
           </Tooltip>
           <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={loadMiners}
-            sx={{ mr: 1 }}
-            disabled={loading}
-          >
-            Refresh
-          </Button>
-          <Button
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => handleOpenDialog()}
@@ -400,40 +346,6 @@ const Miners: React.FC = () => {
         </Alert>
       )}
 
-      {selectedMiners.length > 0 && (
-        <Paper sx={{ mb: 2, p: 2, bgcolor: 'action.selected' }}>
-          <Box display="flex" alignItems="center" justifyContent="space-between">
-            <Typography variant="body1">
-              {selectedMiners.length} miner{selectedMiners.length > 1 ? 's' : ''} selected
-            </Typography>
-            <Box>
-              <Button
-                variant="outlined"
-                startIcon={<RestartAltIcon />}
-                onClick={handleBulkReboot}
-                sx={{ mr: 1 }}
-              >
-                Reboot Selected
-              </Button>
-              <Button
-                variant="outlined"
-                color="error"
-                startIcon={<RestartAltIcon />}
-                onClick={handleRebootAll}
-                sx={{ mr: 1 }}
-              >
-                Reboot All ({miners.length})
-              </Button>
-              <Button
-                variant="outlined"
-                onClick={() => setSelectedMiners([])}
-              >
-                Clear Selection
-              </Button>
-            </Box>
-          </Box>
-        </Paper>
-      )}
 
       {/* Mobile View: Card List */}
       {isMobile ? (
@@ -625,267 +537,6 @@ const Miners: React.FC = () => {
                 placeholder="EN"
                 helperText="Owner identifier (optional)"
               />
-            </Grid>
-            
-            {/* Advanced Thresholds Section */}
-            <Grid item xs={12}>
-              <Accordion>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Box display="flex" alignItems="center" gap={1}>
-                    <TuneIcon />
-                    <Typography>Advanced Thresholds (Optional)</Typography>
-                  </Box>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <Grid container spacing={2}>
-                    <Grid item xs={12}>
-                      <Typography variant="subtitle2" color="textSecondary" gutterBottom>
-                        Leave empty to use global defaults
-                      </Typography>
-                      <Divider sx={{ mb: 2 }} />
-                    </Grid>
-                    
-                    {/* Temperature Thresholds */}
-                    <Grid item xs={12}>
-                      <Typography variant="body2" fontWeight="bold" gutterBottom>
-                        Temperature (°C)
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={4}>
-                      <TextField
-                        fullWidth
-                        label="Warning"
-                        type="number"
-                        value={formData.thresholds.temperature.warning}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            temperature: { ...prev.thresholds.temperature, warning: e.target.value }
-                          }
-                        }))}
-                        placeholder="75"
-                        helperText="Default: 75°C"
-                      />
-                    </Grid>
-                    <Grid item xs={4}>
-                      <TextField
-                        fullWidth
-                        label="Critical"
-                        type="number"
-                        value={formData.thresholds.temperature.critical}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            temperature: { ...prev.thresholds.temperature, critical: e.target.value }
-                          }
-                        }))}
-                        placeholder="85"
-                        helperText="Default: 85°C"
-                      />
-                    </Grid>
-                    <Grid item xs={4}>
-                      <TextField
-                        fullWidth
-                        label="Shutdown"
-                        type="number"
-                        value={formData.thresholds.temperature.shutdown}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            temperature: { ...prev.thresholds.temperature, shutdown: e.target.value }
-                          }
-                        }))}
-                        placeholder="90"
-                        helperText="Default: 90°C"
-                      />
-                    </Grid>
-                    
-                    {/* Hashrate Thresholds */}
-                    <Grid item xs={12} sx={{ mt: 2 }}>
-                      <Typography variant="body2" fontWeight="bold" gutterBottom>
-                        Hashrate
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={4}>
-                      <TextField
-                        fullWidth
-                        label="Expected (TH/s)"
-                        type="number"
-                        value={formData.thresholds.hashrate.expected}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            hashrate: { ...prev.thresholds.hashrate, expected: e.target.value }
-                          }
-                        }))}
-                        placeholder="105"
-                        helperText="Expected hashrate"
-                      />
-                    </Grid>
-                    <Grid item xs={4}>
-                      <TextField
-                        fullWidth
-                        label="Warning %"
-                        type="number"
-                        value={formData.thresholds.hashrate.warningPercent}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            hashrate: { ...prev.thresholds.hashrate, warningPercent: e.target.value }
-                          }
-                        }))}
-                        placeholder="20"
-                        helperText="Default: 20% below"
-                      />
-                    </Grid>
-                    <Grid item xs={4}>
-                      <TextField
-                        fullWidth
-                        label="Critical %"
-                        type="number"
-                        value={formData.thresholds.hashrate.criticalPercent}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            hashrate: { ...prev.thresholds.hashrate, criticalPercent: e.target.value }
-                          }
-                        }))}
-                        placeholder="50"
-                        helperText="Default: 50% below"
-                      />
-                    </Grid>
-                    
-                    {/* Power Thresholds */}
-                    <Grid item xs={12} sx={{ mt: 2 }}>
-                      <Typography variant="body2" fontWeight="bold" gutterBottom>
-                        Power
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <TextField
-                        fullWidth
-                        label="Expected (W)"
-                        type="number"
-                        value={formData.thresholds.power.expected}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            power: { ...prev.thresholds.power, expected: e.target.value }
-                          }
-                        }))}
-                        placeholder="3400"
-                        helperText="Expected power consumption"
-                      />
-                    </Grid>
-                    <Grid item xs={6}>
-                      <TextField
-                        fullWidth
-                        label="Warning %"
-                        type="number"
-                        value={formData.thresholds.power.warningPercent}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            power: { ...prev.thresholds.power, warningPercent: e.target.value }
-                          }
-                        }))}
-                        placeholder="15"
-                        helperText="Default: ±15% deviation"
-                      />
-                    </Grid>
-                    
-                    {/* Rejection Rate Thresholds */}
-                    <Grid item xs={12} sx={{ mt: 2 }}>
-                      <Typography variant="body2" fontWeight="bold" gutterBottom>
-                        Rejection Rate (%)
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <TextField
-                        fullWidth
-                        label="Warning"
-                        type="number"
-                        value={formData.thresholds.rejectionRate.warning}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            rejectionRate: { ...prev.thresholds.rejectionRate, warning: e.target.value }
-                          }
-                        }))}
-                        placeholder="2"
-                        helperText="Default: 2%"
-                      />
-                    </Grid>
-                    <Grid item xs={6}>
-                      <TextField
-                        fullWidth
-                        label="Critical"
-                        type="number"
-                        value={formData.thresholds.rejectionRate.critical}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            rejectionRate: { ...prev.thresholds.rejectionRate, critical: e.target.value }
-                          }
-                        }))}
-                        placeholder="5"
-                        helperText="Default: 5%"
-                      />
-                    </Grid>
-                    
-                    {/* Fan Speed Thresholds */}
-                    <Grid item xs={12} sx={{ mt: 2 }}>
-                      <Typography variant="body2" fontWeight="bold" gutterBottom>
-                        Fan Speed (RPM)
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <TextField
-                        fullWidth
-                        label="Warning"
-                        type="number"
-                        value={formData.thresholds.fanSpeed.warning}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            fanSpeed: { ...prev.thresholds.fanSpeed, warning: e.target.value }
-                          }
-                        }))}
-                        placeholder="3000"
-                        helperText="Default: 3000 RPM"
-                      />
-                    </Grid>
-                    <Grid item xs={6}>
-                      <TextField
-                        fullWidth
-                        label="Critical"
-                        type="number"
-                        value={formData.thresholds.fanSpeed.critical}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          thresholds: {
-                            ...prev.thresholds,
-                            fanSpeed: { ...prev.thresholds.fanSpeed, critical: e.target.value }
-                          }
-                        }))}
-                        placeholder="2000"
-                        helperText="Default: 2000 RPM"
-                      />
-                    </Grid>
-                  </Grid>
-                </AccordionDetails>
-              </Accordion>
             </Grid>
           </Grid>
         </DialogContent>
