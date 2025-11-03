@@ -36,7 +36,6 @@ import socket
 import subprocess
 import re
 import json
-import requests
 
 # Setup logging
 logging.basicConfig(
@@ -58,7 +57,6 @@ app = FastAPI(title="Mining Metrics Collector Service", version="2.0.0")
 
 # Collection lock to prevent concurrent collections
 collection_lock = asyncio.Lock()
-collection_in_progress = False
 
 # ============================================================================
 # PROMETHEUS METRICS DEFINITIONS (In-Memory)
@@ -394,22 +392,79 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 pyasic_results[gap_info['index']]['method'] = 'merged'
     
     # Step 5: Update ALL metrics (Prometheus will add timestamp when it scrapes)
+    # Also prepare clean data for backend push
     success_count = 0
+    miners_data = []
+    
     for i, result in enumerate(pyasic_results):
+        miner = miners[i]
         if result and result.get('data'):
-            miner = miners[i]
+            data = result['data']
+            
+            # Update Prometheus metrics
             _update_metrics(
-                result['data'],
+                data,
                 miner['ip'],
                 miner['name'],
                 miner['model']
             )
             success_count += 1
+            
+            # Prepare clean data for backend (using collected data, not gauge internals)
+            miner_data = {
+                'ip': miner['ip'],
+                'name': miner['name'],
+                'model': miner['model'],
+                'hashrate': float(data.get('hashrate', 0) or 0),
+                'power': float(data.get('power', 0) or 0),
+                'temp_max': float(data.get('temperature', 0) or 0),
+                'is_mining': 1 if data.get('is_mining', True) else 0,
+                'uptime': float(data.get('uptime', 0) or 0),
+                'efficiency': float(data.get('efficiency', 0) or 0),
+                'fault_light': 1 if data.get('fault_light') else 0,
+                'errors_count': len(data.get('errors', [])) if data.get('errors') else 0,
+                'scrape_success': 1,
+                'state': 2 if float(data.get('hashrate', 0) or 0) > 0 else (1 if not data.get('is_mining', True) else 0),
+                'pool_accepted': 0,
+                'pool_rejected': 0,
+            }
+            
+            # Add pool stats if available
+            pools = data.get('pools', [])
+            if pools:
+                if hasattr(pools[0], 'accepted'):
+                    # PyASIC pool objects
+                    miner_data['pool_accepted'] = sum(p.accepted for p in pools if p.accepted is not None)
+                    miner_data['pool_rejected'] = sum(p.rejected for p in pools if p.rejected is not None)
+                else:
+                    # Dict pool data from cgminer
+                    miner_data['pool_accepted'] = sum(p.get('accepted', 0) for p in pools)
+                    miner_data['pool_rejected'] = sum(p.get('rejected', 0) for p in pools)
+            
+            miners_data.append(miner_data)
         else:
             # Mark as failed
-            miner = miners[i]
             miner_scrape_success.labels(ip=miner['ip'], name=miner['name'], model=miner['model']).set(0)
             miner_state.labels(ip=miner['ip'], name=miner['name'], model=miner['model']).set(0)
+            
+            # Add failed miner to data with zeros
+            miners_data.append({
+                'ip': miner['ip'],
+                'name': miner['name'],
+                'model': miner['model'],
+                'hashrate': 0,
+                'power': 0,
+                'temp_max': 0,
+                'is_mining': 0,
+                'uptime': 0,
+                'efficiency': 0,
+                'fault_light': 0,
+                'errors_count': 0,
+                'scrape_success': 0,
+                'state': 0,
+                'pool_accepted': 0,
+                'pool_rejected': 0,
+            })
     
     duration = time.time() - start_time
     
@@ -424,7 +479,8 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
         'success': True,
         'miners_collected': success_count,
         'duration': duration,
-        'gaps_filled': len(miners_with_gaps)
+        'gaps_filled': len(miners_with_gaps),
+        'miners_data': miners_data  # Clean collected data for backend push
     }
 
 
@@ -723,64 +779,41 @@ def clear_miner_metrics(ip: str, name: str, model: str):
     miner_pool_rejected.labels(ip=ip, name=name, model=model).set(0)
 
 
-def push_metrics_to_backend(miners: List[Dict], collection_result: Dict):
-    """Push collected metrics to backend for real-time UI updates"""
+async def push_metrics_to_backend(miners_data: List[Dict], collection_info: Dict):
+    """Push collected metrics to backend for real-time UI updates (async)"""
     if not PUSH_TO_BACKEND:
         return
     
     try:
-        # Extract metrics from Prometheus gauges for each miner
-        miners_data = []
-        for miner in miners:
-            ip = miner['ip']
-            name = miner['name']
-            model = miner['model'].replace(" ", "_")
-            
-            # Get current values from gauges
-            miner_data = {
-                'ip': ip,
-                'name': name,
-                'model': model,
-                'hashrate': miner_hashrate.labels(ip=ip, name=name, model=model)._value._value,
-                'power': miner_power.labels(ip=ip, name=name, model=model)._value._value,
-                'temp_max': miner_temp_max.labels(ip=ip, name=name, model=model)._value._value,
-                'is_mining': miner_is_mining.labels(ip=ip, name=name, model=model)._value._value,
-                'uptime': miner_uptime.labels(ip=ip, name=name, model=model)._value._value,
-                'efficiency': miner_efficiency.labels(ip=ip, name=name, model=model)._value._value,
-                'fault_light': miner_fault_light.labels(ip=ip, name=name, model=model)._value._value,
-                'errors_count': miner_errors_count.labels(ip=ip, name=name, model=model)._value._value,
-                'scrape_success': miner_scrape_success.labels(ip=ip, name=name, model=model)._value._value,
-                'state': miner_state.labels(ip=ip, name=name, model=model)._value._value,
-                'pool_accepted': miner_pool_accepted.labels(ip=ip, name=name, model=model)._value._value,
-                'pool_rejected': miner_pool_rejected.labels(ip=ip, name=name, model=model)._value._value,
-            }
-            miners_data.append(miner_data)
-        
-        # Push to backend
+        # Prepare payload with collected data
         payload = {
             'miners': miners_data,
             'timestamp': int(time.time() * 1000),  # milliseconds
-            'collection_info': collection_result if isinstance(collection_result, dict) else {}
+            'collection_info': collection_info if isinstance(collection_info, dict) else {}
         }
         
-        response = requests.post(
-            f"{BACKEND_URL}/api/internal/metrics",
-            json=payload,
-            timeout=5
-        )
-        
-        if response.status_code == 200:
-            logger.info(f"✓ Pushed metrics to backend: {len(miners_data)} miners")
-        else:
-            logger.warning(f"Backend push failed: {response.status_code} - {response.text}")
+        # Use async HTTP client (non-blocking)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{BACKEND_URL}/api/internal/metrics",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as response:
+                if response.status == 200:
+                    logger.info(f"✓ Pushed metrics to backend: {len(miners_data)} miners")
+                else:
+                    text = await response.text()
+                    logger.warning(f"Backend push failed: {response.status} - {text}")
             
+    except asyncio.TimeoutError:
+        logger.warning("Backend push timed out after 5 seconds")
     except Exception as e:
         logger.warning(f"Failed to push metrics to backend: {e}")
 
 
 async def collect_all_metrics():
     """Collect all metrics and update in-memory gauges (with lock)"""
-    global last_collection, collection_in_progress
+    global last_collection
     
     # Try to acquire lock (non-blocking)
     if collection_lock.locked():
@@ -792,7 +825,6 @@ async def collect_all_metrics():
         }
     
     async with collection_lock:
-        collection_in_progress = True
         try:
             logger.info("=" * 60)
             logger.info(f"Starting metrics collection at {datetime.now()}")
@@ -807,8 +839,15 @@ async def collect_all_metrics():
             for miner in miners:
                 clear_miner_metrics(miner['ip'], miner['name'], miner['model'])
             
-            # Collect pyasic metrics
+            # Collect pyasic metrics (returns collected data + metadata)
             pyasic_result = await collect_pyasic_metrics(miners)
+            
+            # Extract collected miner data for backend push
+            miners_data = pyasic_result.get('miners_data', [])
+            
+            # Push to backend BEFORE updating Prometheus gauges
+            # This uses the clean collected data, not gauge internals
+            await push_metrics_to_backend(miners_data, pyasic_result)
             
             # Collect pool network metrics
             pool_result = await collect_pool_network_metrics(miners)
@@ -823,9 +862,6 @@ async def collect_all_metrics():
                     'pool_network': pool_result
                 }
             }
-            
-            # Push metrics to backend for real-time UI updates
-            push_metrics_to_backend(miners, pyasic_result)
             
             logger.info("=" * 60)
             logger.info("Collection complete: All collectors successful")
@@ -842,8 +878,6 @@ async def collect_all_metrics():
                 'details': {}
             }
             return last_collection
-        finally:
-            collection_in_progress = False
 
 
 async def scheduler_loop():
