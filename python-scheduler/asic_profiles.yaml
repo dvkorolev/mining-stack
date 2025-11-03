@@ -1,0 +1,387 @@
+# ASIC Profile Library
+# The "constitution" for miner collection - defines how to talk to each miner type
+#
+# This is a community-driven database of ASIC knowledge.
+# To add a new miner: just add a profile here, no code changes needed!
+
+profiles:
+  # ============================================================================
+  # Whatsminer Family (MicroBT)
+  # ============================================================================
+  
+  whatsminer_m50s:
+    name: "Whatsminer M50S Series"
+    manufacturer: "MicroBT"
+    algorithm: "sha256"
+    models:
+      - "M50S"
+      - "M50S+"
+      - "M50S++"
+      - "M50S VL30"
+      - "M50S++ VL30"
+    
+    # Collection strategy (ordered by preference)
+    drivers:
+      - type: "pyasic"
+        priority: 1
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+    
+    # Parser configuration
+    parser:
+      type: "whatsminer"
+      quirks:
+        # Field name says "MHS av" but value is actually in TH/s
+        hashrate_field: "MHS av"
+        hashrate_unit: "TH/s"  # Ignore field name, use this
+        hashrate_scale: 1.0     # No conversion needed
+        
+        # Temperature from board sensors (more reliable than chip temps)
+        temp_source: "board"
+        temp_fields: ["Temperature"]  # DEVS[*].Temperature
+        
+        # Power reporting
+        power_field: "Power"
+        power_unit: "W"
+    
+    # Default credentials
+    credentials:
+      username: "admin"
+      password: "admin"
+    
+    # Expected performance (for anomaly detection)
+    expected:
+      hashrate_min: 100  # TH/s
+      hashrate_max: 160  # TH/s
+      power_min: 3000    # W
+      power_max: 3800    # W
+      temp_max: 85       # °C
+
+  whatsminer_m30s:
+    name: "Whatsminer M30S Series"
+    manufacturer: "MicroBT"
+    algorithm: "sha256"
+    models:
+      - "M30S"
+      - "M30S+"
+      - "M30S++"
+    
+    drivers:
+      - type: "pyasic"
+        priority: 1
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+    
+    parser:
+      type: "whatsminer"
+      quirks:
+        hashrate_field: "MHS av"
+        hashrate_unit: "TH/s"
+        hashrate_scale: 1.0
+        temp_source: "board"
+        temp_fields: ["Temperature"]
+        power_field: "Power"
+        power_unit: "W"
+    
+    credentials:
+      username: "admin"
+      password: "admin"
+    
+    expected:
+      hashrate_min: 80
+      hashrate_max: 120
+      power_min: 2800
+      power_max: 3500
+      temp_max: 85
+
+  # ============================================================================
+  # Antminer Family (Bitmain)
+  # ============================================================================
+  
+  antminer_s19:
+    name: "Antminer S19 Series"
+    manufacturer: "Bitmain"
+    algorithm: "sha256"
+    models:
+      - "S19"
+      - "S19 Pro"
+      - "S19j Pro"
+      - "S19 XP"
+      - "S19k Pro"
+    
+    drivers:
+      - type: "pyasic"
+        priority: 1
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "antminer_cgi"
+        priority: 3
+        config:
+          endpoint: "/cgi-bin/stats.cgi"
+          timeout: 10
+          auth_type: "digest"
+    
+    parser:
+      type: "antminer"
+      quirks:
+        hashrate_field: "MHS av"
+        hashrate_unit: "TH/s"
+        hashrate_scale: 1.0
+        temp_source: "chip"
+        temp_fields: ["temp", "temp2_", "temp_chip"]
+        power_field: "Power"
+        power_unit: "W"
+    
+    credentials:
+      username: "root"
+      password: "root"
+    
+    expected:
+      hashrate_min: 90
+      hashrate_max: 140
+      power_min: 3000
+      power_max: 3500
+      temp_max: 90
+
+  antminer_s17:
+    name: "Antminer S17 Series"
+    manufacturer: "Bitmain"
+    algorithm: "sha256"
+    models:
+      - "S17"
+      - "S17 Pro"
+      - "S17+"
+    
+    drivers:
+      - type: "pyasic"
+        priority: 1
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "antminer_cgi"
+        priority: 3
+        config:
+          endpoint: "/cgi-bin/stats.cgi"
+          timeout: 10
+          auth_type: "digest"
+    
+    parser:
+      type: "antminer"
+      quirks:
+        hashrate_field: "MHS av"
+        hashrate_unit: "TH/s"
+        hashrate_scale: 1.0
+        temp_source: "chip"
+        temp_fields: ["temp", "temp2_", "temp_chip"]
+        power_field: "Power"
+        power_unit: "W"
+    
+    credentials:
+      username: "root"
+      password: "root"
+    
+    expected:
+      hashrate_min: 50
+      hashrate_max: 70
+      power_min: 2000
+      power_max: 2800
+      temp_max: 90
+
+  # ============================================================================
+  # SCRYPT Miners
+  # ============================================================================
+  
+  elphapex_dg1:
+    name: "ElphaPex DG1"
+    manufacturer: "ElphaPex"
+    algorithm: "scrypt"
+    models:
+      - "DG1"
+      - "DG1 Pro"
+    
+    drivers:
+      - type: "dg1_tcp"
+        priority: 1
+        config:
+          port: 4028
+          timeout: 10
+          protocol: "custom_tcp"
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+    
+    parser:
+      type: "dg1"
+      quirks:
+        hashrate_field: "MHS av"
+        hashrate_unit: "GH/s"  # SCRYPT reports in GH/s
+        hashrate_scale: 0.001  # Convert to TH/s for consistency
+        temp_source: "chip"
+        temp_fields: ["temp"]
+        power_field: "power"
+        power_unit: "W"
+    
+    credentials:
+      username: "root"
+      password: "root"
+    
+    expected:
+      hashrate_min: 0.010  # 10 GH/s = 0.010 TH/s
+      hashrate_max: 0.016  # 16 GH/s = 0.016 TH/s
+      power_min: 3200
+      power_max: 3600
+      temp_max: 80
+
+  antminer_l7:
+    name: "Antminer L7"
+    manufacturer: "Bitmain"
+    algorithm: "scrypt"
+    models:
+      - "L7"
+      - "L7+"
+    
+    drivers:
+      - type: "pyasic"
+        priority: 1
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+    
+    parser:
+      type: "antminer"
+      quirks:
+        hashrate_field: "MHS av"
+        hashrate_unit: "GH/s"
+        hashrate_scale: 0.001
+        temp_source: "chip"
+        temp_fields: ["temp", "temp2_", "temp_chip"]
+        power_field: "Power"
+        power_unit: "W"
+    
+    credentials:
+      username: "root"
+      password: "root"
+    
+    expected:
+      hashrate_min: 0.008  # 8 GH/s
+      hashrate_max: 0.010  # 10 GH/s
+      power_min: 3200
+      power_max: 3600
+      temp_max: 85
+
+  antminer_l3:
+    name: "Antminer L3+"
+    manufacturer: "Bitmain"
+    algorithm: "scrypt"
+    models:
+      - "L3+"
+      - "L3++"
+    
+    drivers:
+      - type: "pyasic"
+        priority: 1
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+    
+    parser:
+      type: "antminer"
+      quirks:
+        hashrate_field: "MHS av"
+        hashrate_unit: "MH/s"  # Old hardware, actual MH/s
+        hashrate_scale: 0.000001  # Convert to TH/s
+        temp_source: "chip"
+        temp_fields: ["temp"]
+        power_field: "Power"
+        power_unit: "W"
+    
+    credentials:
+      username: "root"
+      password: "root"
+    
+    expected:
+      hashrate_min: 0.0005  # 500 MH/s
+      hashrate_max: 0.0006  # 600 MH/s
+      power_min: 700
+      power_max: 900
+      temp_max: 75
+
+# ============================================================================
+# Model Matching Rules
+# ============================================================================
+# How to match a miner's model string to a profile
+
+matching:
+  # Exact matches (highest priority)
+  exact:
+    "Antminer S19 Pro": "antminer_s19"
+    "Antminer S19j Pro": "antminer_s19"
+    "Antminer S19 XP": "antminer_s19"
+    "Whatsminer M50S++": "whatsminer_m50s"
+    "Whatsminer M50S++ VL30": "whatsminer_m50s"
+    "ElphaPex DG1": "elphapex_dg1"
+  
+  # Regex patterns (fallback)
+  patterns:
+    - pattern: "^Whatsminer M50S"
+      profile: "whatsminer_m50s"
+    - pattern: "^Whatsminer M30S"
+      profile: "whatsminer_m30s"
+    - pattern: "^Antminer S19"
+      profile: "antminer_s19"
+    - pattern: "^Antminer S17"
+      profile: "antminer_s17"
+    - pattern: "^Antminer L7"
+      profile: "antminer_l7"
+    - pattern: "^Antminer L3"
+      profile: "antminer_l3"
+    - pattern: "DG1"
+      profile: "elphapex_dg1"
+
+# ============================================================================
+# Global Defaults
+# ============================================================================
+
+defaults:
+  timeout: 10
+  retry_count: 2
+  retry_delay: 1
+  api_port: 4028
+  credentials:
+    username: "root"
+    password: "root"
