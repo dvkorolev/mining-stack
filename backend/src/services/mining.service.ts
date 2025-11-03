@@ -812,70 +812,6 @@ const backupDatabase = (backupPath: string) => {
 };
 
 /**
- * Trigger auto-discovery via Job Runner Service
- * 
- * Architecture (Job Runner Pattern):
- * - Backend calls Job Runner's /run endpoint
- * - Job Runner validates job against allowlist
- * - Executes farm_init.py with pyasic
- * - Returns result to backend
- * - Backend reloads miners configuration
- */
-const discoverMiners = async (): Promise<{ success: boolean; message: string; miners: any[] }> => {
-  try {
-    logger.info('Triggering miner discovery via Job Runner Service...');
-    
-    const jobRunnerUrl = process.env.JOB_RUNNER_URL || 'http://python-scheduler:8000';
-    
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
-    try {
-      const response = await fetch(`${jobRunnerUrl}/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job: 'discover_miners' }),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Job Runner returned ${response.status}: ${errorText}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        // Reload miners configuration
-        const newMiners = getMiners();
-        logger.info(`Discovery completed: ${newMiners.length} miners configured`);
-        
-        return {
-          success: true,
-          message: `Discovered miners successfully`,
-          miners: newMiners
-        };
-      } else {
-        throw new Error(result.error || 'Discovery failed');
-      }
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        throw new Error('Discovery request timed out after 30 seconds');
-      }
-      throw fetchError;
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error('Error during auto-discovery:', errorMessage);
-    throw new Error(`Failed to discover miners: ${errorMessage}`);
-  }
-};
-
-/**
  * Update metrics from python-scheduler push
  * This replaces polling Prometheus - scheduler pushes metrics directly
  */
@@ -1013,7 +949,6 @@ export {
   getHistoricalStats,
   getDatabaseInfo,
   backupDatabase,
-  discoverMiners, // Disabled - see function comment
   startMining,
   stopMining,
   restartMiner,

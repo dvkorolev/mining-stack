@@ -132,16 +132,6 @@ export const deleteMiner = async (minerId: string) => {
   }
 };
 
-export const discoverMiners = async () => {
-  try {
-    const response = await api.post('/mining/discover');
-    return response.data;
-  } catch (error) {
-    console.error('Error discovering miners:', error);
-    throw error;
-  }
-};
-
 // Reboot single miner
 export const rebootMiner = async (minerId: string) => {
   try {

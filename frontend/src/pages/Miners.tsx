@@ -29,8 +29,6 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import SearchIcon from '@mui/icons-material/Search';
 import WarningIcon from '@mui/icons-material/Warning';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -39,7 +37,7 @@ import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import { useSelector } from 'react-redux';
 import { selectMiners } from '../features/mining/miningSlice';
-import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, discoverMiners as discoverMinersAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
+import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import MinerCardList from '../components/MinerCardList';
@@ -184,22 +182,6 @@ const Miners: React.FC = () => {
     }
   };
 
-  // Auto-discover miners
-  const handleAutoDiscover = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await discoverMinersAPI();
-      showSuccess(`Success! Discovered ${result.miners?.length || 0} miners`);
-      await loadMiners();
-    } catch (error) {
-      console.error('Error during auto-discovery:', error);
-      showError('Failed to auto-discover miners. Make sure Python and pyasic are installed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Reboot single miner
   const handleRebootMiner = async (minerId: string, minerName: string) => {
     if (!window.confirm(`Reboot ${minerName}? This will temporarily interrupt mining.`)) {
@@ -319,17 +301,6 @@ const Miners: React.FC = () => {
           Miners Management
         </Typography>
         <Box>
-          <Tooltip title="Auto-discover miners on network">
-            <Button
-              variant="outlined"
-              startIcon={<SearchIcon />}
-              onClick={handleAutoDiscover}
-              sx={{ mr: 1 }}
-              disabled={loading}
-            >
-              Auto-Discover
-            </Button>
-          </Tooltip>
           <Button
             variant="contained"
             startIcon={<AddIcon />}
