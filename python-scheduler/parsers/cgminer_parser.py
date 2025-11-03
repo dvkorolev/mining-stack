@@ -1,11 +1,85 @@
 """
-CGMiner API response parser.
+CGMiner API response parser with model-based unit sanity checking.
 """
 
 from typing import Dict, Optional, List
+import re
 
 
-def parse_cgminer_response(stats: Optional[Dict], summary: Optional[Dict], pools: Optional[Dict], devs: Optional[Dict], is_scrypt: bool) -> Dict:
+def _detect_actual_units(model: str, raw_value: float, field_name: str) -> tuple[float, str]:
+    """
+    Sanity check: Detect actual hashrate units based on miner model.
+    
+    The field names in CGMiner API are often misleading:
+    - Whatsminer M-series reports TH/s in "MHS av" field
+    - DG1 SCRYPT reports GH/s in "MHS av" field
+    - Antminer reports actual MH/s in "MHS av" field
+    
+    Args:
+        model: Miner model string (e.g., "M50S++", "DG1", "S19")
+        raw_value: Raw value from API
+        field_name: Field name (e.g., "MHS av", "GHS av")
+    
+    Returns:
+        (hashrate_in_ths, detected_unit)
+    """
+    model_lower = model.lower()
+    
+    # Known TH/s scale miners (SHA-256 ASICs)
+    # These report TH/s values in "MHS av" field despite the misleading name
+    ths_miners = [
+        # Whatsminer M-series
+        r'm\d+s',      # M20S, M30S, M30S+, M30S++
+        r'm\d+',       # M20, M30, M50, M60
+        # Antminer S-series (modern)
+        r's19',        # S19, S19 Pro, S19j Pro, S19 XP
+        r's17',        # S17, S17 Pro
+        r's15',        # S15
+        # Antminer T-series (modern)
+        r't19',        # T19
+        r't17',        # T17
+    ]
+    
+    # Known GH/s scale miners (SCRYPT ASICs)
+    # These report GH/s values in "MHS av" field
+    ghs_miners = [
+        r'dg1',        # ElphaPex DG1
+        r'l7',         # Antminer L7
+        r'l3',         # Antminer L3+
+    ]
+    
+    # Check if it's a TH/s scale miner
+    for pattern in ths_miners:
+        if re.search(pattern, model_lower):
+            # Value is already in TH/s, despite field name saying "MHS"
+            return (raw_value, 'TH/s')
+    
+    # Check if it's a GH/s scale miner (SCRYPT)
+    for pattern in ghs_miners:
+        if re.search(pattern, model_lower):
+            # Value is in GH/s, convert to TH/s
+            return (raw_value / 1000.0, 'GH/s')
+    
+    # Unknown miner - use field name as hint
+    if field_name == 'GHS av':
+        # Field says GH/s, trust it
+        return (raw_value / 1000.0, 'GH/s')
+    elif field_name == 'MHS av':
+        # Field says MH/s - could be misleading
+        # Apply heuristic: if value is < 1000, likely TH/s
+        # if value is > 1000, likely actual MH/s
+        if raw_value < 1000:
+            # Likely TH/s (modern ASIC)
+            return (raw_value, 'TH/s (assumed)')
+        else:
+            # Likely actual MH/s (old hardware or GPU)
+            return (raw_value / 1000000.0, 'MH/s')
+    
+    # Default: assume MH/s
+    return (raw_value / 1000000.0, 'MH/s (default)')
+
+
+def parse_cgminer_response(stats: Optional[Dict], summary: Optional[Dict], pools: Optional[Dict], devs: Optional[Dict], model: str = '') -> Dict:
     """Parse cgminer response into unified format"""
     result = {
         'hashrate': 0,
@@ -70,12 +144,17 @@ def parse_cgminer_response(stats: Optional[Dict], summary: Optional[Dict], pools
             if 'Power' in summary_data:
                 result['power'] = float(summary_data['Power'])
             
-            # Hashrate
+            # Hashrate with model-based sanity check
             if 'MHS av' in summary_data:
-                mhs = float(summary_data['MHS av'])
-                result['hashrate'] = mhs if is_scrypt else (mhs / 1000000.0)
+                raw_value = float(summary_data['MHS av'])
+                hashrate_ths, detected_unit = _detect_actual_units(model, raw_value, 'MHS av')
+                result['hashrate'] = hashrate_ths
+                result['hashrate_unit'] = detected_unit  # For debugging
             elif 'GHS av' in summary_data:
-                result['hashrate'] = float(summary_data['GHS av']) / 1000.0
+                raw_value = float(summary_data['GHS av'])
+                hashrate_ths, detected_unit = _detect_actual_units(model, raw_value, 'GHS av')
+                result['hashrate'] = hashrate_ths
+                result['hashrate_unit'] = detected_unit
     
     # Parse pools for rejected shares
     if pools and 'POOLS' in pools:

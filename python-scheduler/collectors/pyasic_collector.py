@@ -335,8 +335,8 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     if not devs and not summary:
                         return None
                     
-                    is_scrypt = _is_scrypt_miner(miner['model'])
-                    cgminer_data = parse_cgminer_response(stats, summary, pools, devs, is_scrypt)
+                    # Pass model for unit sanity checking
+                    cgminer_data = parse_cgminer_response(stats, summary, pools, devs, miner['model'])
                     cgminer_data['_board_temps_raw'] = cgminer_data.get('board_temps', [])
                     return cgminer_data
                 except Exception as e:
