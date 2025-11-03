@@ -185,13 +185,18 @@ def _check_data_gaps(pyasic_data: Dict, model: str) -> Dict[str, bool]:
 
 def _get_max_temp(data) -> float:
     """Get max temperature from PyASIC data"""
-    if not data or not hasattr(data, 'hashboards') or not data.hashboards:
-        return 0
+    if not data or not hasattr(data, 'hashboards'):
+        return 0.0
     
-    all_temps = [b.chip_temp for b in data.hashboards if b.chip_temp is not None] + \
-                [b.temp for b in data.hashboards if b.temp is not None]
+    hashboards = data.hashboards
+    # Defensive: ensure hashboards is iterable (list/tuple), not scalar
+    if not isinstance(hashboards, (list, tuple)) or not hashboards:
+        return 0.0
     
-    return max(all_temps) if all_temps else 0
+    all_temps = [b.chip_temp for b in hashboards if hasattr(b, 'chip_temp') and b.chip_temp is not None] + \
+                [b.temp for b in hashboards if hasattr(b, 'temp') and b.temp is not None]
+    
+    return max(all_temps) if all_temps else 0.0
 
 
 async def _cgminer_command(ip: str, command: str) -> Optional[Dict]:
@@ -337,19 +342,29 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     return {'error': 'no_data', 'error_type': 'other'}
                 
                 # Convert to dict with safe float conversion for PyASIC custom types
+                # Normalize collections to lists (defensive against scalars/None)
+                def _normalize_list(val):
+                    """Ensure value is a list, not scalar/None"""
+                    if val is None:
+                        return []
+                    if isinstance(val, (list, tuple)):
+                        return list(val)
+                    # Scalar or other non-iterable: wrap in list or return empty
+                    return [val] if val else []
+                
                 pyasic_data = {
                     'hashrate': _safe_float(data.hashrate),
                     'power': _safe_float(data.wattage),
                     'temperature': _safe_float(_get_max_temp(data)),
-                    'is_mining': data.is_mining,
+                    'is_mining': data.is_mining if hasattr(data, 'is_mining') else True,
                     'uptime': _safe_float(data.uptime),
                     'efficiency': _safe_float(data.efficiency),
-                    'fault_light': data.fault_light,
-                    'errors': data.errors,
-                    'hashboards': data.hashboards,
-                    'fans': data.fans,
-                    'fan_psu': data.fan_psu,
-                    'pools': data.pools,
+                    'fault_light': data.fault_light if hasattr(data, 'fault_light') else False,
+                    'errors': _normalize_list(data.errors if hasattr(data, 'errors') else None),
+                    'hashboards': _normalize_list(data.hashboards if hasattr(data, 'hashboards') else None),
+                    'fans': _normalize_list(data.fans if hasattr(data, 'fans') else None),
+                    'fan_psu': _normalize_list(data.fan_psu if hasattr(data, 'fan_psu') else None),
+                    'pools': _normalize_list(data.pools if hasattr(data, 'pools') else None),
                 }
                 
                 # Check for gaps
@@ -496,17 +511,18 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 'pool_rejected': 0,
             }
             
-            # Add pool stats if available
+            # Add pool stats if available (defensive: check list and non-empty)
             pools = data.get('pools', [])
-            if pools:
-                if hasattr(pools[0], 'accepted'):
+            if pools and isinstance(pools, (list, tuple)) and len(pools) > 0:
+                first_pool = pools[0]
+                if hasattr(first_pool, 'accepted'):
                     # PyASIC pool objects
-                    miner_data['pool_accepted'] = sum(p.accepted for p in pools if p.accepted is not None)
-                    miner_data['pool_rejected'] = sum(p.rejected for p in pools if p.rejected is not None)
-                else:
+                    miner_data['pool_accepted'] = sum(p.accepted for p in pools if hasattr(p, 'accepted') and p.accepted is not None)
+                    miner_data['pool_rejected'] = sum(p.rejected for p in pools if hasattr(p, 'rejected') and p.rejected is not None)
+                elif isinstance(first_pool, dict):
                     # Dict pool data from cgminer
-                    miner_data['pool_accepted'] = sum(p.get('accepted', 0) for p in pools)
-                    miner_data['pool_rejected'] = sum(p.get('rejected', 0) for p in pools)
+                    miner_data['pool_accepted'] = sum(p.get('accepted', 0) for p in pools if isinstance(p, dict))
+                    miner_data['pool_rejected'] = sum(p.get('rejected', 0) for p in pools if isinstance(p, dict))
             
             miners_data.append(miner_data)
         else:
@@ -638,39 +654,50 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
             if hasattr(fan, 'speed'):
                 miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id=str(i)).set(fan.speed or 0)
     
-    fan_psu = data.get('fan_psu')
-    if fan_psu:
-        miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id='psu').set(fan_psu[0].speed or 0)
+    fan_psu = data.get('fan_psu', [])
+    if fan_psu and isinstance(fan_psu, (list, tuple)) and len(fan_psu) > 0:
+        if hasattr(fan_psu[0], 'speed'):
+            miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id='psu').set(fan_psu[0].speed or 0)
     
-    # Pools
+    # Pools (defensive: check if list and non-empty before indexing)
     pools = data.get('pools', [])
-    if pools:
-        if hasattr(pools[0], 'accepted'):
+    if pools and isinstance(pools, (list, tuple)) and len(pools) > 0:
+        # Detect type by checking first element safely
+        first_pool = pools[0]
+        if hasattr(first_pool, 'accepted'):
             # PyASIC pool objects
-            total_accepted = sum(p.accepted for p in pools if p.accepted is not None)
-            total_rejected = sum(p.rejected for p in pools if p.rejected is not None)
-        else:
+            total_accepted = sum(p.accepted for p in pools if hasattr(p, 'accepted') and p.accepted is not None)
+            total_rejected = sum(p.rejected for p in pools if hasattr(p, 'rejected') and p.rejected is not None)
+        elif isinstance(first_pool, dict):
             # Dict pool data from cgminer
-            total_accepted = sum(p.get('accepted', 0) for p in pools)
-            total_rejected = sum(p.get('rejected', 0) for p in pools)
+            total_accepted = sum(p.get('accepted', 0) for p in pools if isinstance(p, dict))
+            total_rejected = sum(p.get('rejected', 0) for p in pools if isinstance(p, dict))
+        else:
+            # Unknown format, skip
+            total_accepted = 0
+            total_rejected = 0
         
         miner_pool_accepted.labels(ip=ip, name=name, model=model).set(total_accepted)
         miner_pool_rejected.labels(ip=ip, name=name, model=model).set(total_rejected)
     
-    # Hashboards (if available from PyASIC)
+    # Hashboards (defensive: check if list and non-empty before indexing)
     hashboards = data.get('hashboards', [])
-    if hashboards and hasattr(hashboards[0], 'slot'):
-        for board in hashboards:
-            slot = str(board.slot)
-            miner_board_hashrate.labels(ip=ip, name=name, model=model, slot=slot).set(board.hashrate or 0)
-            
-            board_temp = board.chip_temp if board.chip_temp is not None else (board.temp or 0)
-            miner_board_temp.labels(ip=ip, name=name, model=model, slot=slot).set(board_temp)
-            
-            if hasattr(board, 'chips'):
-                miner_board_chips_count.labels(ip=ip, name=name, model=model, slot=slot).set(board.chips or 0)
-            if hasattr(board, 'expected_chips'):
-                miner_board_chips_expected.labels(ip=ip, name=name, model=model, slot=slot).set(board.expected_chips or 0)
+    if hashboards and isinstance(hashboards, (list, tuple)) and len(hashboards) > 0:
+        # Only iterate if first element has expected structure
+        if hasattr(hashboards[0], 'slot'):
+            for board in hashboards:
+                if not hasattr(board, 'slot'):
+                    continue  # Skip malformed boards
+                slot = str(board.slot)
+                miner_board_hashrate.labels(ip=ip, name=name, model=model, slot=slot).set(board.hashrate or 0)
+                
+                board_temp = board.chip_temp if board.chip_temp is not None else (board.temp or 0)
+                miner_board_temp.labels(ip=ip, name=name, model=model, slot=slot).set(board_temp)
+                
+                if hasattr(board, 'chips'):
+                    miner_board_chips_count.labels(ip=ip, name=name, model=model, slot=slot).set(board.chips or 0)
+                if hasattr(board, 'expected_chips'):
+                    miner_board_chips_expected.labels(ip=ip, name=name, model=model, slot=slot).set(board.expected_chips or 0)
 
 
 async def collect_pool_network_metrics(miners: List[Dict]) -> Dict[str, Any]:
