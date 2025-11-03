@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     libssl-dev \
     python3-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
