@@ -55,7 +55,7 @@
         "type": "stat",
         "title": "Active Miners",
         "targets": [{
-          "expr": "count(max by (ip) (miner_scrape_success) == 1)",
+          "expr": "count(max by (ip) (miner_scrape_status) >= 1)",
           "legendFormat": "Active"
         }],
         "options": {
