@@ -71,7 +71,7 @@ miner_uptime = Gauge('miner_uptime_seconds', 'Miner uptime in seconds', ['ip', '
 miner_efficiency = Gauge('miner_efficiency_j_th', 'Miner efficiency in J/TH', ['ip', 'name', 'model'])
 miner_fault_light = Gauge('miner_fault_light_on', 'Fault light status (1=on, 0=off)', ['ip', 'name', 'model'])
 miner_errors_count = Gauge('miner_errors_count', 'Number of errors', ['ip', 'name', 'model'])
-miner_scrape_success = Gauge('miner_scrape_success', 'Scrape success (1=success, 0=failure)', ['ip', 'name', 'model'])
+miner_scrape_status = Gauge('miner_scrape_status', 'Scrape status (2=success, 1=partial, 0=timeout, -1=refused, -2=error)', ['ip', 'name', 'model'])
 
 # Miner Board Metrics
 miner_board_hashrate = Gauge('miner_board_hashrate_ths', 'Board hashrate in TH/s', ['ip', 'name', 'model', 'slot'])
@@ -301,11 +301,11 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             try:
                 miner_obj = await asyncio.wait_for(get_miner(ip), timeout=15)
                 if not miner_obj:
-                    return None
+                    return {'error': 'no_miner_object', 'error_type': 'other'}
                 
                 data = await asyncio.wait_for(miner_obj.get_data(), timeout=15)
                 if not data:
-                    return None
+                    return {'error': 'no_data', 'error_type': 'other'}
                 
                 # Convert to dict
                 pyasic_data = {
@@ -333,9 +333,21 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     'method': 'pyasic'
                 }
                 
+            except asyncio.TimeoutError:
+                logger.debug(f"PyASIC timeout for {ip}")
+                return {'error': 'timeout', 'error_type': 'timeout'}
+            except ConnectionRefusedError:
+                logger.debug(f"Connection refused for {ip} (API disabled)")
+                return {'error': 'connection_refused', 'error_type': 'refused'}
+            except OSError as e:
+                if 'refused' in str(e).lower():
+                    logger.debug(f"Connection refused for {ip}: {e}")
+                    return {'error': 'connection_refused', 'error_type': 'refused'}
+                logger.debug(f"PyASIC OS error for {ip}: {e}")
+                return {'error': str(e), 'error_type': 'other'}
             except Exception as e:
                 logger.debug(f"PyASIC failed for {ip}: {e}")
-                return None
+                return {'error': str(e), 'error_type': 'other'}
     
     # Collect from all miners in parallel
     tasks = [collect_pyasic_one(miner) for miner in miners]
@@ -401,12 +413,26 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
         if result and result.get('data'):
             data = result['data']
             
+            # Determine scrape status
+            # 2 = Full success (with or without gap-filling)
+            # 1 = Partial success (PyASIC worked but gap-fill failed)
+            method = result.get('method', 'pyasic')
+            has_gaps = result.get('has_gaps', False)
+            
+            if method == 'merged':
+                scrape_status = 2  # Full success with gap-filling
+            elif has_gaps:
+                scrape_status = 1  # Partial success (gaps not filled)
+            else:
+                scrape_status = 2  # Full success
+            
             # Update Prometheus metrics
             _update_metrics(
                 data,
                 miner['ip'],
                 miner['name'],
-                miner['model']
+                miner['model'],
+                scrape_status
             )
             success_count += 1
             
@@ -423,7 +449,7 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 'efficiency': float(data.get('efficiency', 0) or 0),
                 'fault_light': 1 if data.get('fault_light') else 0,
                 'errors_count': len(data.get('errors', [])) if data.get('errors') else 0,
-                'scrape_success': 1,
+                'scrape_status': scrape_status,
                 'state': 2 if float(data.get('hashrate', 0) or 0) > 0 else (1 if not data.get('is_mining', True) else 0),
                 'pool_accepted': 0,
                 'pool_rejected': 0,
@@ -443,8 +469,18 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             
             miners_data.append(miner_data)
         else:
-            # Mark as failed
-            miner_scrape_success.labels(ip=miner['ip'], name=miner['name'], model=miner['model']).set(0)
+            # Determine failure type from error_type
+            error_type = result.get('error_type', 'other') if result else 'other'
+            
+            if error_type == 'timeout':
+                scrape_status = 0  # Timeout
+            elif error_type == 'refused':
+                scrape_status = -1  # Connection refused (API disabled)
+            else:
+                scrape_status = -2  # Other error
+            
+            # Mark as failed with descriptive status
+            miner_scrape_status.labels(ip=miner['ip'], name=miner['name'], model=miner['model']).set(scrape_status)
             miner_state.labels(ip=miner['ip'], name=miner['name'], model=miner['model']).set(0)
             
             # Add failed miner to data with zeros
@@ -460,7 +496,7 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 'efficiency': 0,
                 'fault_light': 0,
                 'errors_count': 0,
-                'scrape_success': 0,
+                'scrape_status': scrape_status,
                 'state': 0,
                 'pool_accepted': 0,
                 'pool_rejected': 0,
@@ -484,7 +520,7 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
     }
 
 
-def _update_metrics(data: Dict, ip: str, name: str, model: str):
+def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: int = 2):
     """Update Prometheus metrics (Prometheus adds timestamp when scraping)"""
     is_scrypt = _is_scrypt_miner(model)
     model = model.replace(" ", "_")
@@ -502,8 +538,8 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str):
     else:
         state = 0  # faulty
     
-    # Update metrics
-    miner_scrape_success.labels(ip=ip, name=name, model=model).set(1)
+    # Update metrics with descriptive scrape status
+    miner_scrape_status.labels(ip=ip, name=name, model=model).set(scrape_status)
     miner_state.labels(ip=ip, name=name, model=model).set(state)
     
     # Hashrate (handle SCRYPT vs SHA-256)
@@ -764,8 +800,8 @@ def clear_miner_metrics(ip: str, name: str, model: str):
     """Clear all metrics for a specific miner (for stale data prevention)"""
     model = model.replace(" ", "_")
     
-    # Clear all miner metrics by setting to 0 or -1 (to indicate no data)
-    miner_scrape_success.labels(ip=ip, name=name, model=model).set(0)
+    # Clear all miner metrics by setting to 0 or -2 (to indicate no data yet)
+    miner_scrape_status.labels(ip=ip, name=name, model=model).set(-2)  # -2 = not yet collected
     miner_state.labels(ip=ip, name=name, model=model).set(0)  # 0 = faulty/offline
     miner_hashrate.labels(ip=ip, name=name, model=model).set(0)
     miner_power.labels(ip=ip, name=name, model=model).set(0)
