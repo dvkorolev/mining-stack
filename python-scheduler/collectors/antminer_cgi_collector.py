@@ -1,12 +1,13 @@
 """
 Antminer CGI collector - Fallback driver for Antminers when port 4028 API fails.
-Uses web-based CGI endpoints with digest authentication via curl subprocess.
+Uses web-based CGI endpoints with digest authentication.
 """
 
 import asyncio
-import json
 import logging
 from typing import Dict, Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -32,42 +33,27 @@ async def collect_antminer_cgi(miner_config: Dict) -> Optional[Dict]:
     url = f"http://{ip}/cgi-bin/stats.cgi"
     
     try:
-        # Use curl with digest auth - works reliably on all architectures
-        # curl is included in python:3.11-slim base image
-        cmd = [
-            'curl',
-            '--digest',                    # Use HTTP Digest authentication
-            '--user', f'{username}:{password}',
-            '--silent',                    # Silent mode (no progress)
-            '--show-error',                # Show errors
-            '--fail',                      # Fail on HTTP errors
-            '--max-time', '10',            # 10 second timeout
-            '--connect-timeout', '5',      # 5 second connect timeout
-            url
-        ]
+        # Create digest auth using httpx (works on ARM64)
+        auth = httpx.DigestAuth(username, password)
         
-        # Execute curl as subprocess
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode != 0:
-            error_msg = stderr.decode().strip() if stderr else 'Unknown error'
-            logger.warning(f"Antminer CGI {ip}: curl failed with code {process.returncode}: {error_msg}")
-            return None
-        
-        # Parse JSON response
-        data = json.loads(stdout.decode())
-        
-        # Parse the CGI response
-        return _parse_antminer_cgi_response(data, ip)
-        
-    except json.JSONDecodeError as e:
-        logger.warning(f"Antminer CGI {ip}: Invalid JSON response - {e}")
+        # Make authenticated request with timeout
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, auth=auth)
+            
+            if response.status_code != 200:
+                logger.warning(f"Antminer CGI {ip}: HTTP {response.status_code}")
+                return None
+            
+            data = response.json()
+            
+            # Parse the CGI response
+            return _parse_antminer_cgi_response(data, ip)
+                
+    except asyncio.TimeoutError:
+        logger.debug(f"Antminer CGI {ip}: Timeout")
+        return None
+    except httpx.HTTPError as e:
+        logger.debug(f"Antminer CGI {ip}: HTTP error - {e}")
         return None
     except Exception as e:
         logger.debug(f"Antminer CGI {ip}: Unexpected error - {e}")
