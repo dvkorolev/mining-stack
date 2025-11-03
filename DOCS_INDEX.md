@@ -12,50 +12,63 @@ Complete guide to all documentation in the Mining Stack project.
 |------|---------|----------|
 | [README.md](./README.md) | Project overview, quick start, features | Everyone |
 | [CHANGELOG.md](./CHANGELOG.md) | Version history and release notes | Everyone |
-| [TELEGRAM_SETUP.md](./TELEGRAM_SETUP.md) | Quick Telegram bot setup (5 min) | Users |
-| [IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md) | Technical implementation details | Developers |
-
-### **Advanced Features**
-
-| File | Purpose | Audience |
-|------|---------|----------|
-| [THRESHOLD_CONFIGURATION.md](./THRESHOLD_CONFIGURATION.md) | Threshold configuration guide | Operators |
-| [THRESHOLD_INTEGRATION.md](./THRESHOLD_INTEGRATION.md) | How thresholds integrate with backend | Developers |
-| [THRESHOLD_SYNC.md](./THRESHOLD_SYNC.md) | Sync thresholds with Prometheus | Operators |
-| [DUAL_COLLECTOR_SETUP.md](./DUAL_COLLECTOR_SETUP.md) | Run pyasic + universal collectors | Operators |
-| [UNIVERSAL_COLLECTOR.md](./UNIVERSAL_COLLECTOR.md) | Universal miner collector docs | Operators |
-| [PYASIC_SETUP.md](./PYASIC_SETUP.md) | PyASIC collector setup | Operators |
+| [DOCS_INDEX.md](./DOCS_INDEX.md) | This file - master documentation index | Everyone |
 
 ---
 
 ## 📖 Documentation Directory (`docs/`)
 
-### **Getting Started**
+### **📘 Getting Started** (`docs/getting-started/`)
 
 | File | Description | Time |
 |------|-------------|------|
 | [QUICKSTART.md](./docs/QUICKSTART.md) | Get running in 5 minutes | 5 min |
-| [DEPLOYMENT.md](./docs/DEPLOYMENT.md) | Production deployment guide | 15 min |
 | [CONFIGURATION.md](./docs/CONFIGURATION.md) | System configuration | 10 min |
 
-### **Operations & Monitoring**
+### **🚀 Deployment** (`docs/deployment/`)
+
+| File | Description | Audience |
+|------|-------------|----------|
+| [DEPLOYMENT.md](./docs/DEPLOYMENT.md) | Production deployment guide | Admins |
+| [CI_CD.md](./docs/CI_CD.md) | GitHub Actions setup | DevOps |
+
+### **✨ Features** (`docs/features/`)
 
 | File | Description | Use Case |
 |------|-------------|----------|
-| [MONITORING.md](./docs/MONITORING.md) | Prometheus, Grafana, metrics | Setup monitoring |
-| [THRESHOLDS.md](./docs/THRESHOLDS.md) | Threshold configuration guide | Configure alerts |
 | [TELEGRAM_BOT.md](./docs/TELEGRAM_BOT.md) | Complete Telegram bot guide | Remote control |
+| [MONITORING.md](./docs/MONITORING.md) | Prometheus, Grafana, metrics | Setup monitoring |
+| [THRESHOLDS.md](./docs/features/THRESHOLDS.md) | Threshold configuration guide | Configure alerts |
+| [MOBILE_UI.md](./docs/features/MOBILE_UI.md) | Mobile interface features | Mobile users |
+| [PYASIC_SETUP.md](./docs/features/PYASIC_SETUP.md) | PyASIC collector setup | Operators |
+| [UNIVERSAL_COLLECTOR.md](./docs/features/UNIVERSAL_COLLECTOR.md) | Universal miner collector | Operators |
+| [DUAL_COLLECTOR_SETUP.md](./docs/features/DUAL_COLLECTOR_SETUP.md) | Run multiple collectors | Advanced |
+
+### **⚙️ Operations** (`docs/operations/`)
+
+| File | Description | Use Case |
+|------|-------------|----------|
 | [HEALTH_CHECKS.md](./docs/HEALTH_CHECKS.md) | System health monitoring | Maintenance |
 | [TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | Common issues & solutions | Problem solving |
 | [MINING_FARM.md](./docs/MINING_FARM.md) | Large-scale operations | Farm management |
 
-### **Development**
+### **💻 Development** (`docs/development/`)
 
 | File | Description | Audience |
 |------|-------------|----------|
 | [API.md](./docs/API.md) | Backend API reference | Developers |
-| [CI_CD.md](./docs/CI_CD.md) | GitHub Actions setup | DevOps |
-| [README.md](./docs/README.md) | Documentation index | Everyone |
+| [ARCHITECTURE.md](./docs/development/ARCHITECTURE.md) | System architecture | Developers |
+| [TESTING.md](./docs/development/TESTING.md) | Testing strategy | Developers |
+| [README.md](./docs/README.md) | Documentation hub | Everyone |
+
+### **📦 Archive** (`docs/archive/`)
+
+Historical documentation for reference:
+
+- **Implementation** (`docs/archive/implementation/`) - Implementation summaries and technical reviews
+- **Improvements** (`docs/archive/improvements/`) - Feature improvement documents
+- **Deployment Guides** (`docs/archive/deployment-guides/`) - Historical deployment guides
+- **Troubleshooting** (`docs/archive/troubleshooting/`) - Resolved issues and fixes
 
 ---
 
