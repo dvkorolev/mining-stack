@@ -16,7 +16,8 @@ RUN apk add --no-cache \
 COPY package*.json ./
 
 # Install dependencies including devDependencies for build
-RUN --mount=type=cache,target=/root/.npm npm ci
+# Using npm install instead of npm ci for better compatibility
+RUN --mount=type=cache,target=/root/.npm npm install
 
 # Copy source code
 COPY . .
