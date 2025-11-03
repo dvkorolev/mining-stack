@@ -1039,7 +1039,7 @@ async def status():
     """Get collector status"""
     return {
         "last_collection": last_collection,
-        "collection_in_progress": collection_in_progress,
+        "collection_in_progress": collection_lock.locked(),
         "collection_interval_minutes": COLLECTION_INTERVAL,
         "architecture": "v2_in_memory_metrics_with_lock",
         "miners_count": len(miners_config_cache) if miners_config_cache else 0
@@ -1049,11 +1049,11 @@ async def status():
 @app.post("/collect")
 async def trigger_collection(background_tasks: BackgroundTasks):
     """Manually trigger metrics collection (runs in background)"""
-    if collection_in_progress:
+    if collection_lock.locked():
         return {
             "success": False,
             "message": "Collection already in progress",
-            "timestamp": last_collection.get('timestamp')
+            "skipped": True
         }
     
     logger.info("Manual collection triggered via API (background)")
