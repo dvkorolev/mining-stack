@@ -20,7 +20,7 @@ class ASICProfile:
         self.name = data.get('name', profile_id)
         self.manufacturer = data.get('manufacturer', 'Unknown')
         self.algorithm = data.get('algorithm', 'sha256')
-        self.models = data.get('models', [])
+        self.match = data.get('match', {})  # Embedded matching rules
         self.drivers = data.get('drivers', [])
         self.parser = data.get('parser', {})
         self.credentials = data.get('credentials', {})
@@ -73,23 +73,29 @@ class ASICProfileLibrary:
             # Load profiles
             profiles_data = data.get('profiles', {})
             for profile_id, profile_data in profiles_data.items():
-                self.profiles[profile_id] = ASICProfile(profile_id, profile_data)
-            
-            # Load matching rules
-            matching = data.get('matching', {})
-            self.exact_matches = matching.get('exact', {})
-            
-            pattern_list = matching.get('patterns', [])
-            for pattern_entry in pattern_list:
-                pattern = pattern_entry.get('pattern')
-                profile_id = pattern_entry.get('profile')
-                if pattern and profile_id:
-                    self.pattern_matches.append((re.compile(pattern, re.IGNORECASE), profile_id))
+                profile = ASICProfile(profile_id, profile_data)
+                self.profiles[profile_id] = profile
+                
+                # Build matching rules from embedded profile data
+                match_rules = profile_data.get('match', {})
+                
+                # Add exact matches
+                for exact_model in match_rules.get('exact', []):
+                    self.exact_matches[exact_model] = profile_id
+                
+                # Add pattern matches
+                for pattern_str in match_rules.get('patterns', []):
+                    try:
+                        pattern = re.compile(pattern_str, re.IGNORECASE)
+                        self.pattern_matches.append((pattern, profile_id))
+                    except re.error as e:
+                        logger.warning(f"Invalid regex pattern '{pattern_str}' in profile '{profile_id}': {e}")
             
             # Load defaults
             self.defaults = data.get('defaults', {})
             
             logger.info(f"Loaded {len(self.profiles)} ASIC profiles from {self.profiles_path}")
+            logger.debug(f"Built {len(self.exact_matches)} exact matches and {len(self.pattern_matches)} pattern matches")
             
         except Exception as e:
             logger.error(f"Failed to load ASIC profiles: {e}")

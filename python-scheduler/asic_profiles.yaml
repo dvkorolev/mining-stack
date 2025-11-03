@@ -13,12 +13,20 @@ profiles:
     name: "Whatsminer M50S Series"
     manufacturer: "MicroBT"
     algorithm: "sha256"
-    models:
-      - "M50S"
-      - "M50S+"
-      - "M50S++"
-      - "M50S VL30"
-      - "M50S++ VL30"
+    
+    # Matching rules (self-contained)
+    match:
+      # Exact model strings
+      exact:
+        - "Whatsminer M50S"
+        - "Whatsminer M50S+"
+        - "Whatsminer M50S++"
+        - "Whatsminer M50S VL30"
+        - "Whatsminer M50S++ VL30"
+      # Regex patterns
+      patterns:
+        - "^Whatsminer M50S"
+        - "M50S.*(VL30|VL20)"
     
     # Collection strategy (ordered by preference)
     drivers:
@@ -67,10 +75,15 @@ profiles:
     name: "Whatsminer M30S Series"
     manufacturer: "MicroBT"
     algorithm: "sha256"
-    models:
-      - "M30S"
-      - "M30S+"
-      - "M30S++"
+    
+    # Matching rules
+    match:
+      exact:
+        - "Whatsminer M30S"
+        - "Whatsminer M30S+"
+        - "Whatsminer M30S++"
+      patterns:
+        - "^Whatsminer M30S"
     
     drivers:
       - type: "pyasic"
@@ -114,12 +127,18 @@ profiles:
     name: "Antminer S19 Series"
     manufacturer: "Bitmain"
     algorithm: "sha256"
-    models:
-      - "S19"
-      - "S19 Pro"
-      - "S19j Pro"
-      - "S19 XP"
-      - "S19k Pro"
+    
+    # Matching rules
+    match:
+      exact:
+        - "Antminer S19"
+        - "Antminer S19 Pro"
+        - "Antminer S19j Pro"
+        - "Antminer S19 XP"
+        - "Antminer S19k Pro"
+      patterns:
+        - "^Antminer S19"
+        - "S19.*(Pro|XP|j Pro|k Pro)"
     
     drivers:
       - type: "pyasic"
@@ -165,10 +184,16 @@ profiles:
     name: "Antminer S17 Series"
     manufacturer: "Bitmain"
     algorithm: "sha256"
-    models:
-      - "S17"
-      - "S17 Pro"
-      - "S17+"
+    
+    # Matching rules
+    match:
+      exact:
+        - "Antminer S17"
+        - "Antminer S17 Pro"
+        - "Antminer S17+"
+      patterns:
+        - "^Antminer S17"
+        - 'S17.*(Pro|\+)'
     
     drivers:
       - type: "pyasic"
@@ -218,9 +243,16 @@ profiles:
     name: "ElphaPex DG1"
     manufacturer: "ElphaPex"
     algorithm: "scrypt"
-    models:
-      - "DG1"
-      - "DG1 Pro"
+    
+    # Matching rules
+    match:
+      exact:
+        - "ElphaPex DG1"
+        - "ElphaPex DG1 Pro"
+        - "DG1"
+      patterns:
+        - '\bDG1\b'
+        - "ElphaPex.*DG1"
     
     drivers:
       - type: "dg1_tcp"
@@ -261,9 +293,15 @@ profiles:
     name: "Antminer L7"
     manufacturer: "Bitmain"
     algorithm: "scrypt"
-    models:
-      - "L7"
-      - "L7+"
+    
+    # Matching rules
+    match:
+      exact:
+        - "Antminer L7"
+        - "Antminer L7+"
+      patterns:
+        - '\bL7\+?\b'
+        - "^Antminer L7"
     
     drivers:
       - type: "pyasic"
@@ -303,9 +341,15 @@ profiles:
     name: "Antminer L3+"
     manufacturer: "Bitmain"
     algorithm: "scrypt"
-    models:
-      - "L3+"
-      - "L3++"
+    
+    # Matching rules
+    match:
+      exact:
+        - "Antminer L3+"
+        - "Antminer L3++"
+      patterns:
+        - '\bL3\+{1,2}\b'
+        - "^Antminer L3"
     
     drivers:
       - type: "pyasic"
@@ -342,36 +386,10 @@ profiles:
       temp_max: 75
 
 # ============================================================================
-# Model Matching Rules
+# Notes
 # ============================================================================
-# How to match a miner's model string to a profile
-
-matching:
-  # Exact matches (highest priority)
-  exact:
-    "Antminer S19 Pro": "antminer_s19"
-    "Antminer S19j Pro": "antminer_s19"
-    "Antminer S19 XP": "antminer_s19"
-    "Whatsminer M50S++": "whatsminer_m50s"
-    "Whatsminer M50S++ VL30": "whatsminer_m50s"
-    "ElphaPex DG1": "elphapex_dg1"
-  
-  # Regex patterns (fallback)
-  patterns:
-    - pattern: "^Whatsminer M50S"
-      profile: "whatsminer_m50s"
-    - pattern: "^Whatsminer M30S"
-      profile: "whatsminer_m30s"
-    - pattern: "^Antminer S19"
-      profile: "antminer_s19"
-    - pattern: "^Antminer S17"
-      profile: "antminer_s17"
-    - pattern: "^Antminer L7"
-      profile: "antminer_l7"
-    - pattern: "^Antminer L3"
-      profile: "antminer_l3"
-    - pattern: "DG1"
-      profile: "elphapex_dg1"
+# Each profile is self-contained with embedded matching rules.
+# No separate matching section needed - profiles are "experts" on their miners.
 
 # ============================================================================
 # Global Defaults
