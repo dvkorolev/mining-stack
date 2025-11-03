@@ -4,36 +4,41 @@
 # This script should be run ON the Raspberry Pi (not from your local machine).
 # It pulls pre-built Docker images from GitHub Container Registry.
 #
-# Usage: ./update-from-registry.sh [image_tag] [--skip-git]
+# Usage: ./update-from-registry.sh [image_tag] [--skip-git] [--build]
 #
 # What this script does:
 #   1. ✓ Optionally syncs configuration files from GitHub (docker-compose, scripts)
-#   2. ✓ Pulls latest Docker images from GHCR
+#   2. ✓ Pulls latest Docker images from GHCR OR builds locally
 #   3. ✓ Restarts containers with new images
 #   4. ✓ Preserves your miners.yaml and .env configuration
 #   5. ✓ Runs health checks
 #
 # What this script does NOT do:
-#   ✗ Does not build images (they're pre-built in CI/CD)
 #   ✗ Does not modify your miners.yaml
-#   ✗ Does not require source code on the Pi
+#   ✗ Does not require full source code (only if --build is used)
 #
 # Examples:
-#   ./update-from-registry.sh              # Update to 'latest' tag
+#   ./update-from-registry.sh              # Update to 'latest' tag from GHCR
 #   ./update-from-registry.sh v1.2.3       # Update to specific version
 #   ./update-from-registry.sh --skip-git   # Only update Docker images, skip file sync
+#   ./update-from-registry.sh --build      # Build from local source instead of pulling
 
 set -e
 
 PROJECT_DIR="/opt/mining-stack"
 IMAGE_TAG="${1:-latest}"
 SKIP_GIT=false
+BUILD_LOCAL=false
 
 # Parse arguments
 for arg in "$@"; do
   case $arg in
     --skip-git)
       SKIP_GIT=true
+      shift
+      ;;
+    --build)
+      BUILD_LOCAL=true
       shift
       ;;
   esac
@@ -134,10 +139,16 @@ else
     echo ""
 fi
 
-# Pull latest images
-echo -e "${BLUE}📥 Pulling latest images...${NC}"
-export IMAGE_TAG=$IMAGE_TAG
-docker compose -f docker-compose.prod.yml pull
+# Pull or build images
+if [ "$BUILD_LOCAL" = true ]; then
+    echo -e "${BLUE}🔨 Building images from local source...${NC}"
+    echo -e "${YELLOW}   This will take a few minutes...${NC}"
+    docker compose -f docker-compose.prod.yml build
+else
+    echo -e "${BLUE}📥 Pulling latest images from GHCR...${NC}"
+    export IMAGE_TAG=$IMAGE_TAG
+    docker compose -f docker-compose.prod.yml pull
+fi
 
 # Stop containers
 echo -e "${BLUE}🛑 Stopping containers...${NC}"
