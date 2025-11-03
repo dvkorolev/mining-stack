@@ -25,11 +25,35 @@ from metrics import (
 logger = logging.getLogger(__name__)
 
 
-def _is_scrypt_miner(model: str) -> bool:
-    """Detect if miner is SCRYPT-based"""
+def _is_scrypt_miner(model: str, algorithm_override: str = None) -> bool:
+    """
+    Detect if miner is SCRYPT-based with proper regex matching.
+    
+    Args:
+        model: Miner model string
+        algorithm_override: Explicit algorithm from config ('sha256' or 'scrypt')
+    
+    Returns:
+        True if SCRYPT miner, False if SHA-256
+    """
+    # Explicit override takes precedence
+    if algorithm_override:
+        return algorithm_override.lower() == 'scrypt'
+    
     model_lower = model.lower()
-    scrypt_keywords = ['dg1', 'l3', 'l7', 'scrypt', 'litecoin', 'doge']
-    return any(keyword in model_lower for keyword in scrypt_keywords)
+    
+    # Use word-boundary regex to avoid false positives like VL30 matching 'l3'
+    import re
+    scrypt_patterns = [
+        r'\bdg1\b',      # ElphaPex DG1 (word boundary)
+        r'\bl3\+?\b',    # Antminer L3, L3+ (word boundary, optional +)
+        r'\bl7\b',       # Antminer L7 (word boundary)
+        r'scrypt',       # Explicit SCRYPT mention
+        r'litecoin',     # Litecoin miners
+        r'doge',         # Dogecoin miners
+    ]
+    
+    return any(re.search(pattern, model_lower) for pattern in scrypt_patterns)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -138,9 +162,9 @@ def _merge_data(pyasic_data: Dict, cgminer_data: Dict, gaps: Dict[str, bool], cg
     return merged
 
 
-def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: int = 2):
+def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: int = 2, algorithm: str = None):
     """Update Prometheus metrics"""
-    is_scrypt = _is_scrypt_miner(model)
+    is_scrypt = _is_scrypt_miner(model, algorithm)
     model = model.replace(" ", "_")
     
     hashrate_raw = data.get('hashrate', 0) or 0
@@ -376,7 +400,7 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             else:
                 scrape_status = 2
             
-            _update_metrics(data, miner['ip'], miner['name'], miner['model'], scrape_status)
+            _update_metrics(data, miner['ip'], miner['name'], miner['model'], scrape_status, miner.get('algorithm'))
             success_count += 1
             
             hashrate_val = _safe_float(data.get('hashrate', 0))

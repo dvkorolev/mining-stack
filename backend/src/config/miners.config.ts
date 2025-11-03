@@ -48,6 +48,7 @@ export interface MinerConfig {
   username?: string;  // For CGI fallback (default: 'root')
   password?: string;  // For CGI fallback (default: 'root')
   api_port?: number;  // Custom CGMiner API port (default: 4028)
+  algorithm?: 'sha256' | 'scrypt';  // Explicit algorithm override (auto-detected if not specified)
   // Runtime fields (not saved to YAML)
   status?: 'online' | 'offline' | 'error';
   lastSeen?: Date;
@@ -237,6 +238,7 @@ export const saveMinersConfig = (minersToSave: MinerConfig[]): void => {
       if (m.username) data.username = m.username;
       if (m.password) data.password = m.password;
       if (m.api_port) data.api_port = m.api_port;
+      if (m.algorithm) data.algorithm = m.algorithm;
       if (m.thresholds) data.thresholds = m.thresholds;
       if (m.pools) data.pools = m.pools;
       

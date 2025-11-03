@@ -38,6 +38,16 @@ miners:
     name: "dg1-01"
     model: "ElphaPex DG1"
     alias: "DG1 SCRYPT Miner"
+    # Optional: Explicit algorithm override (auto-detected if not specified)
+    algorithm: "scrypt"
+  
+  # Whatsminer with ambiguous model name (VL30 contains "l3" but is SHA-256)
+  - ip: "192.168.1.104"
+    name: "miner-04"
+    model: "Whatsminer M50S++ VL30"
+    alias: "High Performance Rig"
+    # Explicit override prevents false SCRYPT detection
+    algorithm: "sha256"
 
 # ============================================================================
 # Configuration Fields
@@ -53,6 +63,9 @@ miners:
 # - api_port: Custom CGMiner API port (optional, default: 4028)
 # - username: Username for CGI fallback (optional, default: 'root')
 # - password: Password for CGI fallback (optional, default: 'root')
+# - algorithm: Mining algorithm override (optional, values: 'sha256' or 'scrypt')
+#   * Auto-detected from model if not specified
+#   * Use this to fix false detections (e.g., VL30 model contains "l3")
 
 # ============================================================================
 # Collection Hierarchy
