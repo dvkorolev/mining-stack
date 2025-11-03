@@ -24,11 +24,11 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
     // Get credentials from config or use defaults
     const defaultUsername = isWhatsminer ? 'admin' : 'root';
     const defaultPassword = isWhatsminer ? 'admin' : 'root';
-    const username = miner.credentials?.username || defaultUsername;
-    const password = miner.credentials?.password || defaultPassword;
+    const username = miner.username || defaultUsername;
+    const password = miner.password || defaultPassword;
     
-    // Determine protocol (HTTP or HTTPS)
-    const protocol = miner.useHttps ? 'https' : 'http';
+    // Determine protocol (HTTP or HTTPS) - default to HTTP for miners
+    const protocol = 'http';
     
     // Try miner-specific endpoints first
     const endpoints = [];
@@ -64,10 +64,6 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
             username,
             password,
           },
-          // Accept self-signed certificates (common for miners)
-          httpsAgent: miner.useHttps ? new (require('https').Agent)({
-            rejectUnauthorized: false
-          }) : undefined,
         });
 
         logger.info(`Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);

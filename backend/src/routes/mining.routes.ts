@@ -149,13 +149,13 @@ router.get('/mining/miners', async (req, res, next) => {
 // Add new miner
 router.post('/mining/miners', async (req, res, next) => {
   try {
-    const { name, ip, model, alias, owner } = req.body;
+    const { name, ip, model, alias, username, password, api_port } = req.body;
     
     if (!ip || !model) {
       return res.status(400).json({ error: 'IP and model are required' });
     }
     
-    const newMiner = addMiner({ name, ip, model, alias, owner });
+    const newMiner = addMiner({ name, ip, model, alias, username, password, api_port });
     res.json({ success: true, miner: newMiner });
   } catch (error) {
     next(error);
