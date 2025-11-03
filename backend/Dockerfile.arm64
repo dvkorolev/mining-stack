@@ -3,31 +3,51 @@ FROM --platform=linux/arm64 node:18-alpine AS builder
 
 WORKDIR /app
 
+# Install build dependencies for native modules (better-sqlite3)
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    gcc \
+    libc-dev \
+    sqlite-dev
+
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies (no native build tools needed for pure TS/JS)
-RUN --mount=type=cache,target=/root/.npm npm install
+# Install dependencies including devDependencies for build
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
+# Build the application with verbose output
+RUN npm run build || (echo "Build failed. Checking TypeScript errors..." && npx tsc --noEmit && exit 1)
 
 # Production image
 FROM --platform=linux/arm64 node:18-alpine
 
 WORKDIR /app
 
-# Install runtime dependencies
-RUN apk add --no-cache tini
+# Install runtime dependencies (tini + sqlite for better-sqlite3)
+RUN apk add --no-cache tini sqlite-libs
+
+# Install build tools temporarily for native module rebuild
+RUN apk add --no-cache --virtual .build-deps \
+    python3 \
+    make \
+    g++ \
+    gcc \
+    libc-dev \
+    sqlite-dev
 
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
-RUN --mount=type=cache,target=/root/.npm npm install --only=production
+# Install only production dependencies and rebuild native modules
+RUN --mount=type=cache,target=/root/.npm npm install --only=production && \
+    npm rebuild better-sqlite3 && \
+    apk del .build-deps
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
