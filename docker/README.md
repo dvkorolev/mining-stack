@@ -4,32 +4,26 @@ Docker configuration files for the Mining Stack monitoring system.
 
 ## Overview
 
-This directory contains configuration files for:
-- Prometheus (metrics collection)
-- Alertmanager (alert routing)
-- Grafana (visualization)
-- Blackbox Exporter (external monitoring)
+This directory contains all Docker-related configuration for the monitoring stack including Prometheus, Grafana, Alertmanager, and Blackbox Exporter.
 
 ## Directory Structure
 
 ```
 docker/
-├── prometheus/
-│   ├── prometheus.yml           # Prometheus configuration
-│   ├── rules/
-│   │   └── alerts.yml          # Alert rules
-│   └── targets/
-│       └── pools.json          # Pool targets for Blackbox
-├── alertmanager/
-│   └── alertmanager.yml        # Alertmanager configuration
-├── grafana/
-│   ├── provisioning/
-│   │   ├── datasources/        # Datasource configs
-│   │   └── dashboards/         # Dashboard configs
-│   └── dashboards/
-│       └── README.md           # Dashboard documentation
-└── blackbox/
-    └── blackbox.yml            # Blackbox Exporter config
+├── prometheus/          # Prometheus configuration
+│   ├── prometheus.yml  # Main Prometheus config
+│   ├── rules/          # Alert rules
+│   ├── targets/        # Service discovery targets
+│   └── README.md       # Prometheus documentation
+├── alertmanager/        # Alertmanager configuration
+│   └── alertmanager.yml # Alert routing and receivers
+├── grafana/            # Grafana configuration
+│   ├── provisioning/   # Auto-provisioning configs
+│   ├── dashboards/     # Dashboard JSON files
+│   └── README.md       # Grafana documentation
+├── blackbox/           # Blackbox Exporter configuration
+│   └── blackbox.yml    # Probe modules
+└── README.md           # This file
 ```
 
 ## Prometheus

@@ -38,6 +38,7 @@ COPY --from=builder /install /usr/local
 
 # Copy application files
 COPY main.py config.py metrics.py logging_config.py /app/
+COPY models.py file_lock.py /app/
 COPY collectors/ /app/collectors/
 COPY parsers/ /app/parsers/
 COPY asic_profile_loader.py /app/
