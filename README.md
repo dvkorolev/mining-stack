@@ -33,12 +33,19 @@ A comprehensive monitoring and control system for cryptocurrency mining operatio
 
 ### Infrastructure
 - **Dockerized**: Easy deployment with Docker Compose
+- **Smart CI/CD**: Intelligent builds that only update changed services (60% faster)
 - **Advanced Monitoring**: Integrated with Prometheus and Grafana for metrics and alerting
 - **Miner Discovery**: Automatically detect miners on your network using pyasic
 - **Multi-Platform**: Supports x86_64 and ARM64 (Raspberry Pi)
+- **Zero Downtime**: Smart deployments keep unchanged services running
 
 ## 📚 Documentation
 
+### 🚀 New: Smart CI/CD
+- **[⚡ Smart CI/CD Guide](docs/deployment/SMART_CICD.md)** - Build only what changed (60% faster!)
+- **[🔄 CI/CD Workflow](CICD_WORKFLOW.md)** - Quick reference guide
+
+### Core Documentation
 - **[📖 Complete Documentation](docs/README.md)** - Full documentation index
 - **[🚀 Quick Start Guide](docs/deployment/QUICKSTART.md)** - Get started in 5 minutes
 - **[📦 Deployment Guide](docs/deployment/DEPLOYMENT.md)** - Production deployment

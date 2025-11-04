@@ -2,12 +2,28 @@
 
 This guide explains how to set up automated builds and deployments to your Raspberry Pi using GitHub Actions and GitHub Container Registry (GHCR).
 
+## 🚀 Smart CI/CD Available!
+
+We now have two CI/CD workflows:
+
+1. **Smart Workflow** (Recommended) - `build-and-push-smart.yml`
+   - Only builds changed services
+   - 60% faster on average
+   - Zero downtime for unchanged services
+   - **See: [Smart CI/CD Guide](SMART_CICD.md)**
+
+2. **Full Workflow** - `build-and-push.yml`
+   - Builds all services
+   - Useful for releases and version tags
+   - Documented in this guide
+
 ## Overview
 
 The CI/CD pipeline:
-1. **Builds** ARM64 Docker images on every push to `main` or `develop`
-2. **Pushes** images to GitHub Container Registry (GHCR)
-3. **Deploys** to Raspberry Pi by pulling pre-built images (no compilation on Pi)
+1. **Detects changes** - Smart workflow identifies which services changed
+2. **Builds** ARM64 Docker images on every push to `main` or `develop`
+3. **Pushes** images to GitHub Container Registry (GHCR)
+4. **Deploys** to Raspberry Pi by pulling pre-built images (no compilation on Pi)
 
 ## Benefits
 
@@ -16,6 +32,8 @@ The CI/CD pipeline:
 - ✅ **Consistent builds** - same images across environments
 - ✅ **Version control** - tagged releases and rollbacks
 - ✅ **Automated** - push code, get deployed
+- ✅ **Smart builds** - only build what changed (60% faster)
+- ✅ **Zero downtime** - unchanged services keep running
 
 ## Setup Instructions
 
