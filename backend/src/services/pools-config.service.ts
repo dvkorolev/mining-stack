@@ -3,6 +3,10 @@ import fs from 'fs';
 import yaml from 'js-yaml';
 import path from 'path';
 import { logger } from '../utils/logger';
+import { withConfigLock, FileLockTimeout, FileLockError } from '../utils/fileLock';
+
+// Re-export lock errors for use in routes
+export { FileLockTimeout, FileLockError };
 
 export interface PoolConfig {
   url: string;
@@ -50,9 +54,9 @@ export const loadPoolsConfig = (): PoolsConfiguration => {
 };
 
 /**
- * Save pools configuration to YAML file
+ * Save pools configuration to YAML file with file locking
  */
-export const savePoolsConfig = (config: PoolsConfiguration): void => {
+export const savePoolsConfig = async (config: PoolsConfiguration): Promise<void> => {
   try {
     // Validate configuration
     validatePoolsConfig(config);
@@ -63,18 +67,28 @@ export const savePoolsConfig = (config: PoolsConfiguration): void => {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    // Convert to YAML
-    const yamlStr = yaml.dump(config, {
-      indent: 2,
-      lineWidth: 120,
-      noRefs: true,
-    });
+    // Acquire lock and write file
+    await withConfigLock(POOLS_CONFIG_PATH, () => {
+      // Convert to YAML
+      const yamlStr = yaml.dump(config, {
+        indent: 2,
+        lineWidth: 120,
+        noRefs: true,
+      });
 
-    // Write to file
-    fs.writeFileSync(POOLS_CONFIG_PATH, yamlStr, 'utf8');
+      // Write to file
+      fs.writeFileSync(POOLS_CONFIG_PATH, yamlStr, 'utf8');
+    });
 
     logger.info(`Saved pools configuration with ${config.pools.length} pools`);
   } catch (error) {
+    if (error instanceof FileLockTimeout) {
+      logger.error('Failed to acquire lock on pools config:', error);
+      throw new Error('Configuration file is locked by another process. Please try again.');
+    } else if (error instanceof FileLockError) {
+      logger.error('File lock error:', error);
+      throw new Error('Failed to lock configuration file. Please try again.');
+    }
     logger.error('Failed to save pools configuration:', error);
     throw error;
   }
@@ -182,7 +196,7 @@ export const getDefaultPoolsConfig = (): PoolsConfiguration => {
 /**
  * Add a pool to the configuration
  */
-export const addPool = (pool: PoolConfig): PoolsConfiguration => {
+export const addPool = async (pool: PoolConfig): Promise<PoolsConfiguration> => {
   const config = loadPoolsConfig();
 
   // Check for duplicate URL
@@ -191,7 +205,7 @@ export const addPool = (pool: PoolConfig): PoolsConfiguration => {
   }
 
   config.pools.push(pool);
-  savePoolsConfig(config);
+  await savePoolsConfig(config);
 
   return config;
 };
@@ -199,7 +213,7 @@ export const addPool = (pool: PoolConfig): PoolsConfiguration => {
 /**
  * Update a pool in the configuration
  */
-export const updatePool = (oldUrl: string, updatedPool: PoolConfig): PoolsConfiguration => {
+export const updatePool = async (oldUrl: string, updatedPool: PoolConfig): Promise<PoolsConfiguration> => {
   const config = loadPoolsConfig();
 
   const index = config.pools.findIndex(p => p.url === oldUrl);
@@ -213,7 +227,7 @@ export const updatePool = (oldUrl: string, updatedPool: PoolConfig): PoolsConfig
   }
 
   config.pools[index] = updatedPool;
-  savePoolsConfig(config);
+  await savePoolsConfig(config);
 
   return config;
 };
@@ -221,7 +235,7 @@ export const updatePool = (oldUrl: string, updatedPool: PoolConfig): PoolsConfig
 /**
  * Delete a pool from the configuration
  */
-export const deletePool = (url: string): PoolsConfiguration => {
+export const deletePool = async (url: string): Promise<PoolsConfiguration> => {
   const config = loadPoolsConfig();
 
   const index = config.pools.findIndex(p => p.url === url);
@@ -230,7 +244,7 @@ export const deletePool = (url: string): PoolsConfiguration => {
   }
 
   config.pools.splice(index, 1);
-  savePoolsConfig(config);
+  await savePoolsConfig(config);
 
   return config;
 };

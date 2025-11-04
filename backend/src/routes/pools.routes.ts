@@ -11,9 +11,41 @@ import {
   triggerPoolCollection,
   PoolConfig,
   PoolsConfiguration,
+  FileLockTimeout,
+  FileLockError,
 } from '../services/pools-config.service';
 
 const router = Router();
+
+/**
+ * Helper function to handle lock errors with appropriate HTTP status codes
+ */
+function handleLockError(error: unknown, res: Response): void {
+  if (error instanceof FileLockTimeout) {
+    // 423 Locked - Resource is locked
+    res.status(423).json({
+      success: false,
+      message: 'Configuration file is locked by another process',
+      error: error.message,
+      code: 'FILE_LOCKED',
+    });
+  } else if (error instanceof FileLockError) {
+    // 409 Conflict - Unable to acquire lock
+    res.status(409).json({
+      success: false,
+      message: 'Unable to lock configuration file',
+      error: error.message,
+      code: 'LOCK_CONFLICT',
+    });
+  } else {
+    // 500 Internal Server Error - Other errors
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
 
 /**
  * GET /api/pools/config
@@ -47,8 +79,8 @@ router.post('/config', async (req: Request, res: Response) => {
     // Validate configuration
     validatePoolsConfig(config);
 
-    // Save configuration
-    savePoolsConfig(config);
+    // Save configuration (with file locking)
+    await savePoolsConfig(config);
 
     // Trigger pool collection to apply changes
     const collectionResult = await triggerPoolCollection();
@@ -61,11 +93,17 @@ router.post('/config', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error saving pools config:', error);
-    res.status(400).json({
-      success: false,
-      message: 'Failed to save pools configuration',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    
+    // Handle lock errors with appropriate status codes
+    if (error instanceof FileLockTimeout || error instanceof FileLockError) {
+      handleLockError(error, res);
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to save pools configuration',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
 });
 
@@ -107,7 +145,7 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    const config = addPool(pool);
+    const config = await addPool(pool);
 
     // Trigger pool collection
     const collectionResult = await triggerPoolCollection();
@@ -121,11 +159,17 @@ router.post('/', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error adding pool:', error);
-    res.status(400).json({
-      success: false,
-      message: 'Failed to add pool',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    
+    // Handle lock errors with appropriate status codes
+    if (error instanceof FileLockTimeout || error instanceof FileLockError) {
+      handleLockError(error, res);
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to add pool',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
 });
 
@@ -146,7 +190,7 @@ router.put('/:url', async (req: Request, res: Response) => {
       });
     }
 
-    const config = updatePool(oldUrl, updatedPool);
+    const config = await updatePool(oldUrl, updatedPool);
 
     // Trigger pool collection
     const collectionResult = await triggerPoolCollection();
@@ -160,11 +204,17 @@ router.put('/:url', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error updating pool:', error);
-    res.status(400).json({
-      success: false,
-      message: 'Failed to update pool',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    
+    // Handle lock errors with appropriate status codes
+    if (error instanceof FileLockTimeout || error instanceof FileLockError) {
+      handleLockError(error, res);
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to update pool',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
 });
 
@@ -176,7 +226,7 @@ router.delete('/:url', async (req: Request, res: Response) => {
   try {
     const url = decodeURIComponent(req.params.url);
 
-    const config = deletePool(url);
+    const config = await deletePool(url);
 
     // Trigger pool collection
     const collectionResult = await triggerPoolCollection();
@@ -189,11 +239,17 @@ router.delete('/:url', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error deleting pool:', error);
-    res.status(400).json({
-      success: false,
-      message: 'Failed to delete pool',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    
+    // Handle lock errors with appropriate status codes
+    if (error instanceof FileLockTimeout || error instanceof FileLockError) {
+      handleLockError(error, res);
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to delete pool',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
 });
 
