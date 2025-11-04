@@ -18,34 +18,41 @@ import { rebootMiner, getMinerPools } from './miner-control.service';
 
 let bot: TelegramBot | null = null;
 let isEnabled = false;
-let authorizedChatId: string | null = null;
+let authorizedChatIds: Set<string> = new Set();
 
 /**
  * Initialize Telegram bot
  */
-export const initTelegramBot = (token: string, chatId: string): void => {
+export const initTelegramBot = (token: string, chatIds: string | string[]): void => {
   try {
-    if (!token || !chatId) {
-      logger.warn('Telegram bot token or chat ID not provided. Bot disabled.', { service: 'telegram' });
+    if (!token || !chatIds) {
+      logger.warn('Telegram bot token or chat IDs not provided. Bot disabled.', { service: 'telegram' });
       return;
     }
 
-    authorizedChatId = chatId;
+    // Parse chat IDs (comma-separated string or array)
+    const chatIdArray = typeof chatIds === 'string' 
+      ? chatIds.split(',').map(id => id.trim()).filter(id => id.length > 0)
+      : chatIds;
+    
+    authorizedChatIds = new Set(chatIdArray);
     bot = new TelegramBot(token, { polling: true });
     isEnabled = true;
 
     logger.info('Telegram bot initialized successfully', { 
       service: 'telegram', 
-      chatId: chatId.substring(0, 4) + '***' // Partial chatId for security
+      authorizedUsers: authorizedChatIds.size
     });
 
     // Setup command handlers
     setupCommandHandlers();
     setupCallbackHandlers();
 
-    // Send startup notification
-    sendMessage('🚀 Mining Stack Bot is online and ready!');
-    logger.info('Telegram startup notification sent', { service: 'telegram' });
+    // Send startup notification to all authorized users
+    for (const chatId of authorizedChatIds) {
+      sendMessageToChat(chatId, '🚀 Mining Stack Bot is online and ready!');
+    }
+    logger.info('Telegram startup notifications sent', { service: 'telegram', count: authorizedChatIds.size });
   } catch (error) {
     logger.error('Failed to initialize Telegram bot:', { service: 'telegram', error });
     isEnabled = false;
@@ -56,7 +63,7 @@ export const initTelegramBot = (token: string, chatId: string): void => {
  * Check if message is from authorized chat
  */
 const isAuthorized = (chatId: number): boolean => {
-  return authorizedChatId === chatId.toString();
+  return authorizedChatIds.has(chatId.toString());
 };
 
 /**
@@ -78,7 +85,7 @@ const setupCommandHandlers = (): void => {
       logger.warn('Telegram: Unauthorized chat ID attempted /start', {
         service: 'telegram',
         chatId: msg.chat.id,
-        expectedChatId: authorizedChatId
+        authorizedChatIds: Array.from(authorizedChatIds)
       });
       return;
     }
@@ -624,20 +631,35 @@ No active alerts at the moment.
 };
 
 /**
- * Send notification message
+ * Send message to a specific chat
  */
-export const sendMessage = async (message: string, options?: any): Promise<void> => {
-  if (!bot || !isEnabled || !authorizedChatId) {
+const sendMessageToChat = async (chatId: string, message: string, options?: any): Promise<void> => {
+  if (!bot || !isEnabled) {
     logger.warn('Telegram bot not initialized or disabled', { service: 'telegram' });
     return;
   }
 
   try {
-    await bot.sendMessage(authorizedChatId, message, options);
-    logger.info('Telegram: Message sent', { service: 'telegram', messagePreview: message.substring(0, 50) });
+    await bot.sendMessage(chatId, message, options);
+    logger.debug('Telegram: Message sent to chat', { service: 'telegram', chatId: chatId.substring(0, 4) + '***' });
   } catch (error) {
-    logger.error('Telegram: Error sending message', { service: 'telegram', error });
+    logger.error('Telegram: Error sending message', { service: 'telegram', chatId, error });
   }
+};
+
+/**
+ * Send notification message to all authorized users
+ */
+export const sendMessage = async (message: string, options?: any): Promise<void> => {
+  if (!bot || !isEnabled || authorizedChatIds.size === 0) {
+    logger.warn('Telegram bot not initialized or disabled', { service: 'telegram' });
+    return;
+  }
+
+  for (const chatId of authorizedChatIds) {
+    await sendMessageToChat(chatId, message, options);
+  }
+  logger.info('Telegram: Message sent to all users', { service: 'telegram', userCount: authorizedChatIds.size });
 };
 
 /**
@@ -649,7 +671,7 @@ export const sendAlert = async (alert: {
   description: string;
   miner?: string;
 }): Promise<void> => {
-  if (!bot || !isEnabled || !authorizedChatId) return;
+  if (!bot || !isEnabled || authorizedChatIds.size === 0) return;
 
   logger.info('Telegram: Sending alert', { 
     service: 'telegram', 
@@ -670,12 +692,14 @@ ${alert.miner ? `Miner: \`${alert.miner}\`` : ''}
 Time: ${new Date().toLocaleString()}
   `.trim();
 
-  try {
-    await bot.sendMessage(authorizedChatId, message, { parse_mode: 'Markdown' });
-    logger.info('Telegram: Alert sent successfully', { service: 'telegram', severity: alert.severity });
-  } catch (error) {
-    logger.error('Telegram: Error sending alert notification', { service: 'telegram', alert, error });
+  for (const chatId of authorizedChatIds) {
+    try {
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    } catch (error) {
+      logger.error('Telegram: Error sending alert to chat', { service: 'telegram', chatId, error });
+    }
   }
+  logger.info('Telegram: Alert sent to all users', { service: 'telegram', severity: alert.severity, userCount: authorizedChatIds.size });
 };
 
 /**
@@ -708,10 +732,10 @@ export const testConnection = async (): Promise<{ success: boolean; message: str
 /**
  * Get bot status
  */
-export const getBotStatus = (): { enabled: boolean; chatId: string | null } => {
+export const getBotStatus = (): { enabled: boolean; chatIds: string[] } => {
   return {
     enabled: isEnabled,
-    chatId: authorizedChatId,
+    chatIds: Array.from(authorizedChatIds),
   };
 };
 

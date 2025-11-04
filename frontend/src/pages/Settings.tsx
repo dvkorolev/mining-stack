@@ -26,9 +26,9 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 
 const Settings: React.FC = () => {
   const [botToken, setBotToken] = useState('');
-  const [chatId, setChatId] = useState('');
+  const [chatIds, setChatIds] = useState('');
   const [showToken, setShowToken] = useState(false);
-  const [botStatus, setBotStatus] = useState<{ enabled: boolean; chatId: string | null } | null>(null);
+  const [botStatus, setBotStatus] = useState<{ enabled: boolean; chatIds: string[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -44,8 +44,8 @@ const Settings: React.FC = () => {
       const response = await fetch('/api/telegram/status');
       const data = await response.json();
       setBotStatus(data);
-      if (data.chatId) {
-        setChatId(data.chatId);
+      if (data.chatIds && data.chatIds.length > 0) {
+        setChatIds(data.chatIds.join(', '));
       }
     } catch (error) {
       console.error('Error loading bot status:', error);
@@ -53,8 +53,8 @@ const Settings: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!botToken || !chatId) {
-      setMessage({ type: 'error', text: 'Please provide both Bot Token and Chat ID' });
+    if (!botToken || !chatIds) {
+      setMessage({ type: 'error', text: 'Please provide both Bot Token and Chat IDs' });
       return;
     }
 
@@ -65,7 +65,7 @@ const Settings: React.FC = () => {
       const response = await fetch('/api/telegram/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: botToken, chatId }),
+        body: JSON.stringify({ token: botToken, chatId: chatIds }),
       });
 
       const data = await response.json();
@@ -138,9 +138,9 @@ const Settings: React.FC = () => {
                     <Typography variant="h6">
                       Bot Status: {botStatus.enabled ? 'Connected' : 'Disconnected'}
                     </Typography>
-                    {botStatus.chatId && (
+                    {botStatus.chatIds && botStatus.chatIds.length > 0 && (
                       <Typography variant="body2" color="text.secondary">
-                        Chat ID: {botStatus.chatId}
+                        Authorized Users: {botStatus.chatIds.length}
                       </Typography>
                     )}
                   </Box>
@@ -167,9 +167,11 @@ const Settings: React.FC = () => {
                 <br />
                 3. Copy the <strong>Bot Token</strong> you receive
                 <br />
-                4. Search for <strong>@userinfobot</strong> to get your <strong>Chat ID</strong>
+                4. Send <code>/whoami</code> to your bot to get your <strong>Chat ID</strong>
                 <br />
-                5. Enter both values below and click Save
+                5. For multiple users, enter Chat IDs separated by commas (e.g., 123456789, 987654321)
+                <br />
+                6. Enter values below and click Save
               </Typography>
             </Alert>
           </Grid>
@@ -201,11 +203,13 @@ const Settings: React.FC = () => {
           <Grid item xs={12}>
             <TextField
               fullWidth
-              label="Chat ID"
-              value={chatId}
-              onChange={(e) => setChatId(e.target.value)}
-              placeholder="123456789"
-              helperText="Your Telegram chat ID from @userinfobot"
+              label="Chat IDs"
+              value={chatIds}
+              onChange={(e) => setChatIds(e.target.value)}
+              placeholder="123456789, 987654321, 555666777"
+              helperText="Telegram chat IDs separated by commas (send /whoami to bot to get your ID)"
+              multiline
+              rows={2}
             />
           </Grid>
 
@@ -214,7 +218,7 @@ const Settings: React.FC = () => {
               <Button
                 variant="contained"
                 onClick={handleSave}
-                disabled={loading || !botToken || !chatId}
+                disabled={loading || !botToken || !chatIds}
                 startIcon={loading ? <CircularProgress size={20} /> : <TelegramIcon />}
               >
                 {loading ? 'Saving...' : 'Save Configuration'}
