@@ -67,7 +67,21 @@ const setupCommandHandlers = (): void => {
 
   // /start - Welcome message
   bot.onText(/\/start/, async (msg) => {
-    if (!isAuthorized(msg.chat.id)) return;
+    logger.info('Telegram: Received /start command', { 
+      service: 'telegram', 
+      chatId: msg.chat.id,
+      username: msg.from?.username,
+      authorized: isAuthorized(msg.chat.id)
+    });
+    
+    if (!isAuthorized(msg.chat.id)) {
+      logger.warn('Telegram: Unauthorized chat ID attempted /start', {
+        service: 'telegram',
+        chatId: msg.chat.id,
+        expectedChatId: authorizedChatId
+      });
+      return;
+    }
 
     const welcomeMessage = `
 🎉 *Welcome to Mining Stack Bot!*
