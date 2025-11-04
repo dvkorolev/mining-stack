@@ -177,9 +177,8 @@ if [ "$BUILD_LOCAL" = true ]; then
 else
     echo -e "${BLUE}📥 Pulling latest images from GHCR...${NC}"
     export IMAGE_TAG=$IMAGE_TAG
-    docker compose -f docker-compose.prod.yml pull
-    echo -e "${BLUE}📥 Pulling logging stack images...${NC}"
-    docker compose -f docker-compose.logging.yml pull
+    # Pull both compose files together so logging.yml can reference prod.yml services
+    docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml pull
 fi
 
 # Stop containers and remove old images for this project only
