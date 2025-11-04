@@ -8,7 +8,6 @@ import {
   Switch,
   Button,
   Grid,
-  Paper,
   Divider,
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';

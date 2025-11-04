@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -21,17 +21,11 @@ import {
   Alert,
   CircularProgress,
   Tooltip,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  Divider,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import WarningIcon from '@mui/icons-material/Warning';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import TuneIcon from '@mui/icons-material/Tune';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
@@ -79,14 +73,13 @@ const Miners: React.FC = () => {
     lastSeen: new Date(m.lastSeen),
   }));
   
-  const { showSuccess, showError, showWarning, showInfo } = useNotification();
+  const { showSuccess, showError, showWarning } = useNotification();
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [editingMiner, setEditingMiner] = useState<Miner | null>(null);
   const [selectedMiners, setSelectedMiners] = useState<string[]>([]);
-  const [minerPools, setMinerPools] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     ip: '',
@@ -201,46 +194,46 @@ const Miners: React.FC = () => {
     }
   };
 
-  // Bulk reboot selected miners
-  const handleBulkReboot = async () => {
-    if (selectedMiners.length === 0) {
-      showWarning('Please select miners to reboot');
-      return;
-    }
+  // Bulk reboot selected miners (commented out - not used in UI currently)
+  // const handleBulkReboot = async () => {
+  //   if (selectedMiners.length === 0) {
+  //     showWarning('Please select miners to reboot');
+  //     return;
+  //   }
 
-    if (!window.confirm(`Reboot ${selectedMiners.length} selected miners? This will temporarily interrupt mining.`)) {
-      return;
-    }
+  //   if (!window.confirm(`Reboot ${selectedMiners.length} selected miners? This will temporarily interrupt mining.`)) {
+  //     return;
+  //   }
 
-    try {
-      const result = await bulkRebootMiners(selectedMiners);
-      const successCount = result.results.filter((r: any) => r.success).length;
-      showSuccess(`Rebooted ${successCount} of ${selectedMiners.length} miners`);
-      setSelectedMiners([]);
-    } catch (error) {
-      console.error('Error bulk rebooting:', error);
-      showError('Failed to reboot miners');
-    }
-  };
+  //   try {
+  //     const result = await bulkRebootMiners(selectedMiners);
+  //     const successCount = result.results.filter((r: any) => r.success).length;
+  //     showSuccess(`Rebooted ${successCount} of ${selectedMiners.length} miners`);
+  //     setSelectedMiners([]);
+  //   } catch (error) {
+  //     console.error('Error bulk rebooting:', error);
+  //     showError('Failed to reboot miners');
+  //   }
+  // };
 
-  // Reboot all miners
-  const handleRebootAll = async () => {
-    const totalMiners = miners.length;
-    
-    if (!window.confirm(`⚠️ REBOOT ALL ${totalMiners} MINERS?\n\nThis will temporarily interrupt mining on your entire farm.\n\nAre you sure?`)) {
-      return;
-    }
+  // Reboot all miners (commented out - not used in UI currently)
+  // const handleRebootAll = async () => {
+  //   const totalMiners = miners.length;
+  //   
+  //   if (!window.confirm(`⚠️ REBOOT ALL ${totalMiners} MINERS?\n\nThis will temporarily interrupt mining on your entire farm.\n\nAre you sure?`)) {
+  //     return;
+  //   }
 
-    try {
-      const result = await rebootAllMiners();
-      const successCount = result.results.filter((r: any) => r.success).length;
-      showSuccess(`Rebooted ${successCount} of ${totalMiners} miners`);
-      setSelectedMiners([]);
-    } catch (error) {
-      console.error('Error rebooting all miners:', error);
-      showError('Failed to reboot all miners');
-    }
-  };
+  //   try {
+  //     const result = await rebootAllMiners();
+  //     const successCount = result.results.filter((r: any) => r.success).length;
+  //     showSuccess(`Rebooted ${successCount} of ${totalMiners} miners`);
+  //     setSelectedMiners([]);
+  //   } catch (error) {
+  //     console.error('Error rebooting all miners:', error);
+  //     showError('Failed to reboot all miners');
+  //   }
+  // };
 
   // Toggle miner selection
   const handleToggleSelect = (minerId: string) => {
@@ -260,17 +253,17 @@ const Miners: React.FC = () => {
     }
   };
 
-  // Load pools when editing miner
-  const loadMinerPools = async (minerId: string) => {
-    try {
-      const result = await getMinerPools(minerId);
-      if (result.success && result.pools) {
-        setMinerPools(result.pools);
-      }
-    } catch (error) {
-      console.error('Error loading pools:', error);
-    }
-  };
+  // Load pools when editing miner (commented out - not used currently)
+  // const loadMinerPools = async (minerId: string) => {
+  //   try {
+  //     const result = await getMinerPools(minerId);
+  //     if (result.success && result.pools) {
+  //       console.log('Miner pools:', result.pools);
+  //     }
+  //   } catch (error) {
+  //     console.error('Error loading pools:', error);
+  //   }
+  // };
 
   // Get status color
   const getStatusColor = (status: string) => {

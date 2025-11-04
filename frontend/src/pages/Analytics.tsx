@@ -6,8 +6,6 @@ import {
   Grid,
   Card,
   CardContent,
-  ToggleButtonGroup,
-  ToggleButton,
   Button,
   Table,
   TableBody,
@@ -18,10 +16,8 @@ import {
   CircularProgress,
   Alert,
 } from '@mui/material';
-import { Line, Bar } from 'react-chartjs-2';
+import { Bar } from 'react-chartjs-2';
 import DownloadIcon from '@mui/icons-material/Download';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import { fetchMiningStats, MiningStatsResponse } from '../services/api';
 import {
   Chart as ChartJS,
@@ -52,7 +48,6 @@ const Analytics: React.FC = () => {
   const [stats, setStats] = useState<MiningStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('24h');
 
   useEffect(() => {
     const loadData = async () => {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Grid, Typography, Paper, Box, CircularProgress, Alert, Chip, ToggleButton, ToggleButtonGroup, Card, CardContent } from '@mui/material';
-import { Line, Bar } from 'react-chartjs-2';
+import { Grid, Typography, Paper, Box, Alert, Chip, ToggleButton, ToggleButtonGroup, Card, CardContent } from '@mui/material';
+import { Line } from 'react-chartjs-2';
 import { fetchMiningStats, MiningStatsResponse } from '../services/api';
 import { useSelector } from 'react-redux';
 import { selectMiningStats, selectIsConnected, selectError } from '../features/mining/miningSlice';
