@@ -68,6 +68,7 @@ export interface MiningStats {
   totalHashrate: number;
   averageHashrate24h: number;
   activeMiners: number;
+  totalMiners: number;
   totalMined: number;
   miners: MinerStats[];
   timestamp: number;
@@ -82,6 +83,7 @@ let miningStats: MiningStats = {
   totalHashrate: 0,
   averageHashrate24h: 0,
   activeMiners: 0,
+  totalMiners: 0,
   totalMined: 0,
   miners: [],
   timestamp: Date.now(),
@@ -474,6 +476,7 @@ const simulateMiningStats = (): MiningStats => {
     totalHashrate,
     averageHashrate24h,
     activeMiners,
+    totalMiners: miners.length,
     totalMined: miningStats.totalMined + btcMined,
     miners: minerStats,
     timestamp: Date.now(),
@@ -543,6 +546,7 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
       totalHashrate,
       averageHashrate24h,
       activeMiners,
+      totalMiners: miners.length,
       totalMined: miningStats.totalMined + btcMined,
       miners: minerStats,
       timestamp: Date.now(),
@@ -899,6 +903,7 @@ const updateMetricsFromScheduler = async (
       totalHashrate,
       averageHashrate24h,
       activeMiners,
+      totalMiners: miners.length,
       totalMined: miningStats.totalMined, // Keep existing total
       miners: minerStats,
       timestamp: timestamp || Date.now(),
