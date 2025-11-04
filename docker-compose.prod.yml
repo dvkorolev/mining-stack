@@ -117,6 +117,7 @@ services:
       - "9090:9090"
     volumes:
       - ./docker/prometheus:/etc/prometheus
+      - ./docker/prometheus/targets:/etc/prometheus/targets:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -128,6 +129,25 @@ services:
     restart: unless-stopped
 
   # Note: node-exporter removed in V2 - metrics served directly by python-scheduler
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    platform: linux/arm64
+    container_name: blackbox-exporter
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./docker/blackbox:/etc/blackbox_exporter
+    command:
+      - '--config.file=/etc/blackbox_exporter/blackbox.yml'
+    networks:
+      - mining-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9115/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   alertmanager:
     image: prom/alertmanager:latest

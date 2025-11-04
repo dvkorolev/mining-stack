@@ -28,3 +28,20 @@ scrape_configs:
     static_configs:
       - targets: ["backend:5000"]
     metrics_path: /metrics
+
+  # Blackbox Exporter - TCP checks for mining pools
+  - job_name: 'blackbox-tcp'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    file_sd_configs:
+      - files:
+        - /etc/prometheus/targets/pools.json
+        refresh_interval: 5m
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

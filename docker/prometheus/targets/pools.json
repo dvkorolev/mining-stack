@@ -1,0 +1,17 @@
+[
+  {
+    "targets": [
+      "stratum.slushpool.com:3333",
+      "stratum.f2pool.com:3333",
+      "stratum.antpool.com:3333",
+      "stratum.viabtc.com:3333",
+      "stratum.ss.poolin.me:443",
+      "stratum.litecoinpool.org:3333",
+      "prohashing.com:3333"
+    ],
+    "labels": {
+      "job": "pool-tcp-check",
+      "monitor": "blackbox"
+    }
+  }
+]
