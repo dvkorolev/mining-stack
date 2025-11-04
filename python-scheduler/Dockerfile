@@ -43,9 +43,7 @@ COPY parsers/ /app/parsers/
 COPY asic_profile_loader.py /app/
 COPY state_manager.py /app/
 COPY health_check.py /app/
-
-# Copy ASIC profiles if they exist
-COPY asic_profiles/ /app/asic_profiles/
+COPY asic_profiles.yaml /app/
 
 # Create directories for mounted volumes and state
 RUN mkdir -p /metrics /app/bin /app/etc /app/data && \

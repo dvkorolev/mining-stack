@@ -81,7 +81,7 @@ async def collect_pool_network_metrics_from_config() -> Dict[str, Any]:
     
     if not pools_config:
         logger.info("No pools configured in pools.yaml, skipping pool collection")
-        return {'success': True, 'pools_tested': 0, 'duration': 0}
+        return {'success': True, 'pools_tested': 0, 'duration': 0, 'source': 'pools_yaml'}
     
     pools = [(p['hostname'], p['port']) for p in pools_config]
     logger.info(f"Testing {len(pools)} configured pools")
@@ -147,12 +147,12 @@ async def collect_pool_network_metrics_from_config() -> Dict[str, Any]:
         await asyncio.gather(*tasks, return_exceptions=True)
     
     duration = time.time() - start_time
-    collection_duration.labels(collector='pool_network').set(duration)
-    collection_success.labels(collector='pool_network').set(1)
-    collection_timestamp.labels(collector='pool_network').set(time.time())
+    collection_duration.labels(collector='pool_network_config').set(duration)
+    collection_success.labels(collector='pool_network_config').set(1)
+    collection_timestamp.labels(collector='pool_network_config').set(time.time())
     
-    logger.info(f"✓ Pool network collection complete: {len(pools)} pools in {duration:.1f}s")
-    return {'success': True, 'pools_tested': len(pools), 'duration': duration}
+    logger.info(f"✓ Pool network collection from config complete: {len(pools)} pools in {duration:.1f}s")
+    return {'success': True, 'pools_tested': len(pools), 'duration': duration, 'source': 'pools_yaml'}
 
 
 async def collect_pool_network_metrics(miners: List[Dict]) -> Dict[str, Any]:
@@ -716,6 +716,28 @@ async def trigger_collection(background_tasks: BackgroundTasks):
     return {
         "success": True,
         "message": "Collection started in background",
+        "timestamp": datetime.now().isoformat(),
+        "note": "Check /status endpoint for completion"
+    }
+
+
+@app.post("/collect-pools")
+async def trigger_pool_collection(background_tasks: BackgroundTasks):
+    """Manually trigger pool network metrics collection from pools.yaml"""
+    logger.info("Manual pool collection triggered via API (background)")
+    
+    async def collect_pools_task():
+        try:
+            result = await collect_pool_network_metrics_from_config()
+            logger.info(f"Pool collection completed: {result}")
+        except Exception as e:
+            logger.error(f"Pool collection failed: {e}")
+    
+    background_tasks.add_task(collect_pools_task)
+    
+    return {
+        "success": True,
+        "message": "Pool collection started in background",
         "timestamp": datetime.now().isoformat(),
         "note": "Check /status endpoint for completion"
     }

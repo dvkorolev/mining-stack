@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import miningRoutes from './routes/mining.routes';
+import poolsRoutes from './routes/pools.routes';
 import { setupWebSocket } from './services/websocket.service';
 import { startMining } from './services/mining.service';
 import { errorHandler } from './middleware/error.middleware';
@@ -25,6 +26,7 @@ app.use(morgan('dev'));
 
 // API Routes
 app.use('/api', miningRoutes);
+app.use('/api/pools', poolsRoutes);
 
 // Smart health check endpoint
 app.get('/health', (req, res) => {
