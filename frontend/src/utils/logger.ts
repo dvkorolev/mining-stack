@@ -155,6 +155,33 @@ class FrontendLogger {
 // Global logger instance
 export const logger = new FrontendLogger();
 
+/**
+ * Setup global error handlers
+ * Catches unhandled errors and promise rejections
+ */
+export function setupGlobalErrorHandlers(): void {
+  // Catch unhandled JavaScript errors
+  window.onerror = (message, source, lineno, colno, error) => {
+    logger.error('Unhandled error', {
+      logger: 'window.onerror',
+      source,
+      lineno,
+      colno,
+    }, error || new Error(String(message)));
+    
+    // Return false to allow default error handling
+    return false;
+  };
+
+  // Catch unhandled promise rejections
+  window.onunhandledrejection = (event) => {
+    logger.error('Unhandled promise rejection', {
+      logger: 'window.onunhandledrejection',
+      reason: event.reason,
+    }, event.reason instanceof Error ? event.reason : new Error(String(event.reason)));
+  };
+}
+
 // Convenience functions
 export const logEvent = (
   level: LogLevel,
@@ -164,21 +191,5 @@ export const logEvent = (
   logger.logEvent(level, message, context);
 };
 
-// Setup global error handler
-if (typeof window !== 'undefined') {
-  window.addEventListener('error', (event) => {
-    logger.error('Uncaught error', {
-      filename: event.filename,
-      lineno: event.lineno,
-      colno: event.colno,
-    }, event.error);
-  });
-
-  window.addEventListener('unhandledrejection', (event) => {
-    logger.error('Unhandled promise rejection', {
-      reason: String(event.reason),
-    }, event.reason instanceof Error ? event.reason : undefined);
-  });
-}
-
+// Export default logger
 export default logger;

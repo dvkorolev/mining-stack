@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -9,6 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { Provider } from 'react-redux';
 import { store } from './store';
 import { NotificationProvider } from './context/NotificationContext';
+import { setupGlobalErrorHandlers } from './utils/logger';
 
 // Lazy load pages for code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -60,6 +61,11 @@ const theme = createTheme({
 
 const App: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+
+  // Setup global error handlers on mount
+  useEffect(() => {
+    setupGlobalErrorHandlers();
+  }, []);
 
   const toggleDrawer = () => {
     setDrawerOpen(!drawerOpen);
