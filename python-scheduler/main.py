@@ -29,7 +29,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 # Import our modules
 from config import (
-    MINERS_CONFIG, COLLECTION_INTERVAL, POOL_TEST_INTERVAL, ENABLE_ICMP_PING,
+    MINERS_CONFIG, POOLS_CONFIG, COLLECTION_INTERVAL, POOL_TEST_INTERVAL, ENABLE_ICMP_PING,
     BACKEND_URL, PUSH_TO_BACKEND,
     load_miners_config, load_pools_config, invalidate_config_cache,
     miners_config_cache
