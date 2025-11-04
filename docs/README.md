@@ -6,39 +6,67 @@ Welcome to the Mining Stack documentation! This guide will help you set up, conf
 
 ### Getting Started
 
-- **[🚀 Quick Start](./QUICKSTART.md)**  
+- **[🚀 Quick Start](./deployment/QUICKSTART.md)**  
   Get up and running in 5 minutes with local development or Raspberry Pi deployment.
 
-- **[📖 Deployment Guide](./DEPLOYMENT.md)**  
+- **[📖 Deployment Guide](./deployment/DEPLOYMENT.md)**  
   Complete guide for production deployment to Raspberry Pi using pre-built Docker images.
 
-- **[⚙️ Configuration](./CONFIGURATION.md)**  
+- **[⚙️ Configuration](./reference/CONFIGURATION.md)**  
   Configure miners, monitoring, alerts, and system settings.
+
+- **[📋 Overview](./reference/OVERVIEW.md)**  
+  System architecture and capabilities overview.
+
+### API Documentation
+
+- **[🔌 API Reference](./api/API.md)**  
+  Complete backend API documentation with endpoints, request/response formats.
+
+- **[🔄 Reboot API](./api/API_REBOOT_REFERENCE.md)**  
+  Miner reboot and control API reference.
 
 ### Operations & Maintenance
 
-- **[🔍 Troubleshooting](./TROUBLESHOOTING.md)**  
+- **[🔍 Troubleshooting](./operations/TROUBLESHOOTING.md)**  
   Common issues and their solutions. Check here first if something isn't working.
 
-- **[🏥 Health Checks](./HEALTH_CHECKS.md)**  
+- **[🏥 Health Checks](./operations/HEALTH_CHECKS.md)**  
   Monitor system health, set up automated checks, and understand health metrics.
 
-- **[📊 Monitoring](./MONITORING.md)**  
+- **[📊 Monitoring](./operations/MONITORING.md)**  
   Set up Prometheus and Grafana for advanced monitoring, metrics, and alerting.
 
-- **[🤖 Telegram Bot](./TELEGRAM_BOT.md)**  
+- **[📈 Grafana Dashboards](./operations/GRAFANA_DASHBOARDS.md)**  
+  Dashboard setup and visualization guide.
+
+- **[🤖 Telegram Bot](./operations/TELEGRAM_BOT.md)**  
   Complete guide for Telegram bot integration - remote miner control, alerts, and monitoring.
 
-- **[🏭 Mining Farm Setup](./MINING_FARM.md)**  
+- **[🏭 Mining Farm Setup](./operations/MINING_FARM.md)**  
   Best practices for managing large-scale mining operations.
 
-### Development
+### Deployment & CI/CD
 
-- **[🔌 API Reference](./API.md)**  
-  Complete backend API documentation with endpoints, request/response formats.
+- **[🚀 Production Setup](./deployment/PRODUCTION_SETUP.md)**  
+  Production deployment best practices.
 
-- **[🏗️ CI/CD Setup](./CI_CD.md)**  
+- **[🏗️ CI/CD Setup](./deployment/CI_CD.md)**  
   Set up GitHub Actions for automated building and deployment.
+
+- **[📦 Deployment Summary](./deployment/DEPLOYMENT_SUMMARY.md)**  
+  Quick deployment reference.
+
+### Reference
+
+- **[📊 Metrics Collection](./reference/METRICS_COLLECTION.md)**  
+  Understanding metrics and data collection.
+
+- **[🔍 Miner Discovery](./reference/MINER_DISCOVERY.md)**  
+  How miner discovery works.
+
+- **[⚙️ Thresholds](./reference/THRESHOLDS.md)**  
+  Alert threshold configuration.
 
 ### Features & Enhancements
 
@@ -77,11 +105,11 @@ Welcome to the Mining Stack documentation! This guide will help you set up, conf
 
 ### Common Tasks
 
-- **Add a new miner**: See [Configuration Guide](./CONFIGURATION.md#adding-miners)
-- **Set up Telegram bot**: See [Telegram Bot Guide](./TELEGRAM_BOT.md) or [Quick Setup](../TELEGRAM_SETUP.md)
-- **Update the system**: See [Deployment Guide](./DEPLOYMENT.md#updating)
-- **View logs**: See [Troubleshooting](./TROUBLESHOOTING.md#checking-logs)
-- **Set up alerts**: See [Monitoring Guide](./MONITORING.md#alerting)
+- **Add a new miner**: See [Configuration Guide](./reference/CONFIGURATION.md#adding-miners)
+- **Set up Telegram bot**: See [Telegram Bot Guide](./operations/TELEGRAM_BOT.md)
+- **Update the system**: See [Deployment Guide](./deployment/DEPLOYMENT.md#updating)
+- **View logs**: See [Troubleshooting](./operations/TROUBLESHOOTING.md#checking-logs)
+- **Set up alerts**: See [Monitoring Guide](./operations/MONITORING.md#alerting)
 
 ### Architecture
 

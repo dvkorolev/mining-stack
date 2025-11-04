@@ -40,10 +40,10 @@ A comprehensive monitoring and control system for cryptocurrency mining operatio
 ## 📚 Documentation
 
 - **[📖 Complete Documentation](docs/README.md)** - Full documentation index
-- **[🚀 Quick Start Guide](docs/QUICKSTART.md)** - Get started in 5 minutes
-- **[📦 Deployment Guide](docs/DEPLOYMENT.md)** - Production deployment
-- **[🔧 Configuration](docs/CONFIGURATION.md)** - System configuration
-- **[🔍 Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[🚀 Quick Start Guide](docs/deployment/QUICKSTART.md)** - Get started in 5 minutes
+- **[📦 Deployment Guide](docs/deployment/DEPLOYMENT.md)** - Production deployment
+- **[🔧 Configuration](docs/reference/CONFIGURATION.md)** - System configuration
+- **[🔍 Troubleshooting](docs/operations/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ### Component Documentation
 
