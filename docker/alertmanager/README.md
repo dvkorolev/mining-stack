@@ -4,8 +4,25 @@ Alertmanager handles alerts from Prometheus and routes them to various receivers
 
 ## Files
 
-- `alertmanager.yml` - Main configuration (webhook only)
+- `alertmanager.yml` - Main configuration (webhook only by default)
 - `alertmanager.telegram.yml.example` - Example with Telegram notifications
+
+## Configuration Methods
+
+### Method 1: Via Frontend UI (Recommended)
+
+The Mining Stack includes a **Settings page** in the frontend where you can configure Telegram notifications:
+
+1. Open the web UI: `http://localhost:3000`
+2. Navigate to **Settings**
+3. Enter your **Bot Token** and **Chat ID**
+4. Click **Save** and **Test**
+
+The backend will automatically update the Alertmanager configuration.
+
+### Method 2: Manual Configuration
+
+Edit `alertmanager.yml` directly (see below).
 
 ## Current Configuration
 
@@ -22,7 +39,7 @@ receivers:
 
 ### Alert Routing
 
-- **Critical alerts** → `critical-receiver` (webhook)
+- **Critical alerts** → `critical-receiver` (webhook, + Telegram if configured)
 - **All alerts** → `webhook-receiver` (webhook)
 
 ## Enabling Telegram Notifications
