@@ -342,9 +342,12 @@ async def collect_all_metrics():
             for i, miner in enumerate(miners):
                 miner_data = miners_data[i]
                 scrape_status = miner_data.get('scrape_status', -2)
+                hashrate = miner_data.get('hashrate', 0)
                 
-                # Only try fallback if primary collection failed (scrape_status < 1)
-                if scrape_status < 1:
+                # Try fallback if:
+                # 1. Primary collection failed (scrape_status < 1), OR
+                # 2. Scrape succeeded but hashrate is 0 (API returns bad data)
+                if scrape_status < 1 or (scrape_status >= 1 and hashrate == 0):
                     fallback_data = None
                     fallback_method = None
                     
