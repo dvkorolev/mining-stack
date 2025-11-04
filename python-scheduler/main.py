@@ -507,6 +507,13 @@ async def collect_all_metrics():
                         # Also update pools if available
                         if 'pools' in fallback_data and fallback_data['pools']:
                             miner_data['pools'] = fallback_data['pools']
+                            # Calculate total accepted/rejected from pools
+                            pools = fallback_data['pools']
+                            if isinstance(pools, list):
+                                total_accepted = sum(p.get('accepted', 0) for p in pools if isinstance(p, dict))
+                                total_rejected = sum(p.get('rejected', 0) for p in pools if isinstance(p, dict))
+                                miner_data['pool_accepted'] = total_accepted
+                                miner_data['pool_rejected'] = total_rejected
                         # Add pool URLs for display (separate from pool stats)
                         if 'pool_urls' in fallback_data and fallback_data['pool_urls']:
                             miner_data['pool_urls'] = fallback_data['pool_urls']
