@@ -495,9 +495,13 @@ async def collect_all_metrics():
                         hashrate_val = _safe_float(fallback_data.get('hashrate', 0))
                         miner_data['hashrate'] = hashrate_val
                         miner_data['power'] = _safe_float(fallback_data.get('power', 0))
-                        miner_data['temp_max'] = _safe_float(fallback_data.get('temperature', 0))
+                        miner_data['temp_max'] = _safe_float(fallback_data.get('temp_max', fallback_data.get('temperature', 0)))
                         miner_data['is_mining'] = 1 if fallback_data.get('is_mining', False) else 0
                         miner_data['state'] = 2 if hashrate_val > 0 else 0
+                        
+                        # Also update pools if available
+                        if 'pools' in fallback_data and fallback_data['pools']:
+                            miner_data['pools'] = fallback_data['pools']
                         
                         logger.info(f"  ✓ Fallback success for {miner['name']}: {fallback_method}")
             
