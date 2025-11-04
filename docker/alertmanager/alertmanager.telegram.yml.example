@@ -1,0 +1,78 @@
+# Alertmanager Configuration with Telegram Notifications
+# 
+# To enable Telegram notifications:
+# 1. Copy this file to alertmanager.yml
+# 2. Replace YOUR_BOT_TOKEN with your Telegram bot token from @BotFather
+# 3. Replace YOUR_CHAT_ID with your Telegram chat ID (numeric)
+# 4. Restart Alertmanager
+#
+# Note: chat_id must be a number, not a string with quotes
+
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'job']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'default-receiver'
+  routes:
+    # Critical alerts go to both webhook and Telegram
+    - match:
+        severity: critical
+      receiver: 'critical-receiver'
+      continue: true
+    # All alerts go to webhook
+    - match_re:
+        alertname: '.*'
+      receiver: 'webhook-receiver'
+
+receivers:
+- name: 'default-receiver'
+  webhook_configs:
+  - url: 'http://backend:5000/api/alerts/webhook'
+    send_resolved: true
+    http_config:
+      follow_redirects: true
+
+- name: 'webhook-receiver'
+  webhook_configs:
+  - url: 'http://backend:5000/api/alerts/webhook'
+    send_resolved: true
+    http_config:
+      follow_redirects: true
+
+- name: 'critical-receiver'
+  telegram_configs:
+  - bot_token: 'YOUR_BOT_TOKEN'  # Get from @BotFather
+    chat_id: 123456789  # Your numeric chat ID (no quotes!)
+    parse_mode: 'HTML'
+    message: |
+      <b>🚨 CRITICAL ALERT</b>
+      
+      <b>Alert:</b> {{ .GroupLabels.alertname }}
+      <b>Severity:</b> {{ .CommonLabels.severity }}
+      <b>Instance:</b> {{ .CommonLabels.instance }}
+      
+      <b>Summary:</b> {{ .CommonAnnotations.summary }}
+      <b>Description:</b> {{ .CommonAnnotations.description }}
+      
+      <b>Status:</b> {{ .Status }}
+      <b>Time:</b> {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+  webhook_configs:
+  - url: 'http://backend:5000/api/alerts/webhook'
+    send_resolved: true
+    http_config:
+      follow_redirects: true
+
+# How to get your Telegram chat ID:
+# 1. Start a chat with @userinfobot
+# 2. Send any message
+# 3. The bot will reply with your chat ID (use the numeric value)
+#
+# How to create a Telegram bot:
+# 1. Start a chat with @BotFather
+# 2. Send /newbot
+# 3. Follow the instructions
+# 4. Copy the bot token

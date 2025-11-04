@@ -34,22 +34,8 @@ receivers:
       follow_redirects: true
 
 - name: 'critical-receiver'
-  telegram_configs:
-  - bot_token: '${TELEGRAM_BOT_TOKEN}'
-    chat_id: '${TELEGRAM_CHAT_ID}'
-    parse_mode: 'HTML'
-    message: |
-      <b>🚨 CRITICAL ALERT</b>
-      
-      <b>Alert:</b> {{ .GroupLabels.alertname }}
-      <b>Severity:</b> {{ .CommonLabels.severity }}
-      <b>Instance:</b> {{ .CommonLabels.instance }}
-      
-      <b>Summary:</b> {{ .CommonAnnotations.summary }}
-      <b>Description:</b> {{ .CommonAnnotations.description }}
-      
-      <b>Status:</b> {{ .Status }}
-      <b>Time:</b> {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+  # Telegram notifications (configure in alertmanager.telegram.yml if needed)
+  # See alertmanager.telegram.yml.example for Telegram setup
   webhook_configs:
   - url: 'http://backend:5000/api/alerts/webhook'
     send_resolved: true
