@@ -42,7 +42,7 @@
         "showLabels": false,
         "showTime": true,
         "sortOrder": "Descending",
-        "wrapLogMessage": false
+        "wrapLogMessage": true
       },
       "targets": [
         {
@@ -51,7 +51,7 @@
             "uid": "Loki"
           },
           "editorMode": "code",
-          "expr": "{container_name=~\"$container\"} |~ \"$search\" | json | level=~\"$level\"",
+          "expr": "{container_name=~\"$container\"} |~ \"$search\" | json | level=~\"$level\" | line_format \"{{.level}} [{{.service}}] {{.message}}\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -268,7 +268,7 @@
         "showLabels": false,
         "showTime": true,
         "sortOrder": "Descending",
-        "wrapLogMessage": false
+        "wrapLogMessage": true
       },
       "targets": [
         {
@@ -277,7 +277,7 @@
             "uid": "Loki"
           },
           "editorMode": "code",
-          "expr": "{container_name=\"mining-stack-python-scheduler-1\"} | json | level=~\"ERROR|WARN\"",
+          "expr": "{container_name=\"mining-stack-python-scheduler-1\"} | json | level=~\"ERROR|WARN\" | line_format \"{{.level}} {{.message}}\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -305,7 +305,7 @@
         "showLabels": false,
         "showTime": true,
         "sortOrder": "Descending",
-        "wrapLogMessage": false
+        "wrapLogMessage": true
       },
       "targets": [
         {
@@ -314,7 +314,7 @@
             "uid": "Loki"
           },
           "editorMode": "code",
-          "expr": "{container_name=\"mining-stack-python-scheduler-1\"} |~ \"Fallback|fallback|CGI|zombie|hung|mismatch\"",
+          "expr": "{container_name=\"mining-stack-python-scheduler-1\"} |~ \"Fallback|fallback|CGI|zombie|hung|mismatch\" | json | line_format \"{{.level}} {{.message}}\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -342,7 +342,7 @@
         "showLabels": false,
         "showTime": true,
         "sortOrder": "Descending",
-        "wrapLogMessage": false
+        "wrapLogMessage": true
       },
       "targets": [
         {
@@ -351,7 +351,7 @@
             "uid": "Loki"
           },
           "editorMode": "code",
-          "expr": "{container_name=\"mining-stack-backend-1\"} | json | level=~\"ERROR|WARN\"",
+          "expr": "{container_name=\"mining-stack-backend-1\"} | json | level=~\"ERROR|WARN\" | line_format \"{{.level}} {{.message}}\"",
           "queryType": "range",
           "refId": "A"
         }
