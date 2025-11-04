@@ -1,6 +1,14 @@
-# Python Scheduler Service (Modular Architecture)
+# Python Scheduler Service
 
-Dedicated microservice for collecting ASIC miner metrics with Prometheus integration.
+Dedicated microservice for collecting ASIC miner metrics with Prometheus integration and advanced scheduling.
+
+## Overview
+
+The Python Scheduler is a FastAPI-based service that handles all mining hardware communication and metrics collection. It uses APScheduler for reliable job scheduling and exposes metrics via Prometheus for monitoring.
+
+**Version**: 3.0  
+**Python**: 3.11+  
+**Framework**: FastAPI + APScheduler
 
 ## Purpose
 
@@ -19,21 +27,35 @@ This service maintains **clean separation of concerns** by handling all Python/h
 - ❌ Query Prometheus
 - ❌ Manage user sessions
 
-## Modular Architecture
+## Directory Structure
 
 ```
 python-scheduler/
 ├── main.py                      # FastAPI app, endpoints, orchestration
 ├── config.py                    # Configuration loading & caching
 ├── metrics.py                   # Prometheus metric definitions
+├── models.py                    # Pydantic validation models
+├── file_lock.py                 # File locking for config safety
+├── logging_config.py            # Structured logging configuration
+├── health_check.py              # Health check utilities
+├── state_manager.py             # State management
+├── asic_profile_loader.py       # ASIC profile loading
+├── asic_profiles.yaml           # ASIC model profiles
+├── requirements.txt             # Python dependencies
+├── Dockerfile                   # Container build
 ├── collectors/
 │   ├── __init__.py
 │   ├── pyasic_collector.py      # Primary: PyASIC + CGMiner
 │   ├── antminer_cgi_collector.py # Fallback: Antminer CGI
 │   └── dg1_tcp_collector.py     # Fallback: DG1 TCP
-└── parsers/
-    ├── __init__.py
-    └── cgminer_parser.py        # CGMiner response parser
+├── parsers/
+│   ├── __init__.py
+│   └── cgminer_parser.py        # CGMiner response parser
+├── docs/
+│   ├── architecture/            # Architecture documentation
+│   ├── guides/                  # User guides
+│   └── changelog/               # Change history
+└── README.md                    # This file
 ```
 
 ### Service Flow
@@ -282,11 +304,82 @@ docker port python-scheduler
 
 ## Dependencies
 
-- Python 3.11
-- FastAPI - REST API framework
-- uvicorn - ASGI server
-- schedule - Job scheduling
-- pyasic - ASIC miner communication
-- pyyaml - YAML configuration
-- netifaces - Network interface info
-- aiohttp - Async HTTP client
+- **Python 3.11** - Runtime
+- **FastAPI** - REST API framework
+- **uvicorn** - ASGI server
+- **APScheduler** - Advanced job scheduling
+- **pyasic** - ASIC miner communication
+- **pyyaml** - YAML configuration
+- **netifaces** - Network interface info
+- **aiohttp** - Async HTTP client
+- **pydantic** - Data validation
+- **prometheus-client** - Metrics export
+
+## New Features (V3.0)
+
+### Input Validation
+- **Pydantic models** for all API requests
+- Automatic validation with 422 responses
+- Type-safe configuration loading
+- See: `models.py`
+
+### File Locking
+- **Atomic file operations** for config files
+- Prevents race conditions
+- Guaranteed lock release
+- See: `file_lock.py`
+
+### Structured Logging
+- **JSON and human-readable** formats
+- Contextual logging with metadata
+- Log levels: DEBUG, INFO, WARNING, ERROR
+- See: `logging_config.py`
+
+### ASIC Profiles
+- **Profile library** for known ASIC models
+- Auto-detection and configuration
+- Extensible profile system
+- See: `asic_profiles.yaml`, `asic_profile_loader.py`
+
+### Advanced Scheduling
+- **APScheduler** for reliable job execution
+- Async job support
+- Job status monitoring
+- Configurable intervals
+
+## Documentation
+
+### Architecture
+- [ARM64 Build Fix](docs/architecture/ARM64_BUILD_FIX.md)
+- [ARM64 Compatibility](docs/architecture/ARM64_COMPATIBILITY_NOTES.md)
+- [Driver Implementation](docs/architecture/DRIVERS_IMPLEMENTATION.md)
+- [Scheduler Improvements](docs/architecture/SCHEDULER_IMPROVEMENTS.md)
+
+### Guides
+- [ASIC Profile Library](docs/guides/ASIC_PROFILE_LIBRARY.md)
+- [Profile Integration](docs/guides/PROFILE_LIBRARY_INTEGRATION.md)
+- [Quick Config Reference](docs/guides/QUICK_CONFIG_REFERENCE.md)
+- [Phase 1 Quickstart](docs/guides/PHASE1_QUICKSTART.md)
+- [Stability & Health](docs/guides/PHASE1_STABILITY_HEALTH.md)
+
+### Changelog
+- [Cleanup Summary](docs/changelog/CLEANUP_SUMMARY.md)
+- [Config Alignment](docs/changelog/CONFIG_ALIGNMENT.md)
+- [Hashrate Unit Check](docs/changelog/HASHRATE_UNIT_SANITY_CHECK.md)
+- [HTTPX Migration](docs/changelog/HTTPX_MIGRATION.md)
+- [Implementation Complete](docs/changelog/IMPLEMENTATION_COMPLETE.md)
+- [Improvements](docs/changelog/IMPROVEMENTS.md)
+- [Integration Summary](docs/changelog/INTEGRATION_SUMMARY.md)
+- [Refactoring Summary](docs/changelog/REFACTORING_SUMMARY.md)
+
+## Related Documentation
+
+- [Main Project README](../README.md)
+- [Backend Service](../backend/README.md)
+- [Frontend Service](../frontend/README.md)
+- [Docker Configuration](../docker/README.md)
+- [Prometheus Configuration](../docker/prometheus/README.md)
+
+## License
+
+Part of the Mining Stack project.
