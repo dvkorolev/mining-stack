@@ -31,6 +31,12 @@ Welcome to the Mining Stack documentation! This guide will help you set up, conf
 - **[🔍 Troubleshooting](./operations/TROUBLESHOOTING.md)**  
   Common issues and their solutions. Check here first if something isn't working.
 
+- **[🔍 General Troubleshooting](./troubleshooting/general.md)**  
+  General troubleshooting guide for common issues.
+
+- **[📊 Logging Troubleshooting](./troubleshooting/LOGGING_TROUBLESHOOTING.md)**  
+  Complete guide for debugging Loki, Promtail, and Grafana logging issues.
+
 - **[🏥 Health Checks](./operations/HEALTH_CHECKS.md)**  
   Monitor system health, set up automated checks, and understand health metrics.
 
@@ -57,6 +63,15 @@ Welcome to the Mining Stack documentation! This guide will help you set up, conf
 - **[📦 Deployment Summary](./deployment/DEPLOYMENT_SUMMARY.md)**  
   Quick deployment reference.
 
+- **[🔧 Update Script Fix](./deployment/UPDATE_SCRIPT_FIX.md)**  
+  Fixes for update script and logging stack integration.
+
+- **[🐳 Compose File Fix](./deployment/COMPOSE_FILE_FIX.md)**  
+  Docker Compose configuration fixes and best practices.
+
+- **[📊 Logging Stack Integration](./deployment/LOGGING_STACK_INTEGRATION.md)**  
+  Complete guide for Loki + Promtail logging stack setup.
+
 ### Reference
 
 - **[📊 Metrics Collection](./reference/METRICS_COLLECTION.md)**  
@@ -70,14 +85,20 @@ Welcome to the Mining Stack documentation! This guide will help you set up, conf
 
 ### Features & Enhancements
 
-- **[🐳 Docker Improvements](./features/DOCKER_IMPROVEMENTS.md)**  
-  Multi-stage builds, platform flexibility, and optimization details.
+- **[🐳 Docker Improvements](../docker/DOCKER_IMPROVEMENTS.md)**  
+  Comprehensive Dockerfile improvements: security, health checks, versioning.
 
 - **[📊 Monitoring Stack](./features/MONITORING_IMPROVEMENTS.md)**  
   Blackbox Exporter, Telegram alerts, and Grafana dashboard templates.
 
 - **[🏊 Pool Management](./features/POOLS_INTEGRATION_PROGRESS.md)**  
   Complete pools.yaml integration with UI management.
+
+- **[🤖 Telegram Bot UI](./features/TELEGRAM_BOT_UI_IMPROVEMENTS.md)**  
+  Improved bot interface with better navigation and overview.
+
+- **[🏊 Pool Configuration Guide](./features/POOL_CONFIGURATION_GUIDE.md)**  
+  Complete guide for retrieving and managing pool configurations.
 
 ### Architecture & Design
 
