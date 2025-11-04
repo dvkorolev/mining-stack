@@ -7,12 +7,14 @@
 ```bash
 cd mining-stack
 
-# Start all services with logging enabled
-docker-compose -f docker-compose.yml -f python-scheduler/docker-compose.logging.yml up -d
+# Start with logging stack enabled
+docker-compose -f docker-compose.yml -f docker-compose.logging.yml up -d
 
 # Verify all services are running
 docker ps | grep -E "loki|promtail|python-scheduler|backend|frontend"
 ```
+
+**Note**: All Grafana configuration (including Loki datasource) is now consolidated in `docker/grafana/` for easier management.
 
 ### Step 2: Verify JSON Logging (1 minute)
 

@@ -14,3 +14,6 @@ httpx==0.26.0  # Required by pyasic, has built-in digest auth for ARM64
 
 # Healthcheck
 requests==2.31.0
+
+# Advanced Scheduling
+APScheduler==3.10.4

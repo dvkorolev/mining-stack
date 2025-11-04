@@ -28,9 +28,16 @@ class HealthStatus:
 class HealthCheck:
     """Comprehensive health check for the service"""
     
-    def __init__(self, collection_lock, last_collection: Dict):
+    def __init__(self, collection_lock, service_state=None):
+        """
+        Initialize health checker
+        
+        Args:
+            collection_lock: asyncio.Lock for collection synchronization
+            service_state: ServiceState instance (optional, for backward compatibility)
+        """
         self.collection_lock = collection_lock
-        self.last_collection = last_collection
+        self.service_state = service_state
         self._lock_acquired_time = None
     
     def set_lock_acquired_time(self, timestamp: float):
@@ -86,14 +93,21 @@ class HealthCheck:
         Returns:
             (status, message, details)
         """
-        if not self.last_collection or not self.last_collection.get('timestamp'):
+        # Get last collection from ServiceState if available, otherwise use legacy dict
+        if self.service_state:
+            last_collection = self.service_state.get_last_collection()
+        else:
+            # Backward compatibility: assume self has last_collection attribute
+            last_collection = getattr(self, 'last_collection', {})
+        
+        if not last_collection or not last_collection.get('timestamp'):
             return (
                 HealthStatus.DEGRADED,
                 "No collection has run yet",
                 {}
             )
         
-        timestamp_str = self.last_collection.get('timestamp')
+        timestamp_str = last_collection.get('timestamp')
         try:
             last_run = datetime.fromisoformat(timestamp_str)
             age_seconds = (datetime.now() - last_run).total_seconds()
@@ -111,8 +125,8 @@ class HealthCheck:
                 )
             
             # Check if last collection was successful
-            if not self.last_collection.get('success'):
-                message = self.last_collection.get('message', 'Unknown error')
+            if not last_collection.get('success'):
+                message = last_collection.get('message', 'Unknown error')
                 return (
                     HealthStatus.DEGRADED,
                     f"Last collection failed: {message}",

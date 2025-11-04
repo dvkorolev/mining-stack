@@ -1,0 +1,60 @@
+# Mining Pool Configuration
+# Define critical pools to monitor independently of miner status
+# These pools will be tested even if all miners are offline
+
+pools:
+  # Slush Pool (Braiins Pool)
+  - url: "stratum.slushpool.com:3333"
+    name: "SlushPool"
+    algorithm: "sha256"
+    priority: "high"
+  
+  # F2Pool
+  - url: "stratum.f2pool.com:3333"
+    name: "F2Pool"
+    algorithm: "sha256"
+    priority: "high"
+  
+  # Antpool
+  - url: "stratum.antpool.com:3333"
+    name: "Antpool"
+    algorithm: "sha256"
+    priority: "medium"
+  
+  # ViaBTC
+  - url: "stratum.viabtc.com:3333"
+    name: "ViaBTC"
+    algorithm: "sha256"
+    priority: "medium"
+  
+  # Poolin
+  - url: "stratum.ss.poolin.me:443"
+    name: "Poolin"
+    algorithm: "sha256"
+    priority: "medium"
+  
+  # LitecoinPool (SCRYPT)
+  - url: "stratum.litecoinpool.org:3333"
+    name: "LitecoinPool"
+    algorithm: "scrypt"
+    priority: "medium"
+  
+  # Prohashing (Multi-algo)
+  - url: "prohashing.com:3333"
+    name: "Prohashing"
+    algorithm: "multi"
+    priority: "low"
+
+# Configuration options
+config:
+  # How often to test pools (in minutes)
+  test_interval: 5
+  
+  # Enable ICMP ping tests (requires root/CAP_NET_RAW)
+  enable_ping: false
+  
+  # Connection timeout (seconds)
+  connection_timeout: 5
+  
+  # DNS resolution timeout (seconds)
+  dns_timeout: 3

@@ -31,7 +31,7 @@ services:
       # Docker socket to read container logs
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Promtail configuration
-      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./python-scheduler/promtail-config.yml:/etc/promtail/config.yml:ro
     command: -config.file=/etc/promtail/config.yml
     networks:
       - mining-network
@@ -89,8 +89,8 @@ services:
       # Auto-provision Loki data source
       - GF_DATASOURCES_DEFAULT_URL=http://loki:3100
     volumes:
-      # Grafana provisioning for Loki data source
-      - ./grafana/provisioning/datasources/loki.yml:/etc/grafana/provisioning/datasources/loki.yml:ro
+      # Grafana provisioning for Loki data source (consolidated with main config)
+      - ./docker/grafana/provisioning/datasources/loki.yml:/etc/grafana/provisioning/datasources/loki.yml:ro
 
 volumes:
   loki-data:

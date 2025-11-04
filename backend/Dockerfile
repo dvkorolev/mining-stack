@@ -1,5 +1,8 @@
-# Use platform-specific base image for M1 Macs
-FROM --platform=linux/amd64 node:18-alpine AS builder
+# Build argument for platform flexibility
+ARG PLATFORM=linux/amd64
+
+# Use platform-specific base image
+FROM --platform=${PLATFORM} node:18-alpine AS builder
 
 WORKDIR /app
 
