@@ -47,6 +47,7 @@ from metrics import (
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
 from collectors.antminer_cgi_collector import collect_antminer_cgi
 from collectors.whatsminer_cgi_collector import collect_whatsminer_cgi
+from collectors.whatsminer_cgminer_collector import collect_whatsminer_cgminer
 from collectors.dg1_tcp_collector import collect_dg1_tcp
 from health_check import HealthCheck
 from logging_config import setup_logging, log_event
@@ -436,12 +437,12 @@ async def collect_all_metrics():
                         model_lower = miner['model'].lower()
                         logger.debug(f"No profile found for {miner['model']}, using legacy fallback logic")
                         
-                        # Try Whatsminer CGI driver for Whatsminer models
+                        # Try Whatsminer CGMiner API for Whatsminer models (port 4028)
                         if 'whatsminer' in model_lower or 'm30' in model_lower or 'm50' in model_lower or 'm20' in model_lower:
-                            logger.info(f"  Trying Whatsminer CGI fallback for {miner['name']} ({miner['ip']}) [legacy]")
+                            logger.info(f"  Trying Whatsminer CGMiner API fallback for {miner['name']} ({miner['ip']}) [legacy]")
                             fallback_attempts += 1
-                            fallback_data = await collect_whatsminer_cgi(miner)
-                            fallback_method = 'whatsminer_cgi'
+                            fallback_data = await collect_whatsminer_cgminer(miner)
+                            fallback_method = 'whatsminer_cgminer'
                         
                         # Try Antminer CGI driver for Antminers
                         elif 'antminer' in model_lower or 's19' in model_lower or 's17' in model_lower:
@@ -472,6 +473,8 @@ async def collect_all_metrics():
                             new_scrape_status = 0.5  # Antminer CGI success
                         elif fallback_method == 'whatsminer_cgi':
                             new_scrape_status = 0.5  # Whatsminer CGI success
+                        elif fallback_method == 'whatsminer_cgminer':
+                            new_scrape_status = 0.6  # Whatsminer CGMiner API success
                         elif fallback_method == 'dg1_tcp':
                             new_scrape_status = 0.4  # DG1 TCP success
                         else:
