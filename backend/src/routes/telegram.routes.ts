@@ -23,7 +23,7 @@ router.get('/status', (req: Request, res: Response) => {
     res.json({
       success: true,
       enabled: status.enabled,
-      chatId: status.chatId,
+      chatIds: status.chatIds,
     });
   } catch (error) {
     logger.error('Error getting Telegram status:', error);
@@ -45,15 +45,16 @@ router.post('/init', async (req: Request, res: Response) => {
     if (!token || !chatId) {
       return res.status(400).json({
         success: false,
-        error: 'Bot token and chat ID are required',
+        error: 'Bot token and chat IDs are required',
       });
     }
 
-    // Validate chat ID is numeric
-    if (!/^\d+$/.test(chatId)) {
+    // Validate chat IDs (comma-separated numbers)
+    const chatIdPattern = /^[\d\s,]+$/;
+    if (!chatIdPattern.test(chatId)) {
       return res.status(400).json({
         success: false,
-        error: 'Chat ID must be numeric',
+        error: 'Chat IDs must be numeric values separated by commas',
       });
     }
 
