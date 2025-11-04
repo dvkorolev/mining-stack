@@ -448,14 +448,30 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             }
             
             pools = data.get('pools', [])
+            pool_urls = []
             if pools and isinstance(pools, (list, tuple)) and len(pools) > 0:
                 first_pool = pools[0]
                 if hasattr(first_pool, 'accepted'):
                     miner_data['pool_accepted'] = sum(p.accepted for p in pools if hasattr(p, 'accepted') and p.accepted is not None)
                     miner_data['pool_rejected'] = sum(p.rejected for p in pools if hasattr(p, 'rejected') and p.rejected is not None)
+                    # Extract pool URLs
+                    for p in pools:
+                        if hasattr(p, 'url') and p.url:
+                            pool_urls.append(str(p.url))
+                        elif hasattr(p, 'pool_url') and p.pool_url:
+                            pool_urls.append(str(p.pool_url))
                 elif isinstance(first_pool, dict):
                     miner_data['pool_accepted'] = sum(p.get('accepted', 0) for p in pools if isinstance(p, dict))
                     miner_data['pool_rejected'] = sum(p.get('rejected', 0) for p in pools if isinstance(p, dict))
+                    # Extract pool URLs from dict
+                    for p in pools:
+                        if isinstance(p, dict):
+                            url = p.get('url') or p.get('pool_url') or p.get('URL')
+                            if url:
+                                pool_urls.append(str(url))
+            
+            # Add pool URLs to miner data
+            miner_data['pools'] = pool_urls
             
             miners_data.append(miner_data)
         else:
@@ -486,6 +502,7 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 'state': 0,
                 'pool_accepted': 0,
                 'pool_rejected': 0,
+                'pools': [],  # No pool data for offline miners
             })
     
     duration = time.time() - start_time

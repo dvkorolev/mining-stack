@@ -101,6 +101,7 @@ def _parse_whatsminer_json_response(data: Dict, ip: str) -> Optional[Dict]:
             'uptime': 0,
             'hashboards': [],
             'fans': [],
+            'pools': [],  # Pool URLs if available
         }
         
         # Try to extract hashrate (various field names)
@@ -157,6 +158,7 @@ def _parse_whatsminer_html_response(html: str, ip: str) -> Optional[Dict]:
             'uptime': 0,
             'hashboards': [],
             'fans': [],
+            'pools': [],  # Pool URLs if available
         }
         
         # Extract hashrate (e.g., "111.000 TH/s" or "111000 GH/s")
