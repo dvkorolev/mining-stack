@@ -40,24 +40,29 @@ async def collect_whatsminer_cgminer(miner_config: Dict) -> Optional[Dict]:
             logger.debug(f"Whatsminer CGMiner {ip}: No summary data")
             return None
         
-        # Parse summary response
-        summary_data = summary.get('SUMMARY', [{}])[0] if 'SUMMARY' in summary else {}
+        # Parse summary response (Whatsminer format has data in 'Msg' field)
+        summary_data = summary.get('Msg', {})
+        if not summary_data:
+            # Try standard cgminer format as fallback
+            summary_data = summary.get('SUMMARY', [{}])[0] if 'SUMMARY' in summary else {}
         
         # Extract hashrate (MHS av is in MH/s, convert to TH/s)
         mhs_av = summary_data.get('MHS av', 0)
         hashrate_ths = mhs_av / 1_000_000.0 if mhs_av else 0.0
         
-        # Get temperature from stats
-        stats = await _cgminer_command(ip, "stats", port)
-        temps = []
-        if stats and 'STATS' in stats:
-            for stat in stats['STATS']:
-                # Whatsminer reports chip temps
-                for key, value in stat.items():
-                    if 'Chip Temp' in key and isinstance(value, (int, float)):
-                        temps.append(float(value))
-        
-        max_temp = max(temps) if temps else 0.0
+        # Get temperature (Whatsminer provides it in summary)
+        max_temp = summary_data.get('Chip Temp Max', 0)
+        if not max_temp:
+            # Fallback: try to get from stats command
+            stats = await _cgminer_command(ip, "stats", port)
+            temps = []
+            if stats and 'STATS' in stats:
+                for stat in stats['STATS']:
+                    # Whatsminer reports chip temps
+                    for key, value in stat.items():
+                        if 'Chip Temp' in key and isinstance(value, (int, float)):
+                            temps.append(float(value))
+            max_temp = max(temps) if temps else 0.0
         
         # Get pool data
         pools_data = await _cgminer_command(ip, "pools", port)
