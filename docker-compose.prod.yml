@@ -107,11 +107,6 @@ services:
   prometheus:
     image: prom/prometheus:latest
     platform: linux/arm64
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
     container_name: prometheus
     ports:
       - "9090:9090"
@@ -126,7 +121,17 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
     networks:
       - mining-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Note: node-exporter removed in V2 - metrics served directly by python-scheduler
 
@@ -148,6 +153,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   alertmanager:
     image: prom/alertmanager:latest
@@ -172,6 +183,17 @@ services:
     networks:
       - mining-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   grafana:
     image: grafana/grafana:latest
@@ -198,6 +220,17 @@ services:
     networks:
       - mining-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   mining-network:
