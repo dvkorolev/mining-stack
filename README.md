@@ -37,6 +37,21 @@ A comprehensive monitoring and control system for cryptocurrency mining operatio
 - **Miner Discovery**: Automatically detect miners on your network using pyasic
 - **Multi-Platform**: Supports x86_64 and ARM64 (Raspberry Pi)
 
+## 📚 Documentation
+
+- **[📖 Complete Documentation](docs/README.md)** - Full documentation index
+- **[🚀 Quick Start Guide](docs/QUICKSTART.md)** - Get started in 5 minutes
+- **[📦 Deployment Guide](docs/DEPLOYMENT.md)** - Production deployment
+- **[🔧 Configuration](docs/CONFIGURATION.md)** - System configuration
+- **[🔍 Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+### Component Documentation
+
+- **[Backend Service](backend/README.md)** - Node.js/Express API server
+- **[Frontend Service](frontend/README.md)** - React web interface
+- **[Python Scheduler](python-scheduler/README.md)** - Metrics collection service
+- **[Docker Configuration](docker/README.md)** - Prometheus, Grafana, Alertmanager
+
 ## 📋 Prerequisites
 
 - Docker (v20.10+)

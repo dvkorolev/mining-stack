@@ -40,6 +40,39 @@ Welcome to the Mining Stack documentation! This guide will help you set up, conf
 - **[🏗️ CI/CD Setup](./CI_CD.md)**  
   Set up GitHub Actions for automated building and deployment.
 
+### Features & Enhancements
+
+- **[🐳 Docker Improvements](./features/DOCKER_IMPROVEMENTS.md)**  
+  Multi-stage builds, platform flexibility, and optimization details.
+
+- **[📊 Monitoring Stack](./features/MONITORING_IMPROVEMENTS.md)**  
+  Blackbox Exporter, Telegram alerts, and Grafana dashboard templates.
+
+- **[🏊 Pool Management](./features/POOLS_INTEGRATION_PROGRESS.md)**  
+  Complete pools.yaml integration with UI management.
+
+### Architecture & Design
+
+- **[🔗 Cross-Service Logging](./architecture/CROSS_SERVICE_LOGGING.md)**  
+  Unified logging architecture across all services.
+
+- **[📝 Log Service Design](./architecture/LOG_SERVICE_DESIGN.md)**  
+  Structured logging design and implementation.
+
+- **[🏗️ Logging Architecture](./architecture/LOGGING_ARCHITECTURE_REFACTOR.md)**  
+  Logging refactor and best practices.
+
+### Guides
+
+- **[📚 Logging Quickstart](./guides/LOGGING_QUICKSTART.md)**  
+  Quick guide to logging configuration and usage.
+
+- **[📦 Dependency Check](./guides/DEPENDENCY_CHECK.md)**  
+  Verification of all project dependencies.
+
+- **[🔍 Dependencies Status](./guides/DEPENDENCIES_STATUS.md)**  
+  Current status of all dependencies.
+
 ## Quick Links
 
 ### Common Tasks
