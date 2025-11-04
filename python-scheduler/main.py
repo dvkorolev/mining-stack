@@ -435,8 +435,10 @@ async def collect_all_metrics():
                         model_lower = miner['model'].lower()
                         logger.debug(f"No profile found for {miner['model']}, using legacy fallback logic")
                         
-                        # Try Antminer CGI driver for Antminers
-                        if 'antminer' in model_lower or 's19' in model_lower or 's17' in model_lower:
+                        # Try Antminer CGI driver for Antminers and Whatsminers
+                        # Both use similar CGI endpoints (/cgi-bin/stats.cgi)
+                        if ('antminer' in model_lower or 's19' in model_lower or 's17' in model_lower or
+                            'whatsminer' in model_lower or 'm30' in model_lower or 'm50' in model_lower or 'm20' in model_lower):
                             logger.info(f"  Trying Antminer CGI fallback for {miner['name']} ({miner['ip']}) [legacy]")
                             fallback_attempts += 1
                             fallback_data = await collect_antminer_cgi(miner)
