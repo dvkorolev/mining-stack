@@ -1,13 +1,12 @@
 # Docker Compose configuration for logging stack (Loki + Promtail)
-# This extends your existing docker-compose.yml
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.logging.yml up
-
-version: '3.8'
+# This extends docker-compose.prod.yml
+# Usage: docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml up
 
 services:
   # Loki - Log aggregation database
   loki:
     image: grafana/loki:2.9.0
+    platform: linux/arm64
     container_name: loki
     ports:
       - "3100:3100"
@@ -27,6 +26,7 @@ services:
   # Promtail - Log collector
   promtail:
     image: grafana/promtail:2.9.0
+    platform: linux/arm64
     container_name: promtail
     volumes:
       # Docker socket to read container logs

@@ -89,6 +89,23 @@ if [ -d ".git" ] && [ "$SKIP_GIT" = false ]; then
         git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)"
     fi
     
+    # Check for untracked files that would be overwritten
+    # This handles the case where files exist locally but aren't in git yet
+    UNTRACKED_CONFLICTS=$(git ls-files -o --exclude-standard | grep -v -E '\.env$|miners\.yaml$' || true)
+    if [ -n "$UNTRACKED_CONFLICTS" ]; then
+        echo -e "${YELLOW}⚠️  Found untracked files that may conflict${NC}"
+        echo -e "${YELLOW}   Backing up and removing conflicting files...${NC}"
+        mkdir -p .git/untracked-backup
+        while IFS= read -r file; do
+            if [ -f "$file" ]; then
+                mkdir -p ".git/untracked-backup/$(dirname "$file")"
+                cp "$file" ".git/untracked-backup/$file"
+                rm "$file"
+                echo -e "${YELLOW}   Backed up: $file${NC}"
+            fi
+        done <<< "$UNTRACKED_CONFLICTS"
+    fi
+    
     # Get current branch
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
     echo -e "${BLUE}   Current branch: $CURRENT_BRANCH${NC}"
@@ -117,6 +134,11 @@ if [ -d ".git" ] && [ "$SKIP_GIT" = false ]; then
                 
                 echo -e "${GREEN}✓ Configuration restored${NC}"
                 echo -e "${GREEN}✓ Updated: docker-compose, python-scheduler, bin scripts${NC}"
+                
+                # Notify about untracked backups if they exist
+                if [ -d .git/untracked-backup ] && [ "$(ls -A .git/untracked-backup)" ]; then
+                    echo -e "${BLUE}ℹ️  Untracked file backups saved in: .git/untracked-backup/${NC}"
+                fi
             else
                 echo -e "${RED}✗ CRITICAL: Failed to pull updates${NC}"
                 echo -e "${RED}   Aborting to prevent inconsistent state${NC}"
@@ -156,12 +178,14 @@ else
     echo -e "${BLUE}📥 Pulling latest images from GHCR...${NC}"
     export IMAGE_TAG=$IMAGE_TAG
     docker compose -f docker-compose.prod.yml pull
+    echo -e "${BLUE}📥 Pulling logging stack images...${NC}"
+    docker compose -f docker-compose.logging.yml pull
 fi
 
 # Stop containers and remove old images for this project only
 echo -e "${BLUE}🛑 Stopping containers...${NC}"
 echo -e "${BLUE}🧹 Removing old project images...${NC}"
-docker compose -f docker-compose.prod.yml down --rmi local
+docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml down --rmi local
 
 # Fix permissions for data directories
 echo -e "${BLUE}🔐 Ensuring data directory permissions...${NC}"
@@ -188,9 +212,10 @@ EOF
     echo -e "${GREEN}✓ Default miners.yaml created${NC}"
 fi
 
-# Start services
+# Start services (including logging stack)
 echo -e "${BLUE}🚀 Starting services...${NC}"
-docker compose -f docker-compose.prod.yml up -d
+echo -e "${BLUE}   Including logging stack (Loki + Promtail)${NC}"
+docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml up -d
 
 # Wait for startup
 echo -e "${BLUE}⏳ Waiting for services to start...${NC}"
@@ -199,7 +224,7 @@ sleep 10
 # Show status
 echo ""
 echo -e "${BLUE}📊 Service Status:${NC}"
-docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml ps
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -207,8 +232,10 @@ echo -e "${GREEN}✅ Update completed successfully!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Dashboard: http://$(hostname -I | awk '{print $1}'):3000${NC}"
+echo -e "${BLUE}Grafana:   http://$(hostname -I | awk '{print $1}'):3001${NC}"
+echo -e "${BLUE}Loki Logs: http://$(hostname -I | awk '{print $1}'):3100${NC}"
 echo ""
-echo -e "${BLUE}To view logs:${NC} docker compose -f docker-compose.prod.yml logs -f"
+echo -e "${BLUE}To view logs:${NC} docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml logs -f"
 echo ""
 
 # Run health check

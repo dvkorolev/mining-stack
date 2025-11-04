@@ -48,7 +48,7 @@ check_info() {
 }
 
 # 1. Check Docker
-echo -e "${BLUE}[1/10] Checking Docker...${NC}"
+echo -e "${BLUE}[1/12] Checking Docker...${NC}"
 if command -v docker &> /dev/null; then
     DOCKER_VERSION=$(docker --version | cut -d' ' -f3 | tr -d ',')
     check_pass "Docker installed (version $DOCKER_VERSION)"
@@ -67,7 +67,7 @@ fi
 echo ""
 
 # 2. Check Project Directory
-echo -e "${BLUE}[2/10] Checking project directory...${NC}"
+echo -e "${BLUE}[2/12] Checking project directory...${NC}"
 if [ -d "$PROJECT_DIR" ]; then
     check_pass "Project directory exists: $PROJECT_DIR"
     cd "$PROJECT_DIR" || exit 1
@@ -85,13 +85,13 @@ fi
 echo ""
 
 # 3. Check Docker Containers
-echo -e "${BLUE}[3/10] Checking Docker containers...${NC}"
-CONTAINERS=$(docker compose -f docker-compose.prod.yml ps --format json 2>/dev/null | jq -r '.Name' 2>/dev/null || docker compose -f docker-compose.prod.yml ps --services)
+echo -e "${BLUE}[3/12] Checking Docker containers...${NC}"
+CONTAINERS=$(docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml ps --format json 2>/dev/null | jq -r '.Name' 2>/dev/null || docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml ps --services)
 
-EXPECTED_SERVICES=("python-scheduler" "backend" "frontend" "prometheus" "grafana" "node-exporter")
+EXPECTED_SERVICES=("python-scheduler" "backend" "frontend" "prometheus" "grafana" "blackbox-exporter" "alertmanager" "loki" "promtail")
 for service in "${EXPECTED_SERVICES[@]}"; do
-    if docker compose -f docker-compose.prod.yml ps "$service" 2>/dev/null | grep -q "Up"; then
-        UPTIME=$(docker compose -f docker-compose.prod.yml ps "$service" --format "{{.Status}}" | grep -oP '\d+\s+(seconds|minutes|hours)' || echo "running")
+    if docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml ps "$service" 2>/dev/null | grep -q "Up"; then
+        UPTIME=$(docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml ps "$service" --format "{{.Status}}" | grep -oP '\d+\s+(seconds|minutes|hours)' || echo "running")
         check_pass "$service is running ($UPTIME)"
     else
         check_fail "$service is not running"
@@ -100,12 +100,12 @@ done
 echo ""
 
 # 4. Check Network Connectivity
-echo -e "${BLUE}[4/10] Checking network connectivity...${NC}"
+echo -e "${BLUE}[4/12] Checking network connectivity...${NC}"
 HOST_IP=$(hostname -I | awk '{print $1}')
 check_info "Host IP: $HOST_IP"
 
 # Check if ports are listening
-PORTS=("3000:Frontend" "5000:Backend" "9090:Prometheus" "3001:Grafana" "9100:Node-Exporter")
+PORTS=("3000:Frontend" "5000:Backend" "9090:Prometheus" "3001:Grafana" "9115:Blackbox" "9093:Alertmanager" "3100:Loki")
 for port_info in "${PORTS[@]}"; do
     PORT=$(echo "$port_info" | cut -d: -f1)
     NAME=$(echo "$port_info" | cut -d: -f2)
@@ -118,7 +118,7 @@ done
 echo ""
 
 # 5. Check Backend Health
-echo -e "${BLUE}[5/10] Checking Backend API health...${NC}"
+echo -e "${BLUE}[5/12] Checking Backend API health...${NC}"
 BACKEND_URL="http://localhost:5000"
 
 # Health endpoint
@@ -150,7 +150,7 @@ fi
 echo ""
 
 # 6. Check Python Scheduler (Job Runner)
-echo -e "${BLUE}[6/10] Checking Python Scheduler...${NC}"
+echo -e "${BLUE}[6/12] Checking Python Scheduler...${NC}"
 SCHEDULER_URL="http://localhost:8000"
 
 # Health endpoint
@@ -181,7 +181,7 @@ fi
 echo ""
 
 # 7. Check WebSocket
-echo -e "${BLUE}[7/10] Checking WebSocket connection...${NC}"
+echo -e "${BLUE}[7/12] Checking WebSocket connection...${NC}"
 if command -v websocat &> /dev/null || command -v wscat &> /dev/null; then
     # Try to connect to WebSocket
     if timeout 3 bash -c "echo 'test' | nc -w 1 localhost 5000" &> /dev/null; then
@@ -195,8 +195,8 @@ else
 fi
 echo ""
 
-# 7. Check Frontend
-echo -e "${BLUE}[8/10] Checking Frontend...${NC}"
+# 8. Check Frontend
+echo -e "${BLUE}[8/12] Checking Frontend...${NC}"
 FRONTEND_URL="http://localhost:3000"
 
 if curl -sf --max-time $TIMEOUT "$FRONTEND_URL" > /dev/null 2>&1; then
@@ -214,8 +214,8 @@ else
 fi
 echo ""
 
-# 8. Check Prometheus
-echo -e "${BLUE}[9/10] Checking Prometheus...${NC}"
+# 9. Check Prometheus
+echo -e "${BLUE}[9/12] Checking Prometheus...${NC}"
 PROMETHEUS_URL="http://localhost:9090"
 
 if curl -sf --max-time $TIMEOUT "$PROMETHEUS_URL/-/healthy" > /dev/null 2>&1; then
@@ -235,8 +235,8 @@ else
 fi
 echo ""
 
-# 9. Check Grafana
-echo -e "${BLUE}[10/10] Checking Grafana...${NC}"
+# 10. Check Grafana
+echo -e "${BLUE}[10/12] Checking Grafana...${NC}"
 GRAFANA_URL="http://localhost:3001"
 
 if curl -sf --max-time $TIMEOUT "$GRAFANA_URL/api/health" > /dev/null 2>&1; then
@@ -257,8 +257,52 @@ else
 fi
 echo ""
 
-# 10. Check Configuration
-echo -e "${BLUE}[10/10] Checking configuration...${NC}"
+# 11. Check Loki (Log Aggregation)
+echo -e "${BLUE}[11/12] Checking Loki...${NC}"
+LOKI_URL="http://localhost:3100"
+
+if curl -sf --max-time $TIMEOUT "$LOKI_URL/ready" > /dev/null 2>&1; then
+    check_pass "Loki ready endpoint responding"
+else
+    check_warn "Loki not ready (may still be starting)"
+fi
+
+if curl -sf --max-time $TIMEOUT "$LOKI_URL/loki/api/v1/labels" > /dev/null 2>&1; then
+    check_pass "Loki API responding"
+    
+    # Check if logs are being received
+    LABELS=$(curl -s --max-time $TIMEOUT "$LOKI_URL/loki/api/v1/labels" | jq -r '.data | length' 2>/dev/null || echo "0")
+    if [ "$LABELS" -gt 0 ]; then
+        check_info "Loki has $LABELS label(s) - logs are being collected"
+    else
+        check_info "Loki is running but no logs collected yet"
+    fi
+else
+    check_fail "Loki API not responding"
+fi
+echo ""
+
+# 12. Check Promtail (Log Collector)
+echo -e "${BLUE}[12/12] Checking Promtail...${NC}"
+PROMTAIL_URL="http://localhost:9080"
+
+# Promtail doesn't expose a health endpoint by default, so we check if it's running
+if docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml ps promtail 2>/dev/null | grep -q "Up"; then
+    check_pass "Promtail container is running"
+    
+    # Check Promtail metrics endpoint
+    if curl -sf --max-time $TIMEOUT "$PROMTAIL_URL/metrics" > /dev/null 2>&1; then
+        check_pass "Promtail metrics endpoint responding"
+    else
+        check_warn "Promtail metrics endpoint not accessible"
+    fi
+else
+    check_fail "Promtail container not running"
+fi
+echo ""
+
+# 13. Check Configuration
+echo -e "${BLUE}[13/12] Checking configuration...${NC}"
 
 # Check .env file
 if [ -f ".env" ]; then
@@ -305,10 +349,12 @@ echo ""
 
 # Service URLs
 echo -e "${BLUE}Service URLs:${NC}"
-echo -e "  Dashboard:  http://$HOST_IP:3000"
-echo -e "  API:        http://$HOST_IP:5000"
-echo -e "  Prometheus: http://$HOST_IP:9090"
-echo -e "  Grafana:    http://$HOST_IP:3001 ${YELLOW}(admin/mining123)${NC}"
+echo -e "  Dashboard:    http://$HOST_IP:3000"
+echo -e "  API:          http://$HOST_IP:5000"
+echo -e "  Prometheus:   http://$HOST_IP:9090"
+echo -e "  Grafana:      http://$HOST_IP:3001 ${YELLOW}(admin/mining123)${NC}"
+echo -e "  Loki:         http://$HOST_IP:3100"
+echo -e "  Alertmanager: http://$HOST_IP:9093"
 echo ""
 
 # Recommendations
@@ -316,8 +362,8 @@ if [ $FAILED -gt 0 ]; then
     echo -e "${RED}⚠ Issues detected!${NC}"
     echo ""
     echo -e "${YELLOW}Troubleshooting steps:${NC}"
-    echo "  1. Check logs: docker compose -f docker-compose.prod.yml logs"
-    echo "  2. Restart services: docker compose -f docker-compose.prod.yml restart"
+    echo "  1. Check logs: docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml logs"
+    echo "  2. Restart services: docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml restart"
     echo "  3. Check documentation: MINING_FARM_SETUP.md"
     echo ""
     exit 1
