@@ -499,6 +499,10 @@ async def collect_all_metrics():
                         miner_data['is_mining'] = 1 if fallback_data.get('is_mining', False) else 0
                         miner_data['state'] = 2 if hashrate_val > 0 else 0
                         
+                        # Explicitly set state metric (in case _update_metrics didn't)
+                        model_normalized = miner['model'].replace(" ", "_")
+                        miner_state.labels(ip=miner['ip'], name=miner['name'], model=model_normalized).set(miner_data['state'])
+                        
                         # Also update pools if available
                         if 'pools' in fallback_data and fallback_data['pools']:
                             miner_data['pools'] = fallback_data['pools']
