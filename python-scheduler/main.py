@@ -507,6 +507,9 @@ async def collect_all_metrics():
                         # Also update pools if available
                         if 'pools' in fallback_data and fallback_data['pools']:
                             miner_data['pools'] = fallback_data['pools']
+                        # Add pool URLs for display (separate from pool stats)
+                        if 'pool_urls' in fallback_data and fallback_data['pool_urls']:
+                            miner_data['pool_urls'] = fallback_data['pool_urls']
                         
                         logger.info(f"  ✓ Fallback success for {miner['name']}: {fallback_method}")
             

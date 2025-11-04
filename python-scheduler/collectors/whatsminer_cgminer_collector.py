@@ -67,11 +67,18 @@ async def collect_whatsminer_cgminer(miner_config: Dict) -> Optional[Dict]:
         # Get pool data
         pools_data = await _cgminer_command(ip, "pools", port)
         pool_urls = []
+        pools_list = []
         if pools_data and 'POOLS' in pools_data:
             for pool in pools_data['POOLS']:
                 url = pool.get('URL', '')
                 if url:
                     pool_urls.append(url)
+                # Extract pool stats for rejection rate
+                pools_list.append({
+                    'url': url,
+                    'accepted': pool.get('Accepted', 0),
+                    'rejected': pool.get('Rejected', 0),
+                })
         
         # Extract power from summary (Whatsminers report this)
         power = summary_data.get('Power', 0)
@@ -83,13 +90,15 @@ async def collect_whatsminer_cgminer(miner_config: Dict) -> Optional[Dict]:
         result = {
             'ip': ip,
             'hashrate': hashrate_ths,
-            'temp_max': max_temp,
+            'temperature': max_temp,  # For _update_metrics compatibility
+            'temp_max': max_temp,     # For backward compatibility
             'fan_speed': fan_speed_in,  # Use intake fan
             'power': int(power) if power else 0,
             'uptime': int(summary_data.get('Elapsed', 0)),
             'hashboards': [],
             'fans': [],
-            'pools': pool_urls,
+            'pools': pools_list,  # Full pool data with accepted/rejected
+            'pool_urls': pool_urls,  # Just URLs for display
             'is_mining': hashrate_ths > 0,
         }
         
