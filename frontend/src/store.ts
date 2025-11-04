@@ -1,10 +1,13 @@
 import { configureStore } from '@reduxjs/toolkit';
 import miningReducer from './features/mining/miningSlice';
 import websocketMiddleware from './middleware/websocketMiddleware';
+import { apiSlice } from './services/apiSlice';
 
 export const store = configureStore({
   reducer: {
     mining: miningReducer,
+    // Add the RTK Query API reducer
+    [apiSlice.reducerPath]: apiSlice.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -16,7 +19,9 @@ export const store = configureStore({
         // Ignore these paths in the state
         ignoredPaths: ['mining.stats.miners', 'mining.stats.timestamp'],
       },
-    }).concat(websocketMiddleware),
+    })
+    .concat(websocketMiddleware)
+    .concat(apiSlice.middleware), // Add RTK Query middleware
 });
 
 // Infer the `RootState` and `AppDispatch` types from the store itself

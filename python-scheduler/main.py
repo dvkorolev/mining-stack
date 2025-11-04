@@ -30,6 +30,7 @@ from config import (
     load_miners_config, invalidate_config_cache,
     miners_config_cache
 )
+from asic_profile_loader import get_library
 from metrics import (
     pool_network_reachable, pool_network_dns_resolved,
     pool_network_connect_time, pool_network_ping_avg,
@@ -41,13 +42,11 @@ from metrics import (
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
 from collectors.antminer_cgi_collector import collect_antminer_cgi
 from collectors.dg1_tcp_collector import collect_dg1_tcp
+from health_check import HealthCheck
+from logging_config import setup_logging, log_event
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+# Setup structured logging
+setup_logging(service_name="python-scheduler")
 logger = logging.getLogger(__name__)
 
 # Collection lock to prevent concurrent collections
@@ -60,6 +59,9 @@ last_collection = {
     'message': '',
     'details': {}
 }
+
+# Health check system
+health_checker = HealthCheck(collection_lock, last_collection)
 
 # Failure streak tracking (per miner)
 failure_streaks = {}
@@ -231,21 +233,28 @@ async def collect_all_metrics():
         }
     
     async with collection_lock:
+        # Track lock acquisition time for health checks
+        health_checker.set_lock_acquired_time(time.time())
+        collection_start = time.time()
+        
         try:
-            logger.info("=" * 60)
-            logger.info(f"Starting metrics collection at {datetime.now()}")
-            logger.info("=" * 60)
+            log_event(logger, 'info', 'Starting metrics collection',
+                     collection_id=int(time.time()))
             
             miners = load_miners_config()
-            logger.info(f"Found {len(miners)} miners in configuration")
+            log_event(logger, 'info', 'Loaded miner configuration',
+                     miners_count=len(miners))
             
             pyasic_result = await collect_pyasic_metrics(miners)
             miners_data = pyasic_result.get('miners_data', [])
             
-            # Multi-layered probing: Try fallback drivers for failed miners
+            # Multi-layered probing: Try fallback drivers for failed miners using profile library
             logger.info("Checking for failed miners to retry with fallback drivers...")
             fallback_attempts = 0
             fallback_successes = 0
+            
+            # Get profile library for intelligent fallback selection
+            profile_library = get_library()
             
             for i, miner in enumerate(miners):
                 miner_data = miners_data[i]
@@ -253,23 +262,55 @@ async def collect_all_metrics():
                 
                 # Only try fallback if primary collection failed (scrape_status < 1)
                 if scrape_status < 1:
-                    model_lower = miner['model'].lower()
                     fallback_data = None
                     fallback_method = None
                     
-                    # Try Antminer CGI driver for Antminers
-                    if 'antminer' in model_lower or 's19' in model_lower or 's17' in model_lower:
-                        logger.info(f"  Trying Antminer CGI fallback for {miner['name']} ({miner['ip']})")
-                        fallback_attempts += 1
-                        fallback_data = await collect_antminer_cgi(miner)
-                        fallback_method = 'antminer_cgi'
+                    # Get profile for this miner to determine fallback drivers
+                    profile = profile_library.get_profile(miner['model'], miner.get('algorithm'))
                     
-                    # Try DG1 TCP driver for DG1 miners
-                    elif 'dg1' in model_lower:
-                        logger.info(f"  Trying DG1 TCP fallback for {miner['name']} ({miner['ip']})")
-                        fallback_attempts += 1
-                        fallback_data = await collect_dg1_tcp(miner)
-                        fallback_method = 'dg1_tcp'
+                    if profile:
+                        # Use profile-defined fallback drivers (ordered by priority)
+                        drivers = profile.get_ordered_drivers()
+                        logger.debug(f"Profile '{profile.id}' has {len(drivers)} drivers for {miner['name']}")
+                        
+                        # Skip pyasic (priority 1) since it already failed, try next drivers
+                        for driver in drivers:
+                            driver_type = driver.get('type')
+                            if driver_type == 'pyasic':
+                                continue  # Already tried
+                            
+                            if driver_type == 'antminer_cgi':
+                                logger.info(f"  Trying Antminer CGI fallback for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
+                                fallback_attempts += 1
+                                fallback_data = await collect_antminer_cgi(miner)
+                                fallback_method = 'antminer_cgi'
+                                if fallback_data:
+                                    break
+                            elif driver_type == 'dg1_tcp':
+                                logger.info(f"  Trying DG1 TCP fallback for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
+                                fallback_attempts += 1
+                                fallback_data = await collect_dg1_tcp(miner)
+                                fallback_method = 'dg1_tcp'
+                                if fallback_data:
+                                    break
+                    else:
+                        # No profile found, use legacy hard-coded fallback logic
+                        model_lower = miner['model'].lower()
+                        logger.debug(f"No profile found for {miner['model']}, using legacy fallback logic")
+                        
+                        # Try Antminer CGI driver for Antminers
+                        if 'antminer' in model_lower or 's19' in model_lower or 's17' in model_lower:
+                            logger.info(f"  Trying Antminer CGI fallback for {miner['name']} ({miner['ip']}) [legacy]")
+                            fallback_attempts += 1
+                            fallback_data = await collect_antminer_cgi(miner)
+                            fallback_method = 'antminer_cgi'
+                        
+                        # Try DG1 TCP driver for DG1 miners
+                        elif 'dg1' in model_lower:
+                            logger.info(f"  Trying DG1 TCP fallback for {miner['name']} ({miner['ip']}) [legacy]")
+                            fallback_attempts += 1
+                            fallback_data = await collect_dg1_tcp(miner)
+                            fallback_method = 'dg1_tcp'
                     
                     # If fallback succeeded, merge and update metrics
                     if fallback_data:
@@ -345,14 +386,21 @@ async def collect_all_metrics():
                 }
             }
             
-            logger.info("=" * 60)
-            logger.info("Collection complete: All collectors successful")
-            logger.info("=" * 60)
+            collection_duration_total = time.time() - collection_start
+            
+            log_event(logger, 'info', 'Collection complete',
+                     duration_seconds=collection_duration_total,
+                     miners_total=len(miners),
+                     miners_successful=pyasic_result.get('miners_collected', 0),
+                     fallback_attempts=fallback_attempts,
+                     fallback_successes=fallback_successes)
             
             return last_collection
             
         except Exception as e:
-            logger.error(f"Collection error: {e}")
+            log_event(logger, 'error', 'Collection failed',
+                     error_type=type(e).__name__,
+                     error_message=str(e))
             last_collection = {
                 'timestamp': datetime.now().isoformat(),
                 'success': False,
@@ -360,6 +408,9 @@ async def collect_all_metrics():
                 'details': {}
             }
             return last_collection
+        finally:
+            # Clear lock timing
+            health_checker.clear_lock_acquired_time()
 
 
 async def scheduler_loop():
@@ -391,6 +442,19 @@ async def lifespan(app_instance: FastAPI):
     logger.info(f"Collection interval: {COLLECTION_INTERVAL} minutes")
     logger.info(f"ICMP ping enabled: {ENABLE_ICMP_PING}")
     logger.info(f"Architecture: Direct Prometheus scraping (async scheduler + lock)")
+    
+    # Initialize and log profile library
+    try:
+        profile_library = get_library()
+        stats = profile_library.get_stats()
+        logger.info(f"ASIC Profile Library loaded: {stats['total_profiles']} profiles")
+        logger.info(f"  - SHA-256 miners: {stats['algorithms']['sha256']}")
+        logger.info(f"  - SCRYPT miners: {stats['algorithms']['scrypt']}")
+        logger.info(f"  - Manufacturers: {', '.join(stats['manufacturers'])}")
+    except Exception as e:
+        logger.warning(f"Failed to load ASIC Profile Library: {e}")
+        logger.warning("Will use legacy hard-coded logic as fallback")
+    
     logger.info("=" * 60)
     
     task = asyncio.create_task(scheduler_loop())
@@ -423,15 +487,31 @@ async def root():
             "status": "/status",
             "jobs": "/jobs (scheduler status)",
             "collect": "/collect (manual trigger)",
-            "reload": "/reload (force config reload)"
+            "reload": "/reload (force config reload)",
+            "profiles": "/profiles (ASIC profile library info)"
         }
     }
 
 
 @app.get("/health")
 async def health():
-    """Health check endpoint"""
-    return {"status": "healthy"}
+    """
+    Smart health check endpoint
+    Returns 200 if healthy, 503 if unhealthy
+    Checks:
+    - Collection lock not stuck
+    - Last collection is recent
+    - Config file is readable
+    - Profile library is loaded
+    """
+    health_result = health_checker.perform_full_check()
+    status_code = health_checker.get_http_status_code(health_result)
+    
+    return Response(
+        content=json.dumps(health_result, indent=2),
+        status_code=status_code,
+        media_type="application/json"
+    )
 
 
 @app.get("/status")
@@ -463,6 +543,14 @@ async def reload_config(background_tasks: BackgroundTasks):
     invalidate_config_cache()
     logger.info("Config reload triggered via API")
     
+    # Also reload profile library
+    try:
+        from asic_profile_loader import reload_library
+        reload_library()
+        logger.info("ASIC Profile Library reloaded")
+    except Exception as e:
+        logger.warning(f"Failed to reload profile library: {e}")
+    
     if collection_lock.locked():
         return {
             "success": False,
@@ -473,7 +561,7 @@ async def reload_config(background_tasks: BackgroundTasks):
     
     return {
         "success": True,
-        "message": "Config reloaded, collection started in background"
+        "message": "Config and profiles reloaded, collection started in background"
     }
 
 
@@ -496,6 +584,36 @@ async def trigger_collection(background_tasks: BackgroundTasks):
         "timestamp": datetime.now().isoformat(),
         "note": "Check /status endpoint for completion"
     }
+
+
+@app.get("/profiles")
+async def profiles():
+    """Get ASIC profile library information"""
+    try:
+        profile_library = get_library()
+        stats = profile_library.get_stats()
+        profile_list = []
+        
+        for profile_id in profile_library.list_profiles():
+            profile = profile_library.get_profile_by_id(profile_id)
+            if profile:
+                profile_list.append({
+                    'id': profile.id,
+                    'name': profile.name,
+                    'manufacturer': profile.manufacturer,
+                    'algorithm': profile.algorithm,
+                    'drivers': [d.get('type') for d in profile.drivers]
+                })
+        
+        return {
+            'stats': stats,
+            'profiles': profile_list
+        }
+    except Exception as e:
+        return {
+            'error': str(e),
+            'message': 'Profile library not available'
+        }
 
 
 @app.get("/metrics")

@@ -2,13 +2,16 @@
 CGMiner API response parser with model-based unit sanity checking.
 """
 
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, TYPE_CHECKING
 import re
 
+if TYPE_CHECKING:
+    from asic_profile_loader import ASICProfile
 
-def _detect_actual_units(model: str, raw_value: float, field_name: str) -> tuple[float, str]:
+
+def _detect_actual_units(model: str, raw_value: float, field_name: str, profile: 'ASICProfile' = None) -> tuple[float, str]:
     """
-    Sanity check: Detect actual hashrate units based on miner model.
+    Sanity check: Detect actual hashrate units based on miner model and profile.
     
     The field names in CGMiner API are often misleading:
     - Whatsminer M-series reports TH/s in "MHS av" field
@@ -19,10 +22,25 @@ def _detect_actual_units(model: str, raw_value: float, field_name: str) -> tuple
         model: Miner model string (e.g., "M50S++", "DG1", "S19")
         raw_value: Raw value from API
         field_name: Field name (e.g., "MHS av", "GHS av")
+        profile: Optional ASICProfile with parser quirks
     
     Returns:
         (hashrate_in_ths, detected_unit)
     """
+    # If profile is provided, use its quirks
+    if profile:
+        quirks = profile.get_parser_quirks()
+        hashrate_unit = quirks.get('hashrate_unit', '')
+        hashrate_scale = quirks.get('hashrate_scale', 1.0)
+        
+        if hashrate_unit == 'TH/s':
+            return (raw_value * hashrate_scale, f'TH/s (profile: {profile.id})')
+        elif hashrate_unit == 'GH/s':
+            return (raw_value * hashrate_scale, f'GH/s (profile: {profile.id})')
+        elif hashrate_unit == 'MH/s':
+            return (raw_value * hashrate_scale, f'MH/s (profile: {profile.id})')
+    
+    # Fallback to legacy model-based detection
     model_lower = model.lower()
     
     # Known TH/s scale miners (SHA-256 ASICs)
@@ -79,8 +97,21 @@ def _detect_actual_units(model: str, raw_value: float, field_name: str) -> tuple
     return (raw_value / 1000000.0, 'MH/s (default)')
 
 
-def parse_cgminer_response(stats: Optional[Dict], summary: Optional[Dict], pools: Optional[Dict], devs: Optional[Dict], model: str = '') -> Dict:
-    """Parse cgminer response into unified format"""
+def parse_cgminer_response(stats: Optional[Dict], summary: Optional[Dict], pools: Optional[Dict], devs: Optional[Dict], model: str = '', profile: 'ASICProfile' = None) -> Dict:
+    """
+    Parse cgminer response into unified format.
+    
+    Args:
+        stats: STATS response from cgminer API
+        summary: SUMMARY response from cgminer API
+        pools: POOLS response from cgminer API
+        devs: DEVS response from cgminer API
+        model: Miner model string
+        profile: Optional ASICProfile for parser quirks
+    
+    Returns:
+        Parsed data dictionary
+    """
     result = {
         'hashrate': 0,
         'power': 0,
@@ -144,15 +175,15 @@ def parse_cgminer_response(stats: Optional[Dict], summary: Optional[Dict], pools
             if 'Power' in summary_data:
                 result['power'] = float(summary_data['Power'])
             
-            # Hashrate with model-based sanity check
+            # Hashrate with profile-based or model-based sanity check
             if 'MHS av' in summary_data:
                 raw_value = float(summary_data['MHS av'])
-                hashrate_ths, detected_unit = _detect_actual_units(model, raw_value, 'MHS av')
+                hashrate_ths, detected_unit = _detect_actual_units(model, raw_value, 'MHS av', profile)
                 result['hashrate'] = hashrate_ths
                 result['hashrate_unit'] = detected_unit  # For debugging
             elif 'GHS av' in summary_data:
                 raw_value = float(summary_data['GHS av'])
-                hashrate_ths, detected_unit = _detect_actual_units(model, raw_value, 'GHS av')
+                hashrate_ths, detected_unit = _detect_actual_units(model, raw_value, 'GHS av', profile)
                 result['hashrate'] = hashrate_ths
                 result['hashrate_unit'] = detected_unit
     

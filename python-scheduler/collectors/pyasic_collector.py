@@ -12,6 +12,7 @@ from pyasic import get_miner
 
 from config import MAX_CONCURRENT_REQUESTS
 from parsers.cgminer_parser import parse_cgminer_response
+from asic_profile_loader import get_library
 from metrics import (
     miner_hashrate, miner_power, miner_temp_max, miner_is_mining,
     miner_uptime, miner_efficiency, miner_fault_light, miner_errors_count,
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 def _is_scrypt_miner(model: str, algorithm_override: str = None) -> bool:
     """
-    Detect if miner is SCRYPT-based with proper regex matching.
+    Detect if miner is SCRYPT-based using profile library.
     
     Args:
         model: Miner model string
@@ -40,17 +41,23 @@ def _is_scrypt_miner(model: str, algorithm_override: str = None) -> bool:
     if algorithm_override:
         return algorithm_override.lower() == 'scrypt'
     
-    model_lower = model.lower()
+    # Use profile library to determine algorithm
+    library = get_library()
+    profile = library.get_profile(model, algorithm_override)
     
-    # Use word-boundary regex to avoid false positives like VL30 matching 'l3'
+    if profile:
+        return profile.algorithm == 'scrypt'
+    
+    # Fallback to legacy detection if no profile found
+    model_lower = model.lower()
     import re
     scrypt_patterns = [
-        r'\bdg1\b',      # ElphaPex DG1 (word boundary)
-        r'\bl3\+?\b',    # Antminer L3, L3+ (word boundary, optional +)
-        r'\bl7\b',       # Antminer L7 (word boundary)
-        r'scrypt',       # Explicit SCRYPT mention
-        r'litecoin',     # Litecoin miners
-        r'doge',         # Dogecoin miners
+        r'\bdg1\b',
+        r'\bl3\+?\b',
+        r'\bl7\b',
+        r'scrypt',
+        r'litecoin',
+        r'doge',
     ]
     
     return any(re.search(pattern, model_lower) for pattern in scrypt_patterns)
@@ -73,27 +80,43 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 
 
 def _check_data_gaps(pyasic_data: Dict, model: str) -> Dict[str, bool]:
-    """Check which metrics are missing from PyASIC data"""
+    """Check which metrics are missing from PyASIC data using profile library"""
     gaps = {'power': False, 'rejected': False, 'temperature': False}
     
     hashrate = _safe_float(pyasic_data.get('hashrate', 0))
     power = _safe_float(pyasic_data.get('power', 0))
     temperature = _safe_float(pyasic_data.get('temperature', 0))
     
-    if not power or power == 0:
-        if 'antminer' in model.lower() or 's19' in model.lower() or 's17' in model.lower():
-            gaps['power'] = True
-        elif hashrate > 0:
-            gaps['power'] = True
+    # Get profile to check if this miner type typically has these issues
+    library = get_library()
+    profile = library.get_profile(model)
     
+    # Check power gap
+    if not power or power == 0:
+        if profile:
+            # Check if profile indicates power reporting issues
+            quirks = profile.get_parser_quirks()
+            if quirks.get('power_field') and hashrate > 0:
+                gaps['power'] = True
+        else:
+            # Fallback to legacy logic
+            if 'antminer' in model.lower() or 's19' in model.lower() or 's17' in model.lower():
+                gaps['power'] = True
+            elif hashrate > 0:
+                gaps['power'] = True
+    
+    # Check rejected shares gap
     pools = pyasic_data.get('pools', [])
     if pools:
         total_rejected = sum(getattr(p, 'rejected', 0) or 0 for p in pools)
         total_accepted = sum(getattr(p, 'accepted', 0) or 0 for p in pools)
         if total_accepted > 100 and total_rejected == 0:
-            if 'whatsminer' in model.lower() or 'm30' in model.lower() or 'm50' in model.lower():
+            if profile and profile.manufacturer == 'MicroBT':
+                gaps['rejected'] = True
+            elif 'whatsminer' in model.lower() or 'm30' in model.lower() or 'm50' in model.lower():
                 gaps['rejected'] = True
     
+    # Check temperature gap
     if not temperature or temperature == 0:
         if hashrate > 0:
             gaps['temperature'] = True
@@ -359,8 +382,10 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     if not devs and not summary:
                         return None
                     
-                    # Pass model for unit sanity checking
-                    cgminer_data = parse_cgminer_response(stats, summary, pools, devs, miner['model'])
+                    # Pass model and profile for unit sanity checking
+                    library = get_library()
+                    profile = library.get_profile(miner['model'], miner.get('algorithm'))
+                    cgminer_data = parse_cgminer_response(stats, summary, pools, devs, miner['model'], profile)
                     cgminer_data['_board_temps_raw'] = cgminer_data.get('board_temps', [])
                     return cgminer_data
                 except Exception as e:

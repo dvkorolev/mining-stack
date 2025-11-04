@@ -1,0 +1,101 @@
+# Docker Compose configuration for logging stack (Loki + Promtail)
+# This extends your existing docker-compose.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.logging.yml up
+
+version: '3.8'
+
+services:
+  # Loki - Log aggregation database
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+    networks:
+      - mining-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Promtail - Log collector
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    volumes:
+      # Docker socket to read container logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Promtail configuration
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - mining-network
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  # Python Scheduler - Updated with logging configuration
+  python-scheduler:
+    environment:
+      # Enable JSON logging for Loki
+      - LOG_FORMAT=json
+      - LOG_LEVEL=INFO
+    labels:
+      # Promtail will collect logs from containers with this label
+      logging: "promtail"
+    healthcheck:
+      # Smart health check
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Backend - Updated with logging configuration
+  backend:
+    environment:
+      # Enable JSON logging for Loki
+      - LOG_FORMAT=json
+      - LOG_LEVEL=info
+    labels:
+      # Promtail will collect logs from containers with this label
+      logging: "promtail"
+    healthcheck:
+      # Smart health check
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Frontend - Updated with logging configuration
+  frontend:
+    environment:
+      # Frontend logging configuration
+      - REACT_APP_LOG_LEVEL=INFO
+      - REACT_APP_SEND_LOGS_TO_BACKEND=false
+    labels:
+      # Promtail will collect logs from containers with this label
+      logging: "promtail"
+
+  # Grafana - Updated to include Loki data source
+  grafana:
+    environment:
+      # Auto-provision Loki data source
+      - GF_DATASOURCES_DEFAULT_URL=http://loki:3100
+    volumes:
+      # Grafana provisioning for Loki data source
+      - ./grafana/provisioning/datasources/loki.yml:/etc/grafana/provisioning/datasources/loki.yml:ro
+
+volumes:
+  loki-data:
+    driver: local
+
+networks:
+  mining-network:
+    driver: bridge

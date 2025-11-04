@@ -26,9 +26,54 @@ app.use(morgan('dev'));
 // API Routes
 app.use('/api', miningRoutes);
 
-// Health check endpoint
+// Smart health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  const checks: any = {
+    server: {
+      status: 'healthy',
+      message: 'Server is running',
+      details: { uptime: process.uptime() }
+    },
+    memory: {
+      status: 'healthy',
+      message: 'Memory usage normal',
+      details: process.memoryUsage()
+    }
+  };
+  
+  // Check if mining service is responsive
+  try {
+    const { getMiningStats } = require('./services/mining.service');
+    const stats = getMiningStats();
+    checks.mining_service = {
+      status: 'healthy',
+      message: 'Mining service operational',
+      details: {
+        active_miners: stats.activeMiners || 0,
+        total_hashrate: stats.totalHashrate || 0
+      }
+    };
+  } catch (error) {
+    checks.mining_service = {
+      status: 'degraded',
+      message: 'Mining service unavailable',
+      details: { error: String(error) }
+    };
+  }
+  
+  // Determine overall status
+  const statuses = Object.values(checks).map((c: any) => c.status);
+  const overallStatus = statuses.includes('unhealthy') ? 'unhealthy' 
+    : statuses.includes('degraded') ? 'degraded' 
+    : 'healthy';
+  
+  const statusCode = overallStatus === 'unhealthy' ? 503 : 200;
+  
+  res.status(statusCode).json({
+    status: overallStatus,
+    timestamp: new Date().toISOString(),
+    checks
+  });
 });
 
 // Basic Prometheus metrics endpoint

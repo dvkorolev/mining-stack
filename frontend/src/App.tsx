@@ -1,19 +1,21 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Box } from '@mui/material';
-import Dashboard from './pages/Dashboard';
-import Miners from './pages/Miners';
-import Analytics from './pages/Analytics';
-import Alerts from './pages/Alerts';
-import Settings from './pages/Settings';
+import { Box, CircularProgress } from '@mui/material';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Provider } from 'react-redux';
 import { store } from './store';
 import { NotificationProvider } from './context/NotificationContext';
+
+// Lazy load pages for code splitting
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Miners = lazy(() => import('./pages/Miners'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const Alerts = lazy(() => import('./pages/Alerts'));
+const Settings = lazy(() => import('./pages/Settings'));
 
 const theme = createTheme({
   palette: {
@@ -85,14 +87,20 @@ const App: React.FC = () => {
                     overflowX: 'hidden',
                   }}
                 >
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/miners" element={<Miners />} />
-                    <Route path="/analytics" element={<Analytics />} />
-                    <Route path="/alerts" element={<Alerts />} />
-                    <Route path="/settings" element={<Settings />} />
-                  </Routes>
+                  <Suspense fallback={
+                    <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                      <CircularProgress />
+                    </Box>
+                  }>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/dashboard" element={<Dashboard />} />
+                      <Route path="/miners" element={<Miners />} />
+                      <Route path="/analytics" element={<Analytics />} />
+                      <Route path="/alerts" element={<Alerts />} />
+                      <Route path="/settings" element={<Settings />} />
+                    </Routes>
+                  </Suspense>
                 </Box>
               </Box>
             </Router>
