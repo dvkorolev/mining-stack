@@ -11,6 +11,7 @@ pyasic==0.50.0
 pyyaml==6.0.1
 netifaces==0.11.0
 httpx==0.26.0  # Required by pyasic, has built-in digest auth for ARM64
+aiohttp==3.9.1  # Async HTTP client for backend communication
 
 # Healthcheck
 requests==2.31.0
