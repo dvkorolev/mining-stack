@@ -1,5 +1,5 @@
 # Build stage - Install dependencies and build wheels
-FROM python:3.11-slim AS builder
+FROM python:3.11.6-slim AS builder
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Production stage - Lean runtime image
-FROM python:3.11-slim
+FROM python:3.11.6-slim
 
 WORKDIR /app
 
@@ -38,7 +38,7 @@ COPY --from=builder /install /usr/local
 
 # Copy application files
 COPY main.py config.py metrics.py logging_config.py /app/
-COPY models.py file_lock.py /app/
+COPY models.py /app/
 COPY collectors/ /app/collectors/
 COPY parsers/ /app/parsers/
 COPY asic_profile_loader.py /app/
@@ -46,9 +46,14 @@ COPY state_manager.py /app/
 COPY health_check.py /app/
 COPY asic_profiles.yaml /app/
 
-# Create directories for mounted volumes and state
-RUN mkdir -p /metrics /app/bin /app/etc /app/data && \
-    chmod 755 /app/data
+# Create non-root user and directories
+RUN groupadd -r appuser && useradd -r -g appuser appuser && \
+    mkdir -p /app/data /app/etc /metrics /app/bin && \
+    chmod 755 /app/data && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
 
 # Expose API port
 EXPOSE 8000

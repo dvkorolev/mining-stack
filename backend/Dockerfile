@@ -1,8 +1,8 @@
 # Build argument for platform flexibility
 ARG PLATFORM=linux/amd64
 
-# Use platform-specific base image
-FROM --platform=${PLATFORM} node:18-alpine AS builder
+# Use platform-specific base image with specific version
+FROM --platform=${PLATFORM} node:18.18.2-alpine AS builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ COPY . .
 RUN npm run build
 
 # Production image
-FROM node:18-alpine
+FROM node:18.18.2-alpine
 
 WORKDIR /app
 
@@ -47,6 +47,10 @@ USER node
 
 # Expose port 5000
 EXPOSE 5000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
 
 # Start the application using the init script
 CMD ["/app/init.sh", "node", "dist/server.js"]
