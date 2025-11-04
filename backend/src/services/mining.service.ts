@@ -52,6 +52,7 @@ export interface MinerStats {
   shares: {
     accepted: number;
     rejected: number;
+    rejectionRate?: number; // Percentage (0-100)
   };
   hardware: {
     temperature: number;
@@ -858,6 +859,11 @@ const updateMetricsFromScheduler = async (
         });
       }
       
+      const accepted = m.pool_accepted || 0;
+      const rejected = m.pool_rejected || 0;
+      const totalShares = accepted + rejected;
+      const rejectionRate = totalShares > 0 ? (rejected / totalShares) * 100 : 0;
+      
       return {
         minerId: m.name || m.ip,
         name: m.name || m.ip,
@@ -869,8 +875,9 @@ const updateMetricsFromScheduler = async (
         currentHashrate: m.hashrate || 0,
         averageHashrate: m.hashrate * 0.98 || 0,
         shares: {
-          accepted: m.pool_accepted || 0,
-          rejected: m.pool_rejected || 0,
+          accepted,
+          rejected,
+          rejectionRate,
         },
         hardware: {
           temperature: m.temp_max || 0,
