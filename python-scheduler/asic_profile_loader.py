@@ -25,6 +25,31 @@ class ASICProfile:
         self.parser = data.get('parser', {})
         self.credentials = data.get('credentials', {})
         self.expected = data.get('expected', {})
+        
+        # Validate required fields
+        self._validate()
+    
+    def _validate(self):
+        """Validate profile data"""
+        if not self.name:
+            raise ValueError(f"Profile '{self.id}' missing required field: name")
+        
+        if self.algorithm not in ['sha256', 'scrypt']:
+            logger.warning(f"Profile '{self.id}' has unusual algorithm: {self.algorithm}")
+        
+        if not self.drivers:
+            raise ValueError(f"Profile '{self.id}' must have at least one driver")
+        
+        # Validate driver structure
+        for driver in self.drivers:
+            if 'type' not in driver:
+                raise ValueError(f"Profile '{self.id}' has driver missing 'type' field")
+            if 'priority' not in driver:
+                logger.warning(f"Profile '{self.id}' driver '{driver.get('type')}' missing priority, using default")
+        
+        # Validate match rules exist
+        if not self.match.get('exact') and not self.match.get('patterns'):
+            logger.warning(f"Profile '{self.id}' has no matching rules (exact or patterns)")
     
     def get_driver_config(self, driver_type: str) -> Optional[Dict]:
         """Get configuration for a specific driver type"""
@@ -67,38 +92,69 @@ class ASICProfileLibrary:
     def _load_profiles(self):
         """Load profiles from YAML file"""
         try:
+            if not self.profiles_path.exists():
+                raise FileNotFoundError(f"Profile file not found: {self.profiles_path}")
+            
             with open(self.profiles_path, 'r') as f:
                 data = yaml.safe_load(f)
             
+            if not data:
+                raise ValueError(f"Empty or invalid YAML file: {self.profiles_path}")
+            
+            # Clear existing data for reload
+            self.profiles.clear()
+            self.exact_matches.clear()
+            self.pattern_matches.clear()
+            
             # Load profiles
             profiles_data = data.get('profiles', {})
+            if not profiles_data:
+                logger.warning(f"No profiles found in {self.profiles_path}")
+                return
+            
+            loaded_count = 0
+            error_count = 0
+            
             for profile_id, profile_data in profiles_data.items():
-                profile = ASICProfile(profile_id, profile_data)
-                self.profiles[profile_id] = profile
-                
-                # Build matching rules from embedded profile data
-                match_rules = profile_data.get('match', {})
-                
-                # Add exact matches
-                for exact_model in match_rules.get('exact', []):
-                    self.exact_matches[exact_model] = profile_id
-                
-                # Add pattern matches
-                for pattern_str in match_rules.get('patterns', []):
-                    try:
-                        pattern = re.compile(pattern_str, re.IGNORECASE)
-                        self.pattern_matches.append((pattern, profile_id))
-                    except re.error as e:
-                        logger.warning(f"Invalid regex pattern '{pattern_str}' in profile '{profile_id}': {e}")
+                try:
+                    profile = ASICProfile(profile_id, profile_data)
+                    self.profiles[profile_id] = profile
+                    
+                    # Build matching rules from embedded profile data
+                    match_rules = profile_data.get('match', {})
+                    
+                    # Add exact matches
+                    for exact_model in match_rules.get('exact', []):
+                        if exact_model in self.exact_matches:
+                            logger.warning(f"Duplicate exact match '{exact_model}' in profile '{profile_id}' (already in '{self.exact_matches[exact_model]}')")
+                        self.exact_matches[exact_model] = profile_id
+                    
+                    # Add pattern matches
+                    for pattern_str in match_rules.get('patterns', []):
+                        try:
+                            pattern = re.compile(pattern_str, re.IGNORECASE)
+                            self.pattern_matches.append((pattern, profile_id))
+                        except re.error as e:
+                            logger.error(f"Invalid regex pattern '{pattern_str}' in profile '{profile_id}': {e}")
+                            error_count += 1
+                    
+                    loaded_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"Failed to load profile '{profile_id}': {e}")
+                    error_count += 1
             
             # Load defaults
             self.defaults = data.get('defaults', {})
             
-            logger.info(f"Loaded {len(self.profiles)} ASIC profiles from {self.profiles_path}")
+            logger.info(f"Loaded {loaded_count} ASIC profiles from {self.profiles_path}")
             logger.debug(f"Built {len(self.exact_matches)} exact matches and {len(self.pattern_matches)} pattern matches")
             
+            if error_count > 0:
+                logger.warning(f"Encountered {error_count} errors while loading profiles")
+            
         except Exception as e:
-            logger.error(f"Failed to load ASIC profiles: {e}")
+            logger.error(f"Failed to load ASIC profiles from {self.profiles_path}: {e}")
             raise
     
     def get_profile(self, model: str, algorithm_override: str = None) -> Optional[ASICProfile]:
@@ -149,6 +205,46 @@ class ASICProfileLibrary:
     def get_default(self, key: str, default=None):
         """Get a default value"""
         return self.defaults.get(key, default)
+    
+    def reload(self):
+        """Reload profiles from file (hot-reload)"""
+        logger.info("Reloading ASIC profiles...")
+        try:
+            self._load_profiles()
+            logger.info("ASIC profiles reloaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to reload profiles: {e}")
+            raise
+    
+    def get_stats(self) -> Dict:
+        """Get library statistics"""
+        return {
+            'total_profiles': len(self.profiles),
+            'exact_matches': len(self.exact_matches),
+            'pattern_matches': len(self.pattern_matches),
+            'algorithms': {
+                'sha256': len([p for p in self.profiles.values() if p.algorithm == 'sha256']),
+                'scrypt': len([p for p in self.profiles.values() if p.algorithm == 'scrypt']),
+            },
+            'manufacturers': list(set(p.manufacturer for p in self.profiles.values())),
+        }
+    
+    def validate_all(self) -> Dict:
+        """Validate all profiles and return report"""
+        report = {
+            'valid': [],
+            'warnings': [],
+            'errors': [],
+        }
+        
+        for profile_id, profile in self.profiles.items():
+            try:
+                profile._validate()
+                report['valid'].append(profile_id)
+            except ValueError as e:
+                report['errors'].append({'profile': profile_id, 'error': str(e)})
+        
+        return report
 
 
 # Global instance

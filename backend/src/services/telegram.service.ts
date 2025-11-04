@@ -510,19 +510,83 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
  */
 const sendActiveAlerts = async (chatId: number): Promise<void> => {
   try {
-    // TODO: Integrate with Alertmanager API to get active alerts
-    // For now, send a placeholder message
-    const message = `
+    logger.info('Telegram: Fetching active alerts', { service: 'telegram', chatId });
+    
+    // Import alert service to get active alerts
+    const { getActiveAlerts } = require('./alert.service');
+    const alerts = getActiveAlerts();
+
+    if (alerts.length === 0) {
+      const message = `
 🔔 *Active Alerts*
 
 No active alerts at the moment.
 
 ✅ All systems operational
-    `.trim();
+      `.trim();
 
-    await bot?.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      await bot?.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    // Group alerts by severity
+    const critical = alerts.filter((a: any) => a.severity === 'critical');
+    const warning = alerts.filter((a: any) => a.severity === 'warning');
+    const info = alerts.filter((a: any) => a.severity === 'info');
+
+    let message = `🔔 *Active Alerts* (${alerts.length})\n\n`;
+
+    if (critical.length > 0) {
+      message += `🔥 *Critical (${critical.length}):*\n`;
+      critical.slice(0, 5).forEach((alert: any) => {
+        message += `• ${alert.summary}\n`;
+        if (alert.miner) message += `  Miner: \`${alert.miner}\`\n`;
+      });
+      if (critical.length > 5) {
+        message += `  _...and ${critical.length - 5} more_\n`;
+      }
+      message += '\n';
+    }
+
+    if (warning.length > 0) {
+      message += `⚠️ *Warning (${warning.length}):*\n`;
+      warning.slice(0, 5).forEach((alert: any) => {
+        message += `• ${alert.summary}\n`;
+        if (alert.miner) message += `  Miner: \`${alert.miner}\`\n`;
+      });
+      if (warning.length > 5) {
+        message += `  _...and ${warning.length - 5} more_\n`;
+      }
+      message += '\n';
+    }
+
+    if (info.length > 0) {
+      message += `ℹ️ *Info (${info.length}):*\n`;
+      info.slice(0, 3).forEach((alert: any) => {
+        message += `• ${alert.summary}\n`;
+      });
+      if (info.length > 3) {
+        message += `  _...and ${info.length - 3} more_\n`;
+      }
+    }
+
+    // Add refresh button
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '🔄 Refresh', callback_data: 'action_alerts' },
+          { text: '📊 Farm Status', callback_data: 'action_status' },
+        ],
+      ],
+    };
+
+    await bot?.sendMessage(chatId, message.trim(), { 
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+    logger.info('Telegram: Active alerts sent', { service: 'telegram', chatId, alertCount: alerts.length });
   } catch (error) {
-    logger.error('Error sending active alerts:', error);
+    logger.error('Telegram: Error sending active alerts', { service: 'telegram', chatId, error });
     await bot?.sendMessage(chatId, '❌ Error fetching alerts');
   }
 };
