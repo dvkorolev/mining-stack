@@ -36,8 +36,8 @@ async def collect_antminer_cgi(miner_config: Dict) -> Optional[Dict]:
         # Create digest auth using httpx (works on ARM64)
         auth = httpx.DigestAuth(username, password)
         
-        # Make authenticated request with timeout
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        # Make authenticated request with timeout and follow redirects
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             response = await client.get(url, auth=auth)
             
             if response.status_code != 200:
