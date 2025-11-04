@@ -76,27 +76,36 @@ docker exec grafana wget -O- http://loki:3100/ready
 
 ### Step-by-Step Fix
 
-#### Step 1: Stop Everything
+#### Quick Fix (Recommended)
+
+Use the existing update script which handles everything:
+
 ```bash
 cd /opt/mining-stack
+./update-from-registry.sh
+```
+
+This will:
+1. Pull latest configuration from GitHub
+2. Pull latest Docker images
+3. Restart all services including logging stack
+4. Run health checks automatically
+
+#### Manual Fix (If Needed)
+
+If you need to fix without updating:
+
+```bash
+cd /opt/mining-stack
+
+# Stop everything
 docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml down
-```
 
-#### Step 2: Pull Latest Config
-```bash
-git pull origin main
-```
-
-#### Step 3: Start Services
-```bash
-# Start main services first
-docker compose -f docker-compose.prod.yml up -d
-
-# Wait for services to be healthy
-sleep 30
-
-# Start logging stack
+# Start with logging stack
 docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml up -d
+
+# Run health check
+./health-check.sh
 ```
 
 #### Step 4: Verify Loki
@@ -347,54 +356,41 @@ If logs still don't appear:
    # Should see JSON format like: {"timestamp":"...","level":"info",...}
    ```
 
-## Quick Fix Script
+## Quick Commands
 
-Save this as `fix-logging.sh`:
-
+### Update Everything (Recommended)
 ```bash
-#!/bin/bash
-set -e
-
-echo "🔧 Fixing logging stack..."
-
-# Stop everything
-echo "Stopping services..."
-docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml down
-
-# Pull latest
-echo "Pulling latest config..."
-git pull origin main
-
-# Start services
-echo "Starting services..."
-docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml up -d
-
-# Wait for health
-echo "Waiting for services to be healthy..."
-sleep 30
-
-# Check Loki
-echo "Checking Loki..."
-curl -f http://localhost:3100/ready && echo "✓ Loki is ready" || echo "✗ Loki not ready"
-
-# Check Promtail
-echo "Checking Promtail..."
-docker logs promtail --tail 5
-
-# Check labels
-echo "Checking container labels..."
-docker inspect backend | grep -A2 '"logging"' || echo "⚠️  Backend missing logging label"
-
-echo ""
-echo "✓ Done! Access Grafana at http://192.168.1.66:3001"
-echo "  Username: admin"
-echo "  Password: mining123"
-echo ""
-echo "Go to Explore → Select Loki → Query: {container_name=\"backend\"}"
+cd /opt/mining-stack
+./update-from-registry.sh
 ```
 
-Make it executable:
+### Run Health Check
 ```bash
-chmod +x fix-logging.sh
-./fix-logging.sh
+cd /opt/mining-stack
+./health-check.sh
+```
+
+The health check script already includes:
+- Loki ready check
+- Loki API check
+- Promtail metrics check
+- Container status verification
+- Service URLs and troubleshooting commands
+
+### Restart Only Logging Stack
+```bash
+cd /opt/mining-stack
+docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml restart loki promtail
+```
+
+### View Logs
+```bash
+# Loki logs
+docker logs loki --tail 50
+
+# Promtail logs
+docker logs promtail --tail 50
+
+# All services
+docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml logs --tail 50
 ```
