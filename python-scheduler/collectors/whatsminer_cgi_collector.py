@@ -35,15 +35,18 @@ async def collect_whatsminer_cgi(miner_config: Dict) -> Optional[Dict]:
         logger.error("Whatsminer CGI: No IP provided")
         return None
     
-    # Try multiple endpoints that Whatsminers use
+    # Try multiple endpoints that Whatsminers use (HTTPS first, then HTTP)
     endpoints = [
-        f"http://{ip}/cgi-bin/luci/admin/status/btminerstatus",  # Status page
-        f"http://{ip}/cgi-bin/luci/admin/status/overview",       # Overview page
-        f"http://{ip}/cgi-bin/get_system_info",                  # System info API
+        f"https://{ip}/cgi-bin/luci/admin/status/btminerstatus",  # Status page (HTTPS)
+        f"https://{ip}/cgi-bin/luci/admin/status/overview",       # Overview page (HTTPS)
+        f"https://{ip}/cgi-bin/get_system_info",                  # System info API (HTTPS)
+        f"http://{ip}/cgi-bin/luci/admin/status/btminerstatus",   # Status page (HTTP fallback)
+        f"http://{ip}/cgi-bin/luci/admin/status/overview",        # Overview page (HTTP fallback)
     ]
     
     try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        # Disable SSL verification for self-signed certificates
+        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
             # Try basic auth first (common for Whatsminers)
             auth = httpx.BasicAuth(username, password)
             
