@@ -16,6 +16,7 @@ const Miners = lazy(() => import('./pages/Miners'));
 const Analytics = lazy(() => import('./pages/Analytics'));
 const Alerts = lazy(() => import('./pages/Alerts'));
 const Settings = lazy(() => import('./pages/Settings'));
+const PoolsManagement = lazy(() => import('./pages/PoolsManagement'));
 
 const theme = createTheme({
   palette: {
@@ -96,6 +97,7 @@ const App: React.FC = () => {
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/dashboard" element={<Dashboard />} />
                       <Route path="/miners" element={<Miners />} />
+                      <Route path="/pools" element={<PoolsManagement />} />
                       <Route path="/analytics" element={<Analytics />} />
                       <Route path="/alerts" element={<Alerts />} />
                       <Route path="/settings" element={<Settings />} />

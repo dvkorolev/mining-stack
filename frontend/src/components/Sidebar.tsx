@@ -6,6 +6,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import PeopleIcon from '@mui/icons-material/People';
 import NotificationsIcon from '@mui/icons-material/Notifications';
+import PoolIcon from '@mui/icons-material/Pool';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const drawerWidth = 240;
@@ -27,6 +28,7 @@ const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClo
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
     { text: 'Miners', icon: <PeopleIcon />, path: '/miners' },
+    { text: 'Pools', icon: <PoolIcon />, path: '/pools' },
     { text: 'Analytics', icon: <BarChartIcon />, path: '/analytics' },
     { text: 'Alerts', icon: <NotificationsIcon />, path: '/alerts' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
