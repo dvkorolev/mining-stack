@@ -1,6 +1,9 @@
 # Docker Compose configuration for logging stack (Loki + Promtail)
 # This extends docker-compose.prod.yml
 # Usage: docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml up
+#
+# IMPORTANT: This file extends services from docker-compose.prod.yml
+# It does NOT redefine them, only adds configuration
 
 services:
   # Loki - Log aggregation database
@@ -96,7 +99,3 @@ services:
 volumes:
   loki-data:
     driver: local
-
-networks:
-  mining-network:
-    driver: bridge
