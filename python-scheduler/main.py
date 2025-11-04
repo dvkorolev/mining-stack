@@ -501,6 +501,7 @@ async def collect_all_metrics():
                         
                         # Explicitly set state metric (in case _update_metrics didn't)
                         model_normalized = miner['model'].replace(" ", "_")
+                        logger.info(f"  Setting state metric for {miner['name']}: state={miner_data['state']}, model={model_normalized}")
                         miner_state.labels(ip=miner['ip'], name=miner['name'], model=model_normalized).set(miner_data['state'])
                         
                         # Also update pools if available
@@ -520,7 +521,9 @@ async def collect_all_metrics():
             for miner in miners:
                 miner_data = next((m for m in miners_data if m['ip'] == miner['ip']), None)
                 
-                if miner_data and miner_data.get('scrape_status', -2) >= 1:
+                # Reset failure streak if any data was collected (scrape_status >= 0)
+                # This includes fallback successes (0.4-0.6) and primary successes (1-2)
+                if miner_data and miner_data.get('scrape_status', -2) >= 0:
                     service_state.reset_failure_streak(miner['ip'], miner['name'], miner['model'])
                 else:
                     streak = service_state.increment_failure_streak(miner['ip'], miner['name'], miner['model'])
