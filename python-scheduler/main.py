@@ -17,8 +17,10 @@ from datetime import datetime
 from typing import Dict, Any, List
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, BackgroundTasks
-from fastapi.responses import Response
+from fastapi import FastAPI, BackgroundTasks, Request
+from fastapi.responses import Response, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import uvicorn
 import aiohttp
 from prometheus_client import generate_latest, REGISTRY
@@ -582,6 +584,81 @@ async def lifespan(app_instance: FastAPI):
 
 app = FastAPI(title="Mining Metrics Collector Service", version="2.0.0", lifespan=lifespan)
 
+
+# ============================================================================
+# GLOBAL EXCEPTION HANDLERS
+# ============================================================================
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Handle HTTP exceptions with structured logging"""
+    logger.warning(
+        f"HTTP {exc.status_code}: {exc.detail}",
+        extra={
+            'status_code': exc.status_code,
+            'path': request.url.path,
+            'method': request.method,
+        }
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": "HTTPException",
+            "message": exc.detail,
+            "status_code": exc.status_code,
+        }
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors with structured logging"""
+    logger.warning(
+        f"Validation error on {request.url.path}",
+        extra={
+            'path': request.url.path,
+            'method': request.method,
+            'errors': exc.errors(),
+        }
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "error": "ValidationError",
+            "message": "Invalid request data",
+            "details": exc.errors(),
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle all unhandled exceptions with structured logging"""
+    logger.error(
+        f"Unhandled exception: {str(exc)}",
+        exc_info=exc,
+        extra={
+            'path': request.url.path,
+            'method': request.method,
+            'exception_type': type(exc).__name__,
+        }
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": type(exc).__name__,
+            "message": "Internal server error",
+            "detail": str(exc) if os.getenv('DEBUG') == 'true' else "An unexpected error occurred",
+        }
+    )
+
+
+# ============================================================================
+# API ENDPOINTS
+# ============================================================================
 
 @app.get("/")
 async def root():
