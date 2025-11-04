@@ -155,6 +155,24 @@ Use inline buttons for easier navigation!
     await sendActiveAlerts(msg.chat.id);
   });
 
+  // /whoami - Get your chat ID (works for anyone)
+  bot.onText(/\/whoami/, async (msg) => {
+    const message = `
+🆔 *Your Chat Information*
+
+Chat ID: \`${msg.chat.id}\`
+Chat Type: ${msg.chat.type}
+${msg.from?.username ? `Username: @${msg.from.username}` : ''}
+${msg.from?.first_name ? `Name: ${msg.from.first_name}` : ''}
+
+${isAuthorized(msg.chat.id) ? '✅ You are authorized to use this bot' : '⚠️ This chat ID is not authorized'}
+
+💡 Use this Chat ID in the Settings page to configure the bot.
+    `.trim();
+
+    await bot?.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
+  });
+
   // /help - Help message
   bot.onText(/\/help/, async (msg) => {
     if (!isAuthorized(msg.chat.id)) return;
