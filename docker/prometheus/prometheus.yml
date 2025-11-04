@@ -1,42 +1,84 @@
+# Prometheus Configuration for Mining Stack
+# Comprehensive monitoring setup for all services
+
 global:
   scrape_interval: 30s
   evaluation_interval: 30s
+  scrape_timeout: 10s
+  external_labels:
+    cluster: 'mining-stack'
+    environment: 'production'
 
+# Alertmanager configuration
 alerting:
   alertmanagers:
     - static_configs:
         - targets: ["alertmanager:9093"]
+      timeout: 10s
 
+# Alert rule files
 rule_files:
   - /etc/prometheus/rules/*.yml
 
+# Scrape configurations
 scrape_configs:
+  # ============================================================================
+  # Self-Monitoring
+  # ============================================================================
+  
   - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]
+    scrape_interval: 30s
 
-  # Mining metrics - Direct scrape from Python Collector Service (V2)
-  - job_name: "mining"
+  # ============================================================================
+  # Mining Stack Services
+  # ============================================================================
+  
+  # Python Scheduler - Mining metrics collection service
+  - job_name: "python-scheduler"
     static_configs:
       - targets: ["python-scheduler:8000"]
     metrics_path: /metrics
     scrape_interval: 30s
     scrape_timeout: 10s
+    honor_labels: true
 
-  # Backend API metrics
+  # Backend API - Node.js service
   - job_name: "backend"
     static_configs:
       - targets: ["backend:5000"]
     metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
 
-  # Blackbox Exporter - TCP checks for mining pools
+  # Grafana - Visualization service
+  - job_name: "grafana"
+    static_configs:
+      - targets: ["grafana:3000"]
+    metrics_path: /metrics
+    scrape_interval: 60s
+    scrape_timeout: 10s
+
+  # Node Exporter - System metrics (if available)
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # ============================================================================
+  # External Monitoring - Blackbox Exporter
+  # ============================================================================
+  
+  # Blackbox TCP - Mining pool connectivity checks
   - job_name: 'blackbox-tcp'
     metrics_path: /probe
     params:
       module: [tcp_connect]
     file_sd_configs:
       - files:
-        - /etc/prometheus/targets/pools.json
+          - /etc/prometheus/targets/pools.json
         refresh_interval: 5m
     relabel_configs:
       - source_labels: [__address__]
@@ -45,3 +87,5 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: blackbox-exporter:9115
+    scrape_interval: 30s
+    scrape_timeout: 10s
