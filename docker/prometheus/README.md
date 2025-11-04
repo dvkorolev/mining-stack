@@ -23,10 +23,9 @@ Main Prometheus configuration with scrape jobs for all services.
 
 **Scrape Jobs**:
 - `prometheus` - Self-monitoring (localhost:9090)
-- `python-scheduler` - Mining metrics (python-scheduler:8000)
+- `python-scheduler` - Mining metrics and system metrics (python-scheduler:8000)
 - `backend` - Backend API metrics (backend:5000)
 - `grafana` - Grafana metrics (grafana:3000)
-- `node-exporter` - System metrics (node-exporter:9100)
 - `blackbox-tcp` - Pool TCP connectivity checks
 
 **Global Settings**:

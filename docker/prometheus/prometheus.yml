@@ -60,13 +60,6 @@ scrape_configs:
     scrape_interval: 60s
     scrape_timeout: 10s
 
-  # Node Exporter - System metrics (if available)
-  - job_name: "node-exporter"
-    static_configs:
-      - targets: ["node-exporter:9100"]
-    scrape_interval: 30s
-    scrape_timeout: 10s
-
   # ============================================================================
   # External Monitoring - Blackbox Exporter
   # ============================================================================
