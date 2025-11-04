@@ -32,7 +32,7 @@ services:
       # Docker socket to read container logs
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Promtail configuration
-      - ./python-scheduler/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./docker/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
     command: -config.file=/etc/promtail/config.yml
     networks:
       - mining-network
