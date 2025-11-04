@@ -109,21 +109,22 @@ export async function getMinerPower(): Promise<Map<string, number>> {
 }
 
 /**
- * Get miner scrape success status from Prometheus
+ * Get miner status from Prometheus
+ * Uses miner_state metric: 0=faulty, 1=idle, 2=mining
  */
 export async function getMinerStatus(): Promise<Map<string, boolean>> {
-  const results = await queryPrometheus('miner_scrape_success');
+  const results = await queryPrometheus('miner_state');
   const status = new Map<string, boolean>();
 
   for (const result of results) {
     const ip = result.metric.ip;
-    const success = parseFloat(result.value[1]) === 1;
+    const state = parseFloat(result.value[1]);
     
-    // Only set if we don't have a status yet, or if this is a success
-    // This handles cases where there are multiple entries (success and failure)
-    if (!status.has(ip) || success) {
-      status.set(ip, success);
-    }
+    // state === 2 means mining (online)
+    // state === 1 means idle (offline but reachable)
+    // state === 0 means faulty (offline)
+    const isOnline = state === 2;
+    status.set(ip, isOnline);
   }
 
   return status;
