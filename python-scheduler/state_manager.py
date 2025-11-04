@@ -41,6 +41,10 @@ class ServiceState:
         # Key: (ip, name, model), Value: consecutive failure count
         self.failure_streaks: Dict[Tuple[str, str, str], int] = {}
         
+        # Uptime tracking (per miner IP) for detecting hung states
+        # Key: ip, Value: last known uptime in seconds
+        self.last_uptimes: Dict[str, int] = {}
+        
         # Load persisted state if available
         self.load()
     
@@ -74,9 +78,13 @@ class ServiceState:
                     except Exception as e:
                         logger.warning(f"Failed to parse failure streak key: {key_str} - {e}")
                 
+                # Load uptime tracking
+                self.last_uptimes = data.get('last_uptimes', {})
+                
                 logger.info(f"Loaded state from {self.storage_path}")
                 logger.info(f"  Last collection: {self.last_collection.get('timestamp', 'Never')}")
                 logger.info(f"  Failure streaks: {len(self.failure_streaks)} miners tracked")
+                logger.info(f"  Uptime tracking: {len(self.last_uptimes)} miners")
                 return True
                 
         except json.JSONDecodeError as e:
@@ -107,6 +115,7 @@ class ServiceState:
                 data = {
                     'last_collection': self.last_collection,
                     'failure_streaks': serializable_streaks,
+                    'last_uptimes': self.last_uptimes,
                     'saved_at': datetime.now().isoformat()
                 }
                 
@@ -203,6 +212,30 @@ class ServiceState:
         with self._lock:
             return self.last_collection.copy()
     
+    def get_last_uptime(self, ip: str) -> int | None:
+        """
+        Get last known uptime for a miner
+        
+        Args:
+            ip: Miner IP address
+        
+        Returns:
+            Last uptime in seconds, or None if not tracked
+        """
+        with self._lock:
+            return self.last_uptimes.get(ip)
+    
+    def set_last_uptime(self, ip: str, uptime: int) -> None:
+        """
+        Set last known uptime for a miner
+        
+        Args:
+            ip: Miner IP address
+            uptime: Uptime in seconds
+        """
+        with self._lock:
+            self.last_uptimes[ip] = uptime
+    
     def get_stats(self) -> Dict[str, Any]:
         """
         Get statistics about current state
@@ -216,5 +249,6 @@ class ServiceState:
                 'last_collection_success': self.last_collection.get('success'),
                 'tracked_miners': len(self.failure_streaks),
                 'miners_with_failures': sum(1 for count in self.failure_streaks.values() if count > 0),
-                'total_failure_count': sum(self.failure_streaks.values())
+                'total_failure_count': sum(self.failure_streaks.values()),
+                'uptimes_tracked': len(self.last_uptimes)
             }

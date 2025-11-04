@@ -344,10 +344,61 @@ async def collect_all_metrics():
                 scrape_status = miner_data.get('scrape_status', -2)
                 hashrate = miner_data.get('hashrate', 0)
                 
-                # Try fallback if:
-                # 1. Primary collection failed (scrape_status < 1), OR
-                # 2. Scrape succeeded but hashrate is 0 (API returns bad data)
-                if scrape_status < 1 or (scrape_status >= 1 and hashrate == 0):
+                # Get profile for intelligent data quality checks
+                profile = profile_library.get_profile(miner['model'], miner.get('algorithm'))
+                
+                # Intelligent data quality checks
+                needs_fallback = False
+                fallback_reason = None
+                
+                # 1. Primary collection failed
+                if scrape_status < 1:
+                    needs_fallback = True
+                    fallback_reason = "connection_failed"
+                
+                # 2. Zero hashrate (API returns bad data)
+                elif scrape_status >= 1 and hashrate == 0:
+                    needs_fallback = True
+                    fallback_reason = "zero_hashrate"
+                
+                # 3. "Zombie Board" - Hashrate significantly below expected
+                elif profile and scrape_status >= 1:
+                    expected_hashrate = profile.get_expected_hashrate()
+                    if expected_hashrate and hashrate > 0 and hashrate < (expected_hashrate * 0.5):
+                        needs_fallback = True
+                        fallback_reason = f"low_hashrate ({hashrate:.1f} < {expected_hashrate * 0.5:.1f} TH/s)"
+                        logger.warning(f"  ⚠ Zombie board detected on {miner['name']}: {hashrate:.1f} TH/s (expected {expected_hashrate:.1f}+)")
+                
+                # 4. "Stuck Uptime" - Uptime hasn't changed since last collection
+                if scrape_status >= 1 and not needs_fallback:
+                    current_uptime = miner_data.get('uptime', 0)
+                    last_uptime = service_state.get_last_uptime(miner['ip'])
+                    if last_uptime is not None and current_uptime > 0 and current_uptime == last_uptime:
+                        needs_fallback = True
+                        fallback_reason = f"stuck_uptime ({current_uptime}s)"
+                        logger.warning(f"  ⚠ Hung state detected on {miner['name']}: uptime frozen at {current_uptime}s")
+                    elif current_uptime > 0:
+                        service_state.set_last_uptime(miner['ip'], current_uptime)
+                
+                # 5. "Missing Boards/Fans" - Board or fan count doesn't match expected
+                if profile and scrape_status >= 1 and not needs_fallback:
+                    expected_boards = profile.get_expected_board_count()
+                    expected_fans = profile.get_expected_fan_count()
+                    actual_boards = len(miner_data.get('hashboards', []))
+                    actual_fans = len(miner_data.get('fans', []))
+                    
+                    if expected_boards and actual_boards > 0 and actual_boards != expected_boards:
+                        needs_fallback = True
+                        fallback_reason = f"board_mismatch ({actual_boards}/{expected_boards})"
+                        logger.warning(f"  ⚠ Board count mismatch on {miner['name']}: {actual_boards} found, {expected_boards} expected")
+                    
+                    elif expected_fans and actual_fans > 0 and actual_fans != expected_fans:
+                        needs_fallback = True
+                        fallback_reason = f"fan_mismatch ({actual_fans}/{expected_fans})"
+                        logger.warning(f"  ⚠ Fan count mismatch on {miner['name']}: {actual_fans} found, {expected_fans} expected")
+                
+                if needs_fallback:
+                    logger.info(f"  → Fallback triggered for {miner['name']}: {fallback_reason}")
                     fallback_data = None
                     fallback_method = None
                     

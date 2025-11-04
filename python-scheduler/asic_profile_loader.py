@@ -70,6 +70,44 @@ class ASICProfile:
         """Get drivers ordered by priority"""
         return sorted(self.drivers, key=lambda d: d.get('priority', 999))
     
+    def get_expected_hashrate(self) -> Optional[float]:
+        """
+        Get expected hashrate for this profile
+        
+        Returns:
+            Expected hashrate in TH/s, or None if not defined
+        """
+        hashrate_min = self.expected.get('hashrate_min')
+        hashrate_max = self.expected.get('hashrate_max')
+        
+        if hashrate_min and hashrate_max:
+            # Return average of min/max
+            return (hashrate_min + hashrate_max) / 2
+        elif hashrate_min:
+            return hashrate_min
+        elif hashrate_max:
+            return hashrate_max
+        
+        return None
+    
+    def get_expected_board_count(self) -> Optional[int]:
+        """
+        Get expected number of hashboards for this profile
+        
+        Returns:
+            Expected board count, or None if not defined
+        """
+        return self.expected.get('board_count')
+    
+    def get_expected_fan_count(self) -> Optional[int]:
+        """
+        Get expected number of fans for this profile
+        
+        Returns:
+            Expected fan count, or None if not defined
+        """
+        return self.expected.get('fan_count')
+    
     def __repr__(self):
         return f"ASICProfile({self.id}, {self.name}, {self.algorithm})"
 
