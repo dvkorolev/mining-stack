@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import miningRoutes from './routes/mining.routes';
 import poolsRoutes from './routes/pools.routes';
 import logsRoutes from './routes/logs.routes';
+import telegramRoutes from './routes/telegram.routes';
 import { setupWebSocket } from './services/websocket.service';
 import { startMining } from './services/mining.service';
 import { errorHandler } from './middleware/error.middleware';
@@ -29,6 +30,7 @@ app.use(morgan('dev'));
 app.use('/api', miningRoutes);
 app.use('/api/pools', poolsRoutes);
 app.use('/api/logs', logsRoutes);
+app.use('/api/telegram', telegramRoutes);
 
 // Smart health check endpoint
 app.get('/health', (req, res) => {
@@ -119,6 +121,23 @@ server.listen(PORT, async () => {
     logger.info('Mining simulation started automatically');
   } catch (error) {
     logger.error('Failed to start mining simulation:', error);
+  }
+
+  // Auto-initialize Telegram bot if credentials are stored
+  try {
+    const { getDatabase } = require('./services/database.service');
+    const { initTelegramBot } = require('./services/telegram.service');
+    const db = getDatabase();
+    
+    const token = db.getSetting('telegram_bot_token');
+    const chatId = db.getSetting('telegram_chat_id');
+    
+    if (token && chatId) {
+      initTelegramBot(token, chatId);
+      logger.info('Telegram bot initialized from stored credentials');
+    }
+  } catch (error) {
+    logger.warn('Failed to auto-initialize Telegram bot:', error);
   }
 });
 
