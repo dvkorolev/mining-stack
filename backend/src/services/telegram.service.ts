@@ -342,28 +342,57 @@ const sendMinersList = async (chatId: number): Promise<void> => {
       return;
     }
 
-    let message = '⛏️ *Configured Miners:*\n\n';
+    // Summary overview
+    const onlineCount = stats.miners.filter(m => m.status === 'online').length;
+    const offlineCount = miners.length - onlineCount;
+    const totalHashrate = stats.totalHashrate.toFixed(2);
 
-    miners.forEach((miner) => {
-      const minerStats = stats.miners.find(m => m.minerId === miner.name);
-      const status = minerStats?.status || 'offline';
-      const statusEmoji = status === 'online' ? '🟢' : status === 'error' ? '🔴' : '⚫';
-      const hashrate = minerStats?.currentHashrate?.toFixed(2) || '0.00';
+    let message = '⛏️ *Miners Overview*\n\n';
+    message += `📊 Total: ${miners.length} miners\n`;
+    message += `🟢 Online: ${onlineCount} | ⚫ Offline: ${offlineCount}\n`;
+    message += `⚡ Total Hashrate: ${totalHashrate} TH/s\n\n`;
+    message += '💡 _Select a miner below for details_';
+
+    // Create inline keyboard with 2 miners per row for better layout
+    const minerButtons: any[] = [];
+    for (let i = 0; i < miners.length && i < 8; i += 2) {
+      const row = [];
       
-      message += `${statusEmoji} *${miner.alias || miner.name}*\n`;
-      message += `   IP: \`${miner.ip}\` | ${hashrate} TH/s\n\n`;
-    });
+      // First miner in row
+      const miner1 = miners[i];
+      const stats1 = stats.miners.find(m => m.minerId === miner1.name);
+      const status1 = stats1?.status || 'offline';
+      const emoji1 = status1 === 'online' ? '🟢' : status1 === 'error' ? '🔴' : '⚫';
+      row.push({
+        text: `${emoji1} ${miner1.alias || miner1.name}`,
+        callback_data: `miner_${miner1.name}`,
+      });
 
-    // Create inline keyboard with miner buttons (max 8 miners per message)
-    const buttons = miners.slice(0, 8).map(miner => [{
-      text: `${miner.alias || miner.name}`,
-      callback_data: `miner_${miner.name}`,
-    }]);
+      // Second miner in row (if exists)
+      if (i + 1 < miners.length) {
+        const miner2 = miners[i + 1];
+        const stats2 = stats.miners.find(m => m.minerId === miner2.name);
+        const status2 = stats2?.status || 'offline';
+        const emoji2 = status2 === 'online' ? '🟢' : status2 === 'error' ? '🔴' : '⚫';
+        row.push({
+          text: `${emoji2} ${miner2.alias || miner2.name}`,
+          callback_data: `miner_${miner2.name}`,
+        });
+      }
+
+      minerButtons.push(row);
+    }
+
+    // Add action buttons at the bottom
+    minerButtons.push([
+      { text: '🔄 Refresh', callback_data: 'miners_list' },
+      { text: '📊 Farm Status', callback_data: 'action_status' },
+    ]);
 
     await bot?.sendMessage(chatId, message, {
       parse_mode: 'Markdown',
       reply_markup: {
-        inline_keyboard: buttons,
+        inline_keyboard: minerButtons,
       },
     });
     logger.info('Telegram: Miners list sent', { service: 'telegram', chatId, minerCount: miners.length });
@@ -416,12 +445,14 @@ Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
     const keyboard = {
       inline_keyboard: [
         [
-          { text: '🔄 Reboot', callback_data: `reboot_confirm_${minerName}` },
-          { text: '🌊 Pools', callback_data: `pools_${minerName}` },
+          { text: '🔄 Reboot Miner', callback_data: `reboot_confirm_${minerName}` },
         ],
         [
-          { text: '🔙 Back to List', callback_data: 'miners_list' },
-          { text: '📊 Farm Status', callback_data: 'action_status' },
+          { text: '🌊 View Pools', callback_data: `pools_${minerName}` },
+          { text: '🔄 Refresh Stats', callback_data: `miner_${minerName}` },
+        ],
+        [
+          { text: '⬅️ Back to Miners', callback_data: 'miners_list' },
         ],
       ],
     };
@@ -508,7 +539,22 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
     const result = await getMinerPools(minerName);
     
     if (!result.success || !result.pools || result.pools.length === 0) {
-      await bot?.sendMessage(chatId, `⚠️ No pool configuration available for ${miner.alias || miner.name}\n\n${result.message || 'Unable to retrieve pool data'}`);
+      const errorMessage = `⚠️ *Pool Configuration Unavailable*\n\n` +
+        `Miner: *${miner.alias || miner.name}*\n` +
+        `IP: \`${miner.ip}\`\n\n` +
+        `${result.message || 'Unable to retrieve pool data'}`;
+      
+      // Add back button
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '⬅️ Back to Miner', callback_data: `miner_${minerName}` }],
+        ],
+      };
+      
+      await bot?.sendMessage(chatId, errorMessage, { 
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
       return;
     }
 

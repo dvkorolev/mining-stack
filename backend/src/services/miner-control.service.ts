@@ -124,8 +124,167 @@ export const getMinerPools = async (minerId: string): Promise<{
 
     logger.info(`Getting pool config for: ${miner.name} (${miner.ip})`);
 
-    // Try cgminer API (port 4028)
-    try {
+    // Detect miner type from model string
+    const model = miner.model?.toLowerCase() || '';
+    const isWhatsminer = model.includes('m3') || model.includes('m5') || model.includes('m2') || 
+                         model.includes('whatsminer');
+    const isAntminer = model.includes('s19') || model.includes('s17') || model.includes('s9') || 
+                       model.includes('t19') || model.includes('t17') || model.includes('antminer');
+    const isAvalonminer = model.includes('avalon') || model.includes('a1');
+    const isInnosilicon = model.includes('a10') || model.includes('a11') || model.includes('innosilicon');
+
+    // Get credentials based on miner type
+    let defaultUsername = 'root';
+    let defaultPassword = 'root';
+    
+    if (isWhatsminer) {
+      defaultUsername = 'admin';
+      defaultPassword = 'admin';
+    } else if (isAvalonminer) {
+      defaultUsername = 'root';
+      defaultPassword = 'root';
+    } else if (isInnosilicon) {
+      defaultUsername = 'admin';
+      defaultPassword = 'admin';
+    }
+    
+    const username = miner.username || defaultUsername;
+    const password = miner.password || defaultPassword;
+
+    logger.debug(`Detected miner type for ${miner.name}: Whatsminer=${isWhatsminer}, Antminer=${isAntminer}, Avalon=${isAvalonminer}, Innosilicon=${isInnosilicon}`);
+
+    // Try different methods based on miner type
+    const methods = [];
+
+    if (isWhatsminer) {
+      // Method 1: Whatsminer API v1 (older models)
+      methods.push(async () => {
+        const response = await axios.get(`http://${miner.ip}/cgi-bin/luci/admin/network/cgminer`, {
+          timeout: 5000,
+          auth: { username, password },
+        });
+        
+        if (response.data && response.data.pools) {
+          return response.data.pools.map((pool: any) => ({
+            url: pool.url || pool.URL || '',
+            user: pool.user || pool.worker || pool.User || '',
+            password: '***',
+          }));
+        }
+        throw new Error('No pool data');
+      });
+
+      // Method 2: Whatsminer API v2 (newer models like M30S++)
+      methods.push(async () => {
+        const response = await axios.get(`http://${miner.ip}/cgi-bin/luci/admin/status/overview`, {
+          timeout: 5000,
+          auth: { username, password },
+        });
+        
+        // Parse pool info from overview
+        if (response.data && response.data.pool) {
+          const poolData = response.data.pool;
+          const pools: PoolConfig[] = [];
+          
+          // Whatsminer often has pool1, pool2, pool3
+          for (let i = 1; i <= 3; i++) {
+            const poolKey = `pool${i}`;
+            if (poolData[poolKey]) {
+              const pool = poolData[poolKey];
+              pools.push({
+                url: pool.url || pool.URL || '',
+                user: pool.user || pool.worker || '',
+                password: '***',
+              });
+            }
+          }
+          
+          if (pools.length > 0) return pools;
+        }
+        throw new Error('No pool data');
+      });
+
+      // Method 3: Direct pool endpoint
+      methods.push(async () => {
+        const response = await axios.get(`http://${miner.ip}/cgi-bin/luci/admin/network/cgminer/pool`, {
+          timeout: 5000,
+          auth: { username, password },
+        });
+        
+        if (response.data && response.data.pools) {
+          return response.data.pools.map((pool: any) => ({
+            url: pool.url || '',
+            user: pool.user || pool.worker || '',
+            password: '***',
+          }));
+        }
+        throw new Error('No pool data');
+      });
+    }
+
+    if (isAntminer) {
+      // Method 1: Antminer CGI (most common)
+      methods.push(async () => {
+        const response = await axios.get(`http://${miner.ip}/cgi-bin/get_miner_conf.cgi`, {
+          timeout: 5000,
+          auth: { username, password },
+        });
+        
+        const data = response.data;
+        const pools: PoolConfig[] = [];
+        
+        // Try different pool naming conventions
+        for (let i = 1; i <= 3; i++) {
+          const url = data[`_ant_pool${i}url`] || data[`pool${i}url`];
+          const user = data[`_ant_pool${i}user`] || data[`pool${i}user`];
+          if (url) {
+            pools.push({ url, user: user || '', password: '***' });
+          }
+        }
+        
+        if (pools.length > 0) return pools;
+        throw new Error('No pools found');
+      });
+
+      // Method 2: Newer Antminer API
+      methods.push(async () => {
+        const response = await axios.get(`http://${miner.ip}/cgi-bin/pools.cgi`, {
+          timeout: 5000,
+          auth: { username, password },
+        });
+        
+        if (response.data && response.data.pools) {
+          return response.data.pools.map((pool: any) => ({
+            url: pool.url || '',
+            user: pool.user || '',
+            password: '***',
+          }));
+        }
+        throw new Error('No pool data');
+      });
+    }
+
+    if (isAvalonminer) {
+      // Avalon CGI
+      methods.push(async () => {
+        const response = await axios.get(`http://${miner.ip}/cgi-bin/luci/admin/avalon/pool`, {
+          timeout: 5000,
+          auth: { username, password },
+        });
+        
+        if (response.data && response.data.pools) {
+          return response.data.pools.map((pool: any) => ({
+            url: pool.url || '',
+            user: pool.user || pool.worker || '',
+            password: '***',
+          }));
+        }
+        throw new Error('No pool data');
+      });
+    }
+
+    // Generic CGMiner API (works for many miners including Whatsminer, Antminer, Avalon)
+    methods.push(async () => {
       const response = await axios.post(
         `http://${miner.ip}:4028`,
         { command: 'pools' },
@@ -133,31 +292,35 @@ export const getMinerPools = async (minerId: string): Promise<{
       );
 
       if (response.data && response.data.POOLS) {
-        const pools: PoolConfig[] = response.data.POOLS.map((pool: any) => ({
-          url: pool.URL || '',
-          user: pool.User || '',
-          password: '***', // Don't expose password
+        return response.data.POOLS.map((pool: any) => ({
+          url: pool.URL || pool.url || '',
+          user: pool.User || pool.user || pool.Worker || '',
+          password: '***',
         }));
-
-        return { success: true, pools };
       }
-    } catch (error) {
-      // Try HTTP API
-      try {
-        const response = await axios.get(`http://${miner.ip}/cgi-bin/get_miner_conf.cgi`, {
-          timeout: 5000,
-          auth: { username: 'root', password: 'root' },
-        });
+      throw new Error('No pool data');
+    });
 
-        // Parse response for pool info
-        // This varies by miner type - implement as needed
-        return { success: false, message: 'HTTP API pool retrieval not yet implemented' };
-      } catch (httpError) {
-        return { success: false, message: 'Failed to retrieve pool configuration' };
+    // Try each method
+    for (const method of methods) {
+      try {
+        const pools = await method();
+        if (pools && pools.length > 0) {
+          logger.info(`Retrieved ${pools.length} pools for ${miner.name}`);
+          return { success: true, pools };
+        }
+      } catch (error) {
+        // Try next method
+        logger.debug(`Pool retrieval method failed for ${miner.name}:`, error);
+        continue;
       }
     }
 
-    return { success: false, message: 'No compatible API found' };
+    // If all methods fail, return helpful message
+    return { 
+      success: false, 
+      message: `Unable to retrieve pool configuration. Please check:\n• Miner is online at ${miner.ip}\n• Credentials are correct (${username})\n• Miner API is accessible\n\nYou can view pools manually at: http://${miner.ip}` 
+    };
   } catch (error) {
     logger.error(`Error getting pools for miner ${minerId}:`, error);
     return { success: false, message: `Error: ${error}` };
