@@ -2,13 +2,14 @@
 # Smart update script - only pulls and restarts changed services
 # Detects which images have updates available and only restarts those
 #
-# Usage: ./update-smart.sh [tag] [--force] [--service=name]
+# Usage: ./update-smart.sh [tag] [--force] [--service=name] [--yes]
 #
 # Examples:
 #   ./update-smart.sh              # Check for updates and restart only changed services
 #   ./update-smart.sh latest       # Use specific tag
 #   ./update-smart.sh --force      # Force restart all services even if no updates
 #   ./update-smart.sh --service=backend  # Only update specific service
+#   ./update-smart.sh --yes        # Auto-confirm updates without prompting
 
 set -e
 
@@ -16,6 +17,7 @@ PROJECT_DIR="/opt/mining-stack"
 IMAGE_TAG="${1:-latest}"
 FORCE_UPDATE=false
 SPECIFIC_SERVICE=""
+AUTO_CONFIRM=false
 
 # Parse arguments
 for arg in "$@"; do
@@ -26,6 +28,10 @@ for arg in "$@"; do
       ;;
     --service=*)
       SPECIFIC_SERVICE="${arg#*=}"
+      shift
+      ;;
+    --yes|-y)
+      AUTO_CONFIRM=true
       shift
       ;;
   esac
@@ -119,13 +125,19 @@ for service in "${CHANGED_SERVICES[@]}"; do
 done
 echo ""
 
-# Ask for confirmation unless forced
-if [ "$FORCE_UPDATE" = false ] && [ -z "$SPECIFIC_SERVICE" ]; then
-    read -p "Continue with update? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${YELLOW}Update cancelled${NC}"
-        exit 0
+# Ask for confirmation unless auto-confirmed, forced, or specific service
+if [ "$AUTO_CONFIRM" = false ] && [ "$FORCE_UPDATE" = false ] && [ -z "$SPECIFIC_SERVICE" ]; then
+    # Check if running interactively
+    if [ -t 0 ]; then
+        read -p "Continue with update? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Update cancelled${NC}"
+            exit 0
+        fi
+    else
+        # Non-interactive mode, auto-confirm
+        echo -e "${YELLOW}⚠️  Running in non-interactive mode, auto-confirming update${NC}"
     fi
 fi
 
