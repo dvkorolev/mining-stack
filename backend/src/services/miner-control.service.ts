@@ -44,22 +44,29 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
     }
     
     if (isAntminer) {
-      // Antminer uses CGI
+      // Antminer uses CGI - try multiple endpoints for different firmware versions
       endpoints.push(
-        { url: `${protocol}://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Antminer reboot' }
+        { url: `${protocol}://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Antminer reboot (CGI)' },
+        { url: `${protocol}://${miner.ip}/cgi-bin/luci/admin/system/reboot`, method: 'post', desc: 'Antminer reboot (Luci)' },
+        { url: `${protocol}://${miner.ip}/api/system/reboot`, method: 'post', desc: 'Antminer reboot (API)' }
       );
     }
     
-    // Generic fallbacks
+    // Generic fallbacks (work for many miners)
     endpoints.push(
       { url: `${protocol}://${miner.ip}/api/reboot`, method: 'post', desc: 'Generic API reboot' },
       { url: `${protocol}://${miner.ip}/reboot`, method: 'post', desc: 'Generic reboot' }
+    );
+    
+    // CGMiner API reboot (works for most ASIC miners on port 4028)
+    endpoints.push(
+      { url: `${protocol}://${miner.ip}:4028`, method: 'post', data: JSON.stringify({ command: 'restart' }), desc: 'CGMiner API restart' }
     );
 
     for (const endpoint of endpoints) {
       try {
         logger.debug(`Trying ${endpoint.desc} for ${miner.name} with credentials from config`);
-        await axios({
+        const config: any = {
           method: endpoint.method as 'get' | 'post',
           url: endpoint.url,
           timeout: 5000,
@@ -67,7 +74,15 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
             username,
             password,
           },
-        });
+        };
+        
+        // Add data if provided (for CGMiner API)
+        if ((endpoint as any).data) {
+          config.data = (endpoint as any).data;
+          config.headers = { 'Content-Type': 'application/json' };
+        }
+        
+        await axios(config);
 
         logger.info(`Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);
         return { success: true, message: `Reboot command sent to ${miner.name}` };
