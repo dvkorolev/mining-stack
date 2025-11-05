@@ -5,7 +5,8 @@ import crypto from 'crypto';
 
 /** Send one JSON line to TCP:4028, return parsed JSON */
 function sendTcpJson(ip: string, obj: any, timeoutMs = 4000): Promise<any> {
-  const line = JSON.stringify(obj) + '\n';
+  const line = JSON.stringify(obj);
+  console.log('[TCP] Sending to', ip, ':', line);
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
     const chunks: Buffer[] = [];
@@ -15,13 +16,17 @@ function sendTcpJson(ip: string, obj: any, timeoutMs = 4000): Promise<any> {
     const t = setTimeout(() => fail(new Error(`TCP timeout after ${timeoutMs}ms`)), timeoutMs);
 
     socket.connect(4028, ip, () => socket.write(line));
-    socket.on('data', (buf) => chunks.push(buf));
+    socket.on('data', (buf) => {
+      console.log('[TCP] Received chunk:', buf.length, 'bytes');
+      chunks.push(buf);
+    });
     socket.on('error', fail);
     socket.on('end', () => {
       if (done) return;
       clearTimeout(t);
       done = true;
       const raw = Buffer.concat(chunks).toString('utf8').trim();
+      console.log('[TCP] Response:', raw);
       try { resolve(JSON.parse(raw || '{}')); }
       catch (e) { reject(new Error(`Bad JSON from ${ip}: ${raw.slice(0, 200)}`)); }
     });
