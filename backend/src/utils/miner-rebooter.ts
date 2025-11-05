@@ -161,21 +161,20 @@ export class WhatsMiner {
     }
   }
 
-  /** Encrypted write call: {"enc":1,"data": base64(AES-ECB("token,sign|<api_str>\0"))} */
+  /** Encrypted write call: {"enc":1,"data": base64(AES-ECB("token,sign|<api_str>"))} */
   private async _encCall(apiObj: any): Promise<any> {
     await this._ensureTokenFresh();
 
     const apiStr = JSON.stringify(apiObj);
-    // B) Add NUL terminator for C-string parsing on device
-    const plainText = `${this.key},${this.sign}|${apiStr}\x00`;
+    // Try WITHOUT NUL terminator (A + C only)
+    const plainText = `${this.key},${this.sign}|${apiStr}`;
     const plain = Buffer.from(plainText, 'utf8');
 
-    console.log('[WhatsMiner] Encrypting:', {
+    console.log('[WhatsMiner] Encrypting (no NUL):', {
       apiObj,
       apiStr,
-      plainText: plainText.slice(0, -1) + '\\x00',
-      plainTextLen: plainText.length,
-      lastCharCode: plainText.charCodeAt(plainText.length - 1)
+      plainText,
+      plainTextLen: plainText.length
     });
 
     // AES-256-ECB with PKCS#7 padding (Node applies padding when setAutoPadding(true))
