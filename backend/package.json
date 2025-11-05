@@ -1,7 +1,7 @@
 {
   "name": "mining-dashboard-backend",
-  "version": "1.0.1",
-  "description": "Backend for Mining Dashboard - Smart CI/CD Test",
+  "version": "1.0.2",
+  "description": "Backend for Mining Dashboard - Telegram 40 miners support",
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
