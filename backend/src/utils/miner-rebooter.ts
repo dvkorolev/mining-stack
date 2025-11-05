@@ -168,9 +168,14 @@ export class WhatsMiner {
     // CRITICAL: Token must be included in BOTH places:
     // 1. In the prefix before | (for signature verification)
     // 2. Inside the JSON payload (for command authorization)
+    // Note: Some firmwares might be sensitive to field order, but JSON.stringify
+    // with object spread should maintain insertion order (token first)
     const apiObjWithToken = { token: this.key, ...apiObj };
     const apiStr = JSON.stringify(apiObjWithToken);
-    const plainText = `${this.key},${this.sign}|${apiStr}`;
+    
+    console.log('[WhatsMiner] API object keys order:', Object.keys(apiObjWithToken));
+    // Add NUL terminator after JSON to mark end of string (before PKCS#7 padding)
+    const plainText = `${this.key},${this.sign}|${apiStr}\x00`;
     const plain = Buffer.from(plainText, 'utf8');
 
     console.log('[WhatsMiner] Encrypting:', {
