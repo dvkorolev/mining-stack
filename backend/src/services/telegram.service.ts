@@ -354,12 +354,17 @@ const sendMinersList = async (chatId: number): Promise<void> => {
     message += '💡 _Select a miner below for details_';
 
     // Create inline keyboard with 2 miners per row for better layout
+    // Telegram limits: max 100 buttons total, max 8 buttons per row
+    // We'll show up to 40 miners (20 rows x 2 buttons) to stay well within limits
+    const maxMinersToShow = 40;
+    const minersToShow = miners.slice(0, maxMinersToShow);
+    
     const minerButtons: any[] = [];
-    for (let i = 0; i < miners.length && i < 8; i += 2) {
+    for (let i = 0; i < minersToShow.length; i += 2) {
       const row = [];
       
       // First miner in row
-      const miner1 = miners[i];
+      const miner1 = minersToShow[i];
       const stats1 = stats.miners.find(m => m.minerId === miner1.name);
       const status1 = stats1?.status || 'offline';
       const emoji1 = status1 === 'online' ? '🟢' : status1 === 'error' ? '🔴' : '⚫';
@@ -369,8 +374,8 @@ const sendMinersList = async (chatId: number): Promise<void> => {
       });
 
       // Second miner in row (if exists)
-      if (i + 1 < miners.length) {
-        const miner2 = miners[i + 1];
+      if (i + 1 < minersToShow.length) {
+        const miner2 = minersToShow[i + 1];
         const stats2 = stats.miners.find(m => m.minerId === miner2.name);
         const status2 = stats2?.status || 'offline';
         const emoji2 = status2 === 'online' ? '🟢' : status2 === 'error' ? '🔴' : '⚫';
@@ -381,6 +386,11 @@ const sendMinersList = async (chatId: number): Promise<void> => {
       }
 
       minerButtons.push(row);
+    }
+    
+    // Add note if there are more miners than shown
+    if (miners.length > maxMinersToShow) {
+      message += `\n\n⚠️ _Showing ${maxMinersToShow} of ${miners.length} miners. Use /miner <name> for others._`;
     }
 
     // Add action buttons at the bottom
