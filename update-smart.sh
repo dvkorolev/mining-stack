@@ -45,12 +45,20 @@ echo ""
 
 cd "$PROJECT_DIR" || exit 1
 
-# Export IMAGE_TAG for docker-compose
+# Export variables for docker-compose
 export IMAGE_TAG=$IMAGE_TAG
 export GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-dvkorolev/mining-stack}"
 
 echo -e "${GREEN}Repository:${NC} $GITHUB_REPOSITORY"
 echo -e "${GREEN}Tag:${NC} $IMAGE_TAG"
+echo ""
+
+# Determine which compose files to use
+COMPOSE_FILES="-f docker-compose.prod.yml"
+if [ -f "docker-compose.logging.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.logging.yml"
+    echo -e "${BLUE}ℹ️  Including logging stack${NC}"
+fi
 echo ""
 
 # Services to check
@@ -70,7 +78,7 @@ for service in "${SERVICES[@]}"; do
     echo -e "${BLUE}   Checking $service...${NC}"
     
     # Get current image ID
-    CURRENT_IMAGE=$(docker compose -f docker-compose.prod.yml images -q $service 2>/dev/null || echo "")
+    CURRENT_IMAGE=$(docker compose $COMPOSE_FILES images -q $service 2>/dev/null || echo "")
     
     if [ -z "$CURRENT_IMAGE" ]; then
         echo -e "${YELLOW}   ⚠️  $service not running, will pull and start${NC}"
@@ -79,10 +87,10 @@ for service in "${SERVICES[@]}"; do
     fi
     
     # Pull latest image
-    docker compose -f docker-compose.prod.yml pull $service > /dev/null 2>&1
+    docker compose $COMPOSE_FILES pull $service > /dev/null 2>&1
     
     # Get new image ID
-    NEW_IMAGE=$(docker compose -f docker-compose.prod.yml images -q $service 2>/dev/null || echo "")
+    NEW_IMAGE=$(docker compose $COMPOSE_FILES images -q $service 2>/dev/null || echo "")
     
     # Compare
     if [ "$CURRENT_IMAGE" != "$NEW_IMAGE" ] || [ "$FORCE_UPDATE" = true ]; then
@@ -100,7 +108,7 @@ if [ ${#CHANGED_SERVICES[@]} -eq 0 ]; then
     echo -e "${GREEN}✅ All services are up to date!${NC}"
     echo ""
     echo -e "${BLUE}Current status:${NC}"
-    docker compose -f docker-compose.prod.yml ps
+    docker compose $COMPOSE_FILES ps
     exit 0
 fi
 
@@ -129,17 +137,17 @@ for service in "${CHANGED_SERVICES[@]}"; do
     echo -e "${BLUE}📥 Updating $service...${NC}"
     
     # Pull latest image (already done above, but ensures we have it)
-    docker compose -f docker-compose.prod.yml pull $service
+    docker compose $COMPOSE_FILES pull $service
     
     # Restart only this service
     echo -e "${BLUE}🔄 Restarting $service...${NC}"
-    docker compose -f docker-compose.prod.yml up -d $service
+    docker compose $COMPOSE_FILES up -d $service
     
     # Wait a bit for service to start
     sleep 3
     
     # Check health
-    if docker compose -f docker-compose.prod.yml ps $service | grep -q "Up"; then
+    if docker compose $COMPOSE_FILES ps $service | grep -q "Up"; then
         echo -e "${GREEN}✓ $service updated successfully${NC}"
     else
         echo -e "${RED}⚠️  $service may have issues, check logs${NC}"
@@ -149,7 +157,7 @@ done
 
 # Show final status
 echo -e "${BLUE}📊 Final Status:${NC}"
-docker compose -f docker-compose.prod.yml ps
+docker compose $COMPOSE_FILES ps
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -166,7 +174,7 @@ done
 echo ""
 echo -e "${BLUE}To view logs:${NC}"
 for service in "${CHANGED_SERVICES[@]}"; do
-    echo -e "   docker compose -f docker-compose.prod.yml logs -f $service"
+    echo -e "   docker compose $COMPOSE_FILES logs -f $service"
 done
 echo ""
 
@@ -175,9 +183,9 @@ echo -e "${BLUE}⏳ Running health checks...${NC}"
 sleep 5
 
 for service in "${CHANGED_SERVICES[@]}"; do
-    if docker compose -f docker-compose.prod.yml ps $service | grep -q "healthy"; then
+    if docker compose $COMPOSE_FILES ps $service | grep -q "healthy"; then
         echo -e "${GREEN}   ✓ $service is healthy${NC}"
-    elif docker compose -f docker-compose.prod.yml ps $service | grep -q "Up"; then
+    elif docker compose $COMPOSE_FILES ps $service | grep -q "Up"; then
         echo -e "${YELLOW}   ⏳ $service is starting (no health check yet)${NC}"
     else
         echo -e "${RED}   ✗ $service may have issues${NC}"

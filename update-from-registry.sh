@@ -68,6 +68,10 @@ fi
 # Use provided tag or default
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
+# Export variables for docker-compose
+export IMAGE_TAG=$IMAGE_TAG
+export GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-dvkorolev/mining-stack}"
+
 echo -e "${GREEN}Repository:${NC} $GITHUB_REPOSITORY"
 echo -e "${GREEN}Tag:${NC} $IMAGE_TAG"
 echo ""
@@ -176,7 +180,6 @@ if [ "$BUILD_LOCAL" = true ]; then
     docker compose -f docker-compose.prod.yml build
 else
     echo -e "${BLUE}📥 Pulling latest images from GHCR...${NC}"
-    export IMAGE_TAG=$IMAGE_TAG
     # Pull both compose files together so logging.yml can reference prod.yml services
     docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml pull
 fi
