@@ -75,9 +75,6 @@ services:
       - MINER_CONFIG_PATH=/opt/mining-stack/etc/miners.yaml
       - DATA_DIR=/app/data
       - JOB_RUNNER_URL=http://python-scheduler:8000
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-true}
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
