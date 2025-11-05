@@ -40,7 +40,8 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
       endpoints.push(
         { url: `${protocol}://${miner.ip}/cgi-bin/luci/admin/network/iface_reconnect/lan`, method: 'get', desc: 'Whatsminer reboot (v1)' },
         { url: `${protocol}://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Whatsminer reboot (v2)' },
-        { url: `${protocol}://${miner.ip}/cgi-bin/luci/admin/system/reboot`, method: 'post', desc: 'Whatsminer reboot (v3)' }
+        { url: `${protocol}://${miner.ip}/cgi-bin/luci/admin/system/reboot`, method: 'post', desc: 'Whatsminer system reboot', data: 'token=' },
+        { url: `${protocol}://${miner.ip}/cgi-bin/restart_cgminer.cgi`, method: 'get', desc: 'Whatsminer CGMiner restart' }
       );
     }
     
