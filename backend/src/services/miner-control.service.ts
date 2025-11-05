@@ -35,8 +35,11 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
     
     if (isWhatsminer) {
       // Whatsminer uses HTTP/HTTPS API on port 80/443
+      // Try multiple Whatsminer endpoints (different firmware versions)
       endpoints.push(
-        { url: `${protocol}://${miner.ip}/cgi-bin/luci/admin/network/iface_reconnect/lan`, method: 'get', desc: 'Whatsminer reboot' }
+        { url: `${protocol}://${miner.ip}/cgi-bin/luci/admin/network/iface_reconnect/lan`, method: 'get', desc: 'Whatsminer reboot (v1)' },
+        { url: `${protocol}://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Whatsminer reboot (v2)' },
+        { url: `${protocol}://${miner.ip}/cgi-bin/luci/admin/system/reboot`, method: 'post', desc: 'Whatsminer reboot (v3)' }
       );
     }
     
@@ -284,15 +287,24 @@ export const getMinerPools = async (minerId: string): Promise<{
     }
 
     // Generic CGMiner API (works for many miners including Whatsminer, Antminer, Avalon)
+    // This is the most reliable method for Whatsminer M30S++ models
     methods.push(async () => {
+      // CGMiner API uses a simple JSON-RPC protocol
+      const command = JSON.stringify({ command: 'pools' });
+      
       const response = await axios.post(
         `http://${miner.ip}:4028`,
-        { command: 'pools' },
-        { timeout: 5000 }
+        command,
+        { 
+          timeout: 5000,
+          headers: { 'Content-Type': 'application/json' }
+        }
       );
 
-      if (response.data && response.data.POOLS) {
-        return response.data.POOLS.map((pool: any) => ({
+      const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+      
+      if (data && data.POOLS) {
+        return data.POOLS.map((pool: any) => ({
           url: pool.URL || pool.url || '',
           user: pool.User || pool.user || pool.Worker || '',
           password: '***',
