@@ -4,6 +4,7 @@ import * as net from 'net';
 import { logger } from '../utils/logger';
 import { getMinerById } from '../config/miners.config';
 import type { PoolConfig } from '../config/miners.config';
+import { WhatsMiner, antminerRestart } from '../utils/miner-rebooter';
 
 /**
  * Reboot a single miner via its API
@@ -28,127 +29,55 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
     const username = miner.username || defaultUsername;
     const password = miner.password || defaultPassword;
     
-    // Try miner-specific endpoints first
-    const endpoints = [];
-    
-    // Note: We prioritize process restart over full device reboot (faster, less disruptive)
-    
+    // WhatsMiner: Use tokened TCP API with AES encryption
     if (isWhatsminer) {
-      // MicroBT WhatsMiner: No reliable HTTP CGI endpoint for restart
-      // The official method is tokened TCP API: {"cmd":"restart_btminer","token":"<TOKEN>"}
-      // We'll try this via TCP socket below
-      logger.info(`Whatsminer detected - will use TCP API for restart`);
-    }
-    
-    if (isAntminer) {
-      // Bitmain Antminer: Try CGI reboot (may require session cookie)
-      endpoints.push(
-        { url: `http://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Antminer CGI reboot' }
-      );
-    }
-    
-    // Note: CGMiner/BMMiner restart will be tried via TCP socket below (port 4028)
-
-    for (const endpoint of endpoints) {
       try {
-        logger.info(`Trying ${endpoint.desc} for ${miner.name} (${miner.ip})`);
-        const config: any = {
-          method: endpoint.method as 'get' | 'post',
-          url: endpoint.url,
-          timeout: 5000,
-          auth: {
-            username,
-            password,
-          },
-        };
-        
-        // Add data if provided (for CGMiner API)
-        if ((endpoint as any).data) {
-          config.data = (endpoint as any).data;
-          config.headers = { 'Content-Type': 'application/json' };
-        }
-        
-        await axios(config);
-
-        logger.info(`✓ Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);
-        return { success: true, message: `Reboot command sent to ${miner.name} via ${endpoint.desc}` };
+        logger.info(`Restarting Whatsminer ${miner.name} (${miner.ip}) via tokened API`);
+        const wm = new WhatsMiner(miner.ip, password);
+        const result = await wm.restartBtminer(); // Restart mining software (btminer)
+        logger.info(`✓ Whatsminer ${miner.name} restart successful`, { result });
+        return { success: true, message: `Mining software (btminer) restart command sent to ${miner.name}` };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.debug(`✗ ${endpoint.desc} failed: ${errorMsg}`);
-        continue;
+        logger.error(`✗ Whatsminer restart failed for ${miner.name}: ${errorMsg}`);
+        return { 
+          success: false, 
+          message: `Failed to restart ${miner.name}. ${errorMsg}. Ensure API is enabled in WhatsMinerTool and password is correct.` 
+        };
       }
     }
 
-    // Try CGMiner/BMMiner restart via TCP socket (port 4028)
-    // This works for Antminer (Bitmain), Avalon (Canaan), and Innosilicon
+    // Antminer: Use standard CGMiner restart command
+    if (isAntminer) {
+      try {
+        logger.info(`Restarting Antminer ${miner.name} (${miner.ip}) via CGMiner API`);
+        const result = await antminerRestart(miner.ip);
+        logger.info(`✓ Antminer ${miner.name} restart successful`, { result });
+        return { success: true, message: `Mining software (bmminer) restart command sent to ${miner.name}` };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.error(`✗ Antminer restart failed for ${miner.name}: ${errorMsg}`);
+        return { 
+          success: false, 
+          message: `Failed to restart ${miner.name}. ${errorMsg}. Try restarting manually via web interface at http://${miner.ip}` 
+        };
+      }
+    }
+
+    // Generic miners (Avalon, Innosilicon, etc.): Try standard CGMiner restart
     try {
-      logger.info(`Trying CGMiner/BMMiner restart for ${miner.name} (${miner.ip})`);
-      await new Promise<void>((resolve, reject) => {
-        const client = new net.Socket();
-        const command = JSON.stringify({ command: 'restart' });
-        let responseData = '';
-
-        client.setTimeout(3000);
-
-        client.on('data', (data) => {
-          responseData += data.toString();
-        });
-
-        client.on('end', () => {
-          try {
-            const parsed = JSON.parse(responseData);
-            // Check if command was accepted
-            // Response can be: {"STATUS":"E",...} or {"STATUS":[{"STATUS":"S"}]}
-            const status = parsed.STATUS;
-            const isError = status === 'E' || (Array.isArray(status) && status[0]?.STATUS === 'E');
-            
-            if (!isError) {
-              resolve();
-            } else {
-              const msg = parsed.Msg || status[0]?.Msg || 'Unknown error';
-              reject(new Error(`CGMiner API error: ${msg}`));
-            }
-          } catch (error) {
-            reject(new Error(`Failed to parse CGMiner response: ${error}`));
-          }
-        });
-
-        client.on('timeout', () => {
-          client.destroy();
-          reject(new Error('CGMiner API timeout'));
-        });
-
-        client.on('error', (error) => {
-          reject(error);
-        });
-
-        client.connect(4028, miner.ip, () => {
-          client.write(command);
-        });
-      });
-
-      logger.info(`✓ Miner ${miner.name} restart command sent successfully via CGMiner API`);
-      return { success: true, message: `Mining software restart command sent to ${miner.name} via CGMiner API (port 4028)` };
+      logger.info(`Restarting ${miner.name} (${miner.ip}) via CGMiner API`);
+      const result = await antminerRestart(miner.ip); // Same command works for most miners
+      logger.info(`✓ Miner ${miner.name} restart successful`, { result });
+      return { success: true, message: `Mining software restart command sent to ${miner.name}` };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.debug(`✗ CGMiner API restart failed: ${errorMsg}`);
+      logger.error(`✗ Miner restart failed for ${miner.name}: ${errorMsg}`);
+      return { 
+        success: false, 
+        message: `Failed to restart ${miner.name}. ${errorMsg}. Try restarting manually via miner web interface at http://${miner.ip}` 
+      };
     }
-
-    // Provide specific guidance based on miner type
-    let errorMessage = `Failed to restart ${miner.name}.`;
-    
-    if (isWhatsminer) {
-      errorMessage += ` Whatsminer requires a privileged API token for restart. Please restart manually via web interface at https://${miner.ip} or configure API token in miner settings.`;
-    } else if (isAntminer) {
-      errorMessage += ` Antminer restart via CGMiner API failed. Try restarting manually via web interface at http://${miner.ip}`;
-    } else {
-      errorMessage += ` No compatible API found. Try restarting manually via miner web interface at http://${miner.ip}`;
-    }
-    
-    return { 
-      success: false, 
-      message: errorMessage
-    };
   } catch (error) {
     logger.error(`Error rebooting miner ${minerId}:`, error);
     return { success: false, message: `Error rebooting miner: ${error}` };
