@@ -5,8 +5,8 @@ import crypto from 'crypto';
 
 /** Send one JSON line to TCP:4028, return parsed JSON */
 function sendTcpJson(ip: string, obj: any, timeoutMs = 4000): Promise<any> {
-  const line = JSON.stringify(obj);
-  console.log('[TCP] Sending to', ip, ':', line);
+  const line = JSON.stringify(obj) + '\n'; // C) Always end with newline
+  console.log('[TCP] Sending to', ip, ':', line.slice(0, -1), '(+\\n)');
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
     const chunks: Buffer[] = [];
@@ -133,13 +133,12 @@ export class WhatsMiner {
     const newsalt = msg.newsalt;
     if (!timeStr || !salt || !newsalt) throw new Error(`get_token missing fields: ${JSON.stringify(tok)}`);
 
-    const key = md5CryptHashOnly(this.pw, salt);                    // token
+    const key = md5CryptHashOnly(this.pw, salt);                    // token (22 chars)
     const time4 = String(timeStr).slice(-4);
-    const sign = md5CryptHashOnly(key + time4, newsalt);            // sign
+    const sign = md5CryptHashOnly(key + time4, newsalt);            // sign (22 chars)
     
-    // Try using full md5-crypt output for AES key instead of just hash
-    const fullKey = `$1$${salt}$${key}`;
-    const aesKey = crypto.createHash('sha256').update(fullKey).digest();// 32 bytes
+    // A) AES key from hash-only (22 chars), NOT full $1$SALT$HASH
+    const aesKey = crypto.createHash('sha256').update(key).digest();// 32 bytes
 
     console.log('[WhatsMiner] Token generation:', { 
       time: timeStr, 
@@ -148,7 +147,8 @@ export class WhatsMiner {
       newsalt,
       key,
       sign,
-      fullKey,
+      keyLen: key.length,
+      signLen: sign.length,
       aesKeyHex: aesKey.toString('hex').slice(0, 32) + '...'
     });
 
@@ -161,19 +161,21 @@ export class WhatsMiner {
     }
   }
 
-  /** Encrypted write call: {"enc":1,"data": base64(AES-ECB("token,sign|<api_str>"))} */
+  /** Encrypted write call: {"enc":1,"data": base64(AES-ECB("token,sign|<api_str>\0"))} */
   private async _encCall(apiObj: any): Promise<any> {
     await this._ensureTokenFresh();
 
     const apiStr = JSON.stringify(apiObj);
-    const plainText = `${this.key},${this.sign}|${apiStr}`;
+    // B) Add NUL terminator for C-string parsing on device
+    const plainText = `${this.key},${this.sign}|${apiStr}\x00`;
     const plain = Buffer.from(plainText, 'utf8');
 
     console.log('[WhatsMiner] Encrypting:', {
       apiObj,
       apiStr,
-      plainText,
-      plainTextLen: plainText.length
+      plainText: plainText.slice(0, -1) + '\\x00',
+      plainTextLen: plainText.length,
+      lastCharCode: plainText.charCodeAt(plainText.length - 1)
     });
 
     // AES-256-ECB with PKCS#7 padding (Node applies padding when setAutoPadding(true))
