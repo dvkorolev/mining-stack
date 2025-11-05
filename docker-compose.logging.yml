@@ -99,8 +99,8 @@ services:
       # Promtail will collect logs from containers with this label
       logging: "promtail"
     healthcheck:
-      # Smart health check
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      # Use wget since curl is not available in the backend container
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
