@@ -2,7 +2,6 @@
 'use strict';
 import net from 'net';
 import crypto from 'crypto';
-import { execFileSync } from 'child_process';
 
 /** Send one JSON line to TCP:4028, return parsed JSON */
 function sendTcpJson(ip: string, obj: any, timeoutMs = 4000): Promise<any> {
@@ -29,13 +28,80 @@ function sendTcpJson(ip: string, obj: any, timeoutMs = 4000): Promise<any> {
   });
 }
 
-/** md5-crypt via system OpenSSL (matches `openssl passwd -1 -salt <salt> <pass>`) */
+/** Pure Node.js md5-crypt implementation (compatible with OpenSSL's -1 mode) */
 function md5CryptHashOnly(pass: string, salt: string): string {
-  // Output format: $1$<salt>$<hash>
-  const out = execFileSync('openssl', ['passwd', '-1', '-salt', String(salt), String(pass)], { encoding: 'utf8' }).trim();
-  const parts = out.split('$');
-  if (parts.length < 4) throw new Error(`Unexpected openssl output: ${out}`);
-  return parts[3]; // the <hash> part after $1$<salt>$
+  // MD5-crypt algorithm (used by OpenSSL passwd -1)
+  const passBytes = Buffer.from(pass, 'utf8');
+  const saltBytes = Buffer.from(salt, 'utf8');
+  
+  // Initial hash: MD5(password + salt + password)
+  let hash = crypto.createHash('md5');
+  hash.update(passBytes);
+  hash.update(Buffer.from('$1$', 'utf8'));
+  hash.update(saltBytes);
+  
+  let alt = crypto.createHash('md5');
+  alt.update(passBytes);
+  alt.update(saltBytes);
+  alt.update(passBytes);
+  let altResult = alt.digest();
+  
+  // Add altResult to hash based on password length
+  for (let i = passBytes.length; i > 0; i -= 16) {
+    hash.update(altResult.slice(0, Math.min(16, i)));
+  }
+  
+  // Add password or null bytes based on password bits
+  for (let i = passBytes.length; i > 0; i >>= 1) {
+    if (i & 1) {
+      hash.update(Buffer.from([0]));
+    } else {
+      hash.update(passBytes.slice(0, 1));
+    }
+  }
+  
+  let result = hash.digest();
+  
+  // 1000 rounds of MD5
+  for (let i = 0; i < 1000; i++) {
+    let ctx = crypto.createHash('md5');
+    if (i & 1) {
+      ctx.update(passBytes);
+    } else {
+      ctx.update(result);
+    }
+    if (i % 3) {
+      ctx.update(saltBytes);
+    }
+    if (i % 7) {
+      ctx.update(passBytes);
+    }
+    if (i & 1) {
+      ctx.update(result);
+    } else {
+      ctx.update(passBytes);
+    }
+    result = ctx.digest();
+  }
+  
+  // Base64 encode (custom alphabet for crypt)
+  const b64 = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  const encode = (a: number, b: number, c: number, n: number): string => {
+    let w = (a << 16) | (b << 8) | c;
+    let out = '';
+    for (let i = 0; i < n; i++) {
+      out += b64[w & 0x3f];
+      w >>= 6;
+    }
+    return out;
+  };
+  
+  return encode(result[0], result[6], result[12], 4) +
+         encode(result[1], result[7], result[13], 4) +
+         encode(result[2], result[8], result[14], 4) +
+         encode(result[3], result[9], result[15], 4) +
+         encode(result[4], result[10], result[5], 4) +
+         encode(0, 0, result[11], 2);
 }
 
 /** WhatsMiner tokened client */
