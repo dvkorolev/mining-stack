@@ -35,13 +35,10 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-              - '.github/workflows/build-and-push-smart.yml'
             frontend:
               - 'frontend/**'
-              - '.github/workflows/build-and-push-smart.yml'
             python-scheduler:
               - 'python-scheduler/**'
-              - '.github/workflows/build-and-push-smart.yml'
 
   # Build and push only changed services
   build-backend:
