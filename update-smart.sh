@@ -98,8 +98,11 @@ for service in "${SERVICES[@]}"; do
         continue
     fi
     
-    # Pull latest image
-    docker compose $COMPOSE_FILES pull $service > /dev/null 2>&1
+    # Pull latest image with timeout
+    timeout 60 docker compose $COMPOSE_FILES pull $service > /dev/null 2>&1 || {
+        echo -e "${YELLOW}   ⚠️  Failed to pull $service (timeout or error), assuming no update${NC}"
+        continue
+    }
     
     # Get new image ID
     NEW_IMAGE=$(docker compose $COMPOSE_FILES images -q $service 2>/dev/null || echo "")
