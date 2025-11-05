@@ -28,28 +28,24 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
     const username = miner.username || defaultUsername;
     const password = miner.password || defaultPassword;
     
-    // Determine protocol (HTTP or HTTPS) - default to HTTP for miners
-    const protocol = 'http';
-    
     // Try miner-specific endpoints first
     const endpoints = [];
     
     // Note: We prioritize process restart over full device reboot (faster, less disruptive)
     
     if (isWhatsminer) {
-      // MicroBT WhatsMiner: Try CGMiner restart endpoint first (faster)
-      endpoints.push(
-        { url: `${protocol}://${miner.ip}/cgi-bin/restart_cgminer.cgi`, method: 'get', desc: 'Whatsminer CGMiner restart (HTTP)' }
-      );
-      // Note: Full reboot requires tokened TCP API: {"cmd":"reboot","token":"<TOKEN>"}
+      // MicroBT WhatsMiner: No reliable HTTP CGI endpoint for restart
+      // The official method is tokened TCP API: {"cmd":"restart_btminer","token":"<TOKEN>"}
       // We'll try this via TCP socket below
+      logger.info(`Whatsminer detected - will use TCP API for restart`);
     }
     
-    // Generic fallbacks (work for many miners)
-    endpoints.push(
-      { url: `${protocol}://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Generic CGI reboot' },
-      { url: `${protocol}://${miner.ip}/api/reboot`, method: 'post', desc: 'Generic API reboot' }
-    );
+    if (isAntminer) {
+      // Bitmain Antminer: Try CGI reboot (may require session cookie)
+      endpoints.push(
+        { url: `http://${miner.ip}/cgi-bin/reboot.cgi`, method: 'get', desc: 'Antminer CGI reboot' }
+      );
+    }
     
     // Note: CGMiner/BMMiner restart will be tried via TCP socket below (port 4028)
 
@@ -101,11 +97,15 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
         client.on('end', () => {
           try {
             const parsed = JSON.parse(responseData);
-            // Check if command was accepted (STATUS should not be 'E' for error)
-            if (parsed && parsed.STATUS && parsed.STATUS[0]?.STATUS !== 'E') {
+            // Check if command was accepted
+            // Response can be: {"STATUS":"E",...} or {"STATUS":[{"STATUS":"S"}]}
+            const status = parsed.STATUS;
+            const isError = status === 'E' || (Array.isArray(status) && status[0]?.STATUS === 'E');
+            
+            if (!isError) {
               resolve();
             } else {
-              const msg = parsed.STATUS?.[0]?.Msg || 'Unknown error';
+              const msg = parsed.Msg || status[0]?.Msg || 'Unknown error';
               reject(new Error(`CGMiner API error: ${msg}`));
             }
           } catch (error) {
@@ -134,9 +134,20 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
       logger.debug(`✗ CGMiner API restart failed: ${errorMsg}`);
     }
 
+    // Provide specific guidance based on miner type
+    let errorMessage = `Failed to restart ${miner.name}.`;
+    
+    if (isWhatsminer) {
+      errorMessage += ` Whatsminer requires a privileged API token for restart. Please restart manually via web interface at https://${miner.ip} or configure API token in miner settings.`;
+    } else if (isAntminer) {
+      errorMessage += ` Antminer restart via CGMiner API failed. Try restarting manually via web interface at http://${miner.ip}`;
+    } else {
+      errorMessage += ` No compatible API found. Try restarting manually via miner web interface at http://${miner.ip}`;
+    }
+    
     return { 
       success: false, 
-      message: `Failed to restart ${miner.name} - no compatible API found. Tried ${endpoints.length} HTTP endpoints + CGMiner API. Try restarting manually via miner web interface at http://${miner.ip}` 
+      message: errorMessage
     };
   } catch (error) {
     logger.error(`Error rebooting miner ${minerId}:`, error);
