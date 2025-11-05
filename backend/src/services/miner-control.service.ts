@@ -63,7 +63,7 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
 
     for (const endpoint of endpoints) {
       try {
-        logger.debug(`Trying ${endpoint.desc} for ${miner.name} with credentials from config`);
+        logger.info(`Trying ${endpoint.desc} for ${miner.name} (${miner.ip})`);
         const config: any = {
           method: endpoint.method as 'get' | 'post',
           url: endpoint.url,
@@ -82,64 +82,22 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
         
         await axios(config);
 
-        logger.info(`Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);
-        return { success: true, message: `Reboot command sent to ${miner.name}` };
+        logger.info(`✓ Miner ${miner.name} reboot command sent successfully via ${endpoint.desc}`);
+        return { success: true, message: `Reboot command sent to ${miner.name} via ${endpoint.desc}` };
       } catch (error) {
-        // Try next endpoint
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.debug(`✗ ${endpoint.desc} failed: ${errorMsg}`);
         continue;
       }
     }
 
-    // Try CGMiner API restart as final fallback (TCP socket on port 4028)
-    try {
-      logger.debug(`Trying CGMiner API restart for ${miner.name}`);
-      await new Promise<void>((resolve, reject) => {
-        const client = new net.Socket();
-        const command = JSON.stringify({ command: 'restart' });
-        let responseData = '';
-
-        client.setTimeout(5000);
-
-        client.on('data', (data) => {
-          responseData += data.toString();
-        });
-
-        client.on('end', () => {
-          try {
-            const parsed = JSON.parse(responseData);
-            if (parsed && parsed.STATUS) {
-              resolve();
-            } else {
-              reject(new Error('No response from CGMiner API'));
-            }
-          } catch (error) {
-            reject(new Error(`Failed to parse CGMiner response: ${error}`));
-          }
-        });
-
-        client.on('timeout', () => {
-          client.destroy();
-          reject(new Error('CGMiner API timeout'));
-        });
-
-        client.on('error', (error) => {
-          reject(error);
-        });
-
-        client.connect(4028, miner.ip, () => {
-          client.write(command);
-        });
-      });
-
-      logger.info(`Miner ${miner.name} reboot command sent successfully via CGMiner API`);
-      return { success: true, message: `Reboot command sent to ${miner.name} via CGMiner API` };
-    } catch (error) {
-      logger.debug(`CGMiner API restart failed for ${miner.name}`);
-    }
+    // Note: CGMiner API 'restart' command only restarts mining software, not the device
+    // It also returns "invalid cmd" error for most miners
+    // We rely on HTTP/CGI endpoints above for actual device reboot
 
     return { 
       success: false, 
-      message: `Failed to reboot ${miner.name} - no compatible API found. Try rebooting manually via miner web interface at http://${miner.ip}` 
+      message: `Failed to reboot ${miner.name} - no compatible API found. Tried ${endpoints.length} different endpoints. Try rebooting manually via miner web interface at http://${miner.ip}` 
     };
   } catch (error) {
     logger.error(`Error rebooting miner ${minerId}:`, error);
