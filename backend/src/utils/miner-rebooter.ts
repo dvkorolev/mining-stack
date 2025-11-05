@@ -133,6 +133,15 @@ export class WhatsMiner {
     const sign = md5CryptHashOnly(key + time4, newsalt);            // sign
     const aesKey = crypto.createHash('sha256').update(key).digest();// 32 bytes
 
+    console.log('[WhatsMiner] Token generation:', { 
+      time: timeStr, 
+      time4, 
+      salt: salt.slice(0, 8) + '...', 
+      newsalt: newsalt.slice(0, 8) + '...',
+      keyLen: key.length,
+      signLen: sign.length
+    });
+
     this.key = key; this.sign = sign; this.aesKey = aesKey; this.t0 = Date.now();
   }
 
@@ -147,12 +156,25 @@ export class WhatsMiner {
     await this._ensureTokenFresh();
 
     const apiStr = JSON.stringify(apiObj);
-    const plain = Buffer.from(`${this.key},${this.sign}|${apiStr}`, 'utf8');
+    const plainText = `${this.key},${this.sign}|${apiStr}`;
+    const plain = Buffer.from(plainText, 'utf8');
+
+    console.log('[WhatsMiner] Encrypting:', {
+      apiObj,
+      plainTextLen: plainText.length,
+      plainTextPreview: plainText.slice(0, 50) + '...'
+    });
 
     // AES-256-ECB with PKCS#7 padding (Node applies padding when setAutoPadding(true))
     const cipher = crypto.createCipheriv('aes-256-ecb', this.aesKey!, null);
     cipher.setAutoPadding(true);
     const b64 = Buffer.concat([cipher.update(plain), cipher.final()]).toString('base64');
+
+    console.log('[WhatsMiner] Sending encrypted command:', {
+      enc: 1,
+      dataLen: b64.length,
+      dataPreview: b64.slice(0, 50) + '...'
+    });
 
     const resp = await sendTcpJson(this.ip, { enc: 1, data: b64 }, this.timeoutMs);
 
