@@ -165,13 +165,16 @@ export class WhatsMiner {
   private async _encCall(apiObj: any): Promise<any> {
     await this._ensureTokenFresh();
 
-    const apiStr = JSON.stringify(apiObj);
-    // Try WITHOUT NUL terminator (A + C only)
+    // CRITICAL: Token must be included in BOTH places:
+    // 1. In the prefix before | (for signature verification)
+    // 2. Inside the JSON payload (for command authorization)
+    const apiObjWithToken = { token: this.key, ...apiObj };
+    const apiStr = JSON.stringify(apiObjWithToken);
     const plainText = `${this.key},${this.sign}|${apiStr}`;
     const plain = Buffer.from(plainText, 'utf8');
 
-    console.log('[WhatsMiner] Encrypting (no NUL):', {
-      apiObj,
+    console.log('[WhatsMiner] Encrypting:', {
+      apiObj: apiObjWithToken,
       apiStr,
       plainText,
       plainTextLen: plainText.length
