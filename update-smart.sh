@@ -14,7 +14,7 @@
 set -e
 
 PROJECT_DIR="/opt/mining-stack"
-IMAGE_TAG="${1:-latest}"
+IMAGE_TAG="latest"
 FORCE_UPDATE=false
 SPECIFIC_SERVICE=""
 AUTO_CONFIRM=false
@@ -24,15 +24,21 @@ for arg in "$@"; do
   case $arg in
     --force)
       FORCE_UPDATE=true
-      shift
       ;;
     --service=*)
       SPECIFIC_SERVICE="${arg#*=}"
-      shift
       ;;
     --yes|-y)
       AUTO_CONFIRM=true
-      shift
+      ;;
+    --*)
+      # Skip other flags
+      ;;
+    *)
+      # First non-flag argument is the image tag
+      if [ "$IMAGE_TAG" = "latest" ]; then
+        IMAGE_TAG="$arg"
+      fi
       ;;
   esac
 done
