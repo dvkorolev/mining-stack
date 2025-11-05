@@ -123,18 +123,25 @@ server.listen(PORT, async () => {
     logger.error('Failed to start mining simulation:', error);
   }
 
-  // Auto-initialize Telegram bot if credentials are stored
+  // Auto-initialize Telegram bot if credentials are available
   try {
     const { getDatabase } = require('./services/database.service');
     const { initTelegramBot } = require('./services/telegram.service');
     const db = getDatabase();
     
-    const token = db.getSetting('telegram_bot_token');
-    const chatId = db.getSetting('telegram_chat_id');
+    // Check environment variables first, then database
+    let token = process.env.TELEGRAM_BOT_TOKEN || db.getSetting('telegram_bot_token');
+    let chatId = process.env.TELEGRAM_CHAT_ID || db.getSetting('telegram_chat_id');
     
-    if (token && chatId) {
+    // Check if bot is enabled (default true if token and chatId exist)
+    const enabled = process.env.TELEGRAM_ENABLED !== 'false';
+    
+    if (token && chatId && enabled) {
       initTelegramBot(token, chatId);
-      logger.info('Telegram bot initialized from stored credentials');
+      const source = process.env.TELEGRAM_BOT_TOKEN ? 'environment variables' : 'database';
+      logger.info(`Telegram bot initialized from ${source}`);
+    } else if (!enabled) {
+      logger.info('Telegram bot disabled via TELEGRAM_ENABLED=false');
     }
   } catch (error) {
     logger.warn('Failed to auto-initialize Telegram bot:', error);
