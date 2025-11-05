@@ -166,8 +166,9 @@ export class WhatsMiner {
 
     console.log('[WhatsMiner] Encrypting:', {
       apiObj,
-      plainTextLen: plainText.length,
-      plainTextPreview: plainText.slice(0, 50) + '...'
+      apiStr,
+      plainText,
+      plainTextLen: plainText.length
     });
 
     // AES-256-ECB with PKCS#7 padding (Node applies padding when setAutoPadding(true))
