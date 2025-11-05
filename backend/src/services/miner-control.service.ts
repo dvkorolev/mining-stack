@@ -1,5 +1,6 @@
 // backend/src/services/miner-control.service.ts
 import axios from 'axios';
+import * as net from 'net';
 import { logger } from '../utils/logger';
 import { getMinerById } from '../config/miners.config';
 import type { PoolConfig } from '../config/miners.config';
@@ -58,10 +59,7 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
       { url: `${protocol}://${miner.ip}/reboot`, method: 'post', desc: 'Generic reboot' }
     );
     
-    // CGMiner API reboot (works for most ASIC miners on port 4028)
-    endpoints.push(
-      { url: `${protocol}://${miner.ip}:4028`, method: 'post', data: JSON.stringify({ command: 'restart' }), desc: 'CGMiner API restart' }
-    );
+    // Note: CGMiner API restart will be tried separately below using TCP socket
 
     for (const endpoint of endpoints) {
       try {
@@ -90,6 +88,53 @@ export const rebootMiner = async (minerId: string): Promise<{ success: boolean; 
         // Try next endpoint
         continue;
       }
+    }
+
+    // Try CGMiner API restart as final fallback (TCP socket on port 4028)
+    try {
+      logger.debug(`Trying CGMiner API restart for ${miner.name}`);
+      await new Promise<void>((resolve, reject) => {
+        const client = new net.Socket();
+        const command = JSON.stringify({ command: 'restart' });
+        let responseData = '';
+
+        client.setTimeout(5000);
+
+        client.on('data', (data) => {
+          responseData += data.toString();
+        });
+
+        client.on('end', () => {
+          try {
+            const parsed = JSON.parse(responseData);
+            if (parsed && parsed.STATUS) {
+              resolve();
+            } else {
+              reject(new Error('No response from CGMiner API'));
+            }
+          } catch (error) {
+            reject(new Error(`Failed to parse CGMiner response: ${error}`));
+          }
+        });
+
+        client.on('timeout', () => {
+          client.destroy();
+          reject(new Error('CGMiner API timeout'));
+        });
+
+        client.on('error', (error) => {
+          reject(error);
+        });
+
+        client.connect(4028, miner.ip, () => {
+          client.write(command);
+        });
+      });
+
+      logger.info(`Miner ${miner.name} reboot command sent successfully via CGMiner API`);
+      return { success: true, message: `Reboot command sent to ${miner.name} via CGMiner API` };
+    } catch (error) {
+      logger.debug(`CGMiner API restart failed for ${miner.name}`);
     }
 
     return { 
@@ -304,28 +349,48 @@ export const getMinerPools = async (minerId: string): Promise<{
     // Generic CGMiner API (works for many miners including Whatsminer, Antminer, Avalon)
     // This is the most reliable method for Whatsminer M30S++ models
     methods.push(async () => {
-      // CGMiner API uses a simple JSON-RPC protocol
-      const command = JSON.stringify({ command: 'pools' });
-      
-      const response = await axios.post(
-        `http://${miner.ip}:4028`,
-        command,
-        { 
-          timeout: 5000,
-          headers: { 'Content-Type': 'application/json' }
-        }
-      );
+      return new Promise<PoolConfig[]>((resolve, reject) => {
+        const client = new net.Socket();
+        const command = JSON.stringify({ command: 'pools' });
+        let responseData = '';
 
-      const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-      
-      if (data && data.POOLS) {
-        return data.POOLS.map((pool: any) => ({
-          url: pool.URL || pool.url || '',
-          user: pool.User || pool.user || pool.Worker || '',
-          password: '***',
-        }));
-      }
-      throw new Error('No pool data');
+        client.setTimeout(5000);
+
+        client.on('data', (data) => {
+          responseData += data.toString();
+        });
+
+        client.on('end', () => {
+          try {
+            const parsed = JSON.parse(responseData);
+            if (parsed && parsed.POOLS) {
+              const pools = parsed.POOLS.map((pool: any) => ({
+                url: pool.URL || pool.url || '',
+                user: pool.User || pool.user || pool.Worker || '',
+                password: '***',
+              }));
+              resolve(pools);
+            } else {
+              reject(new Error('No pool data in response'));
+            }
+          } catch (error) {
+            reject(new Error(`Failed to parse CGMiner response: ${error}`));
+          }
+        });
+
+        client.on('timeout', () => {
+          client.destroy();
+          reject(new Error('CGMiner API timeout'));
+        });
+
+        client.on('error', (error) => {
+          reject(error);
+        });
+
+        client.connect(4028, miner.ip, () => {
+          client.write(command);
+        });
+      });
     });
 
     // Try each method
@@ -338,7 +403,8 @@ export const getMinerPools = async (minerId: string): Promise<{
         }
       } catch (error) {
         // Try next method
-        logger.debug(`Pool retrieval method failed for ${miner.name}:`, error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.debug(`Pool retrieval method failed for ${miner.name}: ${errorMsg}`);
         continue;
       }
     }
