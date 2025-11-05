@@ -136,15 +136,20 @@ export class WhatsMiner {
     const key = md5CryptHashOnly(this.pw, salt);                    // token
     const time4 = String(timeStr).slice(-4);
     const sign = md5CryptHashOnly(key + time4, newsalt);            // sign
-    const aesKey = crypto.createHash('sha256').update(key).digest();// 32 bytes
+    
+    // Try using full md5-crypt output for AES key instead of just hash
+    const fullKey = `$1$${salt}$${key}`;
+    const aesKey = crypto.createHash('sha256').update(fullKey).digest();// 32 bytes
 
     console.log('[WhatsMiner] Token generation:', { 
       time: timeStr, 
       time4, 
-      salt: salt.slice(0, 8) + '...', 
-      newsalt: newsalt.slice(0, 8) + '...',
-      keyLen: key.length,
-      signLen: sign.length
+      salt,
+      newsalt,
+      key,
+      sign,
+      fullKey,
+      aesKeyHex: aesKey.toString('hex').slice(0, 32) + '...'
     });
 
     this.key = key; this.sign = sign; this.aesKey = aesKey; this.t0 = Date.now();
