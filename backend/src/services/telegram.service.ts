@@ -152,24 +152,31 @@ const sendOrEditMessage = async (
   text: string,
   keyboard?: any,
   viewType?: string,
-  viewData?: any
+  viewData?: any,
+  messageId?: number  // Optional: specific message ID to edit (from callback query)
 ): Promise<void> => {
   const context = getUserContext(chatId.toString());
   
+  // Use provided messageId or fall back to context
+  const targetMessageId = messageId || context.lastMessageId;
+  
   try {
-    if (context.lastMessageId) {
+    if (targetMessageId) {
       // Try to edit existing message
       await bot?.editMessageText(text, {
         chat_id: chatId,
-        message_id: context.lastMessageId,
+        message_id: targetMessageId,
         parse_mode: 'Markdown',
         reply_markup: keyboard,
       });
       
+      // Update context with this message ID
+      context.lastMessageId = targetMessageId;
+      
       logger.debug('Telegram: Message edited', { 
         service: 'telegram', 
         chatId, 
-        messageId: context.lastMessageId 
+        messageId: targetMessageId 
       });
     } else {
       throw new Error('No message ID to edit');
@@ -539,6 +546,14 @@ const setupCallbackHandlers = (): void => {
 
     const data = query.data;
     if (!data) return;
+
+    // Store the message ID from the callback query for editing
+    const messageId = query.message.message_id;
+    const chatId = query.message.chat.id;
+    
+    // Update user context with this message ID
+    const context = getUserContext(chatId.toString());
+    context.lastMessageId = messageId;
 
     try {
       // Navigation back
