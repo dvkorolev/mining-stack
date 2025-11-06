@@ -547,6 +547,12 @@ const setupCommandHandlers = (): void => {
       return;
     }
 
+    // Clear user context to force fresh main menu (important after deleting messages)
+    const chatIdStr = msg.chat.id.toString();
+    userContexts.delete(chatIdStr);
+    userPaginationState.delete(chatIdStr);
+    
+    // Send fresh main menu (no messageId = always new message)
     await sendMainMenu(msg.chat.id);
   });
 
@@ -1471,13 +1477,26 @@ export const sendAlertNotification = async (alert: any): Promise<void> => {
     ],
   };
 
-  // Send to all authorized chats (as NEW message, not editing)
+  // Send to all authorized chats
+  // Note: Alerts are broadcast notifications, so they create new messages by design.
+  // This is intentional - users need to see each alert as it happens.
+  // For interactive alert viewing, use the "View All Alerts" button.
   for (const chatId of authorizedChatIds) {
     try {
-      await bot.sendMessage(chatId, message, {
-        parse_mode: 'Markdown',
-        reply_markup: keyboard,
-      });
+      const chatIdNum = Number(chatId);
+      if (Number.isNaN(chatIdNum)) {
+        // Non-numeric chat ID, use sendMessage
+        await bot.sendMessage(chatId, message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
+      } else {
+        // Numeric chat ID - send as new message (broadcast alert)
+        await bot.sendMessage(chatIdNum, message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
+      }
       logger.info('Telegram: Alert notification sent', { 
         service: 'telegram', 
         chatId: chatId.substring(0, 4) + '***',
