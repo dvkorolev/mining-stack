@@ -170,7 +170,23 @@ const sendOrEditMessage = async (
         logger.info(`edit failed: no message_id (refresh ignored)`);
         return; // Refresh with no target = no-op
       }
-      throw new Error('No message ID to edit');
+      // No message ID and not refresh = send new message
+      logger.info(`no message_id (sending new)`);
+      const msg = await bot?.sendMessage(chatId, text, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+      if (msg) {
+        context.lastMessageId = msg.message_id;
+        if (viewType) {
+          pushView(chatId.toString(), {
+            type: viewType as any,
+            data: viewData,
+            messageId: msg.message_id,
+          });
+        }
+      }
+      return;
     }
 
     // Try to edit existing message
@@ -201,11 +217,11 @@ const sendOrEditMessage = async (
       }
     }
   } catch (error: any) {
-    // Extract error message from various possible locations
-    const errMsg = error?.response?.body?.description || error?.message || String(error);
+    // Extract error message from various possible locations and normalize
+    const errMsg = (error?.response?.body?.description || error?.message || String(error)).toLowerCase();
     
     // "message is not modified" = no-op (content unchanged)
-    if (errMsg.includes('message is not modified')) {
+    if (errMsg.includes('message is not modified') || errMsg.includes('message not modified')) {
       logger.info(`edit failed: message is not modified (no-op)`);
       // Still update navigation stack
       if (viewType) {
@@ -224,10 +240,14 @@ const sendOrEditMessage = async (
       return;
     }
     
-    // Message not found / can't be edited
+    // Message not found / can't be edited (widen matching)
     const isNotFound = errMsg.includes('message to edit not found') || 
+                       errMsg.includes('message to delete not found') ||
                        errMsg.includes('message can\'t be edited') ||
-                       errMsg.includes('MESSAGE_ID_INVALID');
+                       errMsg.includes('message can\'t be deleted') ||
+                       errMsg.includes('message_id_invalid') ||
+                       errMsg.includes('message is too old') ||
+                       errMsg.includes('message to modify not found');
     
     if (isRefresh) {
       // For refresh: never send new message, just log and return
@@ -604,7 +624,7 @@ const setupCallbackHandlers = (): void => {
     logger.info(`cb.message_id=${messageId}, chatId=${chatId}, action=${data}`);
     
     // Dedupe rapid refresh clicks
-    const isRefreshAction = data === 'action_status' || data === 'action_alerts' || 
+    const isRefreshAction = data === 'action_status' || data === 'action_alerts' || data === 'action_miners' ||
                            data.startsWith('miners_page_') || data.startsWith('miner_');
     
     if (isRefreshAction) {
