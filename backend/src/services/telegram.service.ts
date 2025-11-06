@@ -701,13 +701,41 @@ const setupCallbackHandlers = (): void => {
         const minerName = data.replace('miner_', '');
         await sendMinerDetails(query.message.chat.id, minerName, true, messageId);
       } 
-      // Reboot actions
+      // Reboot actions (2-step inline flow)
+      else if (data.startsWith('reboot_request_')) {
+        const minerName = data.replace('reboot_request_', '');
+        // Step 1: Show confirmation UI (edit in place)
+        const confirmMsg = `
+⚠️ *Reboot Confirmation*
+
+Are you sure you want to reboot *${minerName}*?
+
+This will:
+• Stop mining temporarily
+• Restart the miner device
+• Take 1-2 minutes to come back online
+        `.trim();
+
+        const keyboard = {
+          inline_keyboard: [
+            [
+              { text: '✅ Yes, Reboot', callback_data: `reboot_confirm_${minerName}` },
+              { text: '❌ Cancel', callback_data: `reboot_cancel_${minerName}` },
+            ],
+          ],
+        };
+
+        await sendOrEditMessage(query.message.chat.id, confirmMsg, keyboard, 'miner_details', { minerName, confirm: true }, messageId, true);
+      }
       else if (data.startsWith('reboot_confirm_')) {
         const minerName = data.replace('reboot_confirm_', '');
-        await executeReboot(query.message.chat.id, minerName);
+        // Step 2: Execute reboot (edit in place)
+        await executeReboot(query.message.chat.id, minerName, messageId);
       } 
       else if (data.startsWith('reboot_cancel_')) {
-        await bot?.sendMessage(query.message.chat.id, '❌ Reboot cancelled');
+        const minerName = data.replace('reboot_cancel_', '');
+        // Cancel: go back to miner details (edit in place)
+        await sendMinerDetails(query.message.chat.id, minerName, true, messageId);
       }
       // Pool actions
       else if (data.startsWith('pools_')) {
@@ -1067,7 +1095,7 @@ Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
     const keyboard = {
       inline_keyboard: [
         [
-          { text: '🔄 Reboot Miner', callback_data: `reboot_confirm_${minerName}` },
+          { text: '🔄 Reboot Miner', callback_data: `reboot_request_${minerName}` },
         ],
         [
           { text: '🌊 View Pools', callback_data: `pools_${minerName}` },
@@ -1121,25 +1149,56 @@ const handleRebootRequest = async (chatId: number, minerName: string): Promise<v
 };
 
 /**
- * Execute miner reboot
+ * Execute miner reboot (edit in place)
  */
-const executeReboot = async (chatId: number, minerName: string): Promise<void> => {
+const executeReboot = async (chatId: number, minerName: string, messageId?: number): Promise<void> => {
   try {
     logger.info('Telegram: Executing reboot', { service: 'telegram', chatId, minerName });
-    await bot?.sendMessage(chatId, `🔄 Rebooting ${minerName}...`);
     
+    // Step 1: Show "Rebooting..." (edit in place)
+    const workingMsg = `🔄 *Rebooting ${minerName}...*\n\n⏳ Please wait, this may take 1-2 minutes.`;
+    const workingKeyboard = {
+      inline_keyboard: [
+        [{ text: '⏳ Working...', callback_data: 'noop' }],
+      ],
+    };
+    await sendOrEditMessage(chatId, workingMsg, workingKeyboard, 'miner_details', { minerName, rebooting: true }, messageId, true);
+    
+    // Step 2: Execute reboot
     const result = await rebootMiner(minerName);
     
+    // Step 3: Show result with action buttons (edit in place)
     if (result.success) {
-      await bot?.sendMessage(chatId, `✅ ${result.message}`);
+      const successMsg = `✅ *Reboot Successful*\n\n${result.message}\n\nThe miner should come back online in 1-2 minutes.`;
+      const successKeyboard = {
+        inline_keyboard: [
+          [
+            { text: '🔄 Refresh Miner', callback_data: `miner_${minerName}` },
+            { text: '⛏️ Miners', callback_data: 'action_miners' },
+          ],
+        ],
+      };
+      await sendOrEditMessage(chatId, successMsg, successKeyboard, 'miner_details', { minerName, rebooted: true }, messageId, true);
       logger.info('Telegram: Reboot successful', { service: 'telegram', chatId, minerName });
     } else {
-      await bot?.sendMessage(chatId, `❌ ${result.message}`);
+      const failMsg = `❌ *Reboot Failed*\n\n${result.message}`;
+      const failKeyboard = {
+        inline_keyboard: [
+          [{ text: '⬅️ Back to Miner', callback_data: `miner_${minerName}` }],
+        ],
+      };
+      await sendOrEditMessage(chatId, failMsg, failKeyboard, 'miner_details', { minerName, rebootFailed: true }, messageId, true);
       logger.warn('Telegram: Reboot failed', { service: 'telegram', chatId, minerName, message: result.message });
     }
   } catch (error) {
     logger.error('Telegram: Error executing reboot', { service: 'telegram', chatId, minerName, error });
-    await bot?.sendMessage(chatId, `❌ Error rebooting ${minerName}`);
+    const errorMsg = `❌ *Error Rebooting*\n\nFailed to reboot ${minerName}. Please try again or check the logs.`;
+    const errorKeyboard = {
+      inline_keyboard: [
+        [{ text: '⬅️ Back to Miner', callback_data: `miner_${minerName}` }],
+      ],
+    };
+    await sendOrEditMessage(chatId, errorMsg, errorKeyboard, 'miner_details', { minerName, rebootError: true }, messageId, true);
   }
 };
 
