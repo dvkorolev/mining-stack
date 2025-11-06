@@ -33,6 +33,7 @@
     "@types/better-sqlite3": "^7.6.8",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.13",
+    "@types/express-rate-limit": "^6.0.0",
     "@types/js-yaml": "^4.0.5",
     "@types/morgan": "^1.9.4",
     "@types/node-telegram-bot-api": "^0.64.0",
