@@ -229,6 +229,9 @@ Select a category to learn more:
             { text: '💡 Tips & Tricks', callback_data: 'help_tips' },
             { text: '📖 Full Command List', callback_data: 'help_full' },
           ],
+          [
+            { text: '🏠 Main Menu', callback_data: 'main_menu' },
+          ],
         ],
       };
 
@@ -415,30 +418,31 @@ const setupCommandHandlers = (): void => {
     const welcomeMessage = `
 🎉 *Welcome to Mining Stack Bot!*
 
-Available commands:
-/status - Farm overview
-/miners - List all miners (paginated)
-/miners offline - Show only offline miners
-/miners error - Show only miners with errors
-/find <keyword> - Search miners by name/IP
-/miner <name> - Get specific miner stats
-/reboot <name> - Reboot a miner
-/pools <name> - View miner pool config
-/alerts - View active alerts
-/help - Show this help message
+I'm your mining farm assistant. Use the buttons below to get started, or type /help for all commands.
 
-Use inline buttons for easier navigation!
+💡 *Quick Start:*
+• View farm status and stats
+• Browse and search miners
+• Check active alerts
+• Get help and tips
     `.trim();
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '📊 Farm Status', callback_data: 'action_status' },
+          { text: '⛏️ View Miners', callback_data: 'action_miners' },
+        ],
+        [
+          { text: '🔔 Alerts', callback_data: 'action_alerts' },
+          { text: '❓ Help', callback_data: 'help_main' },
+        ],
+      ],
+    };
 
     await bot?.sendMessage(msg.chat.id, welcomeMessage, {
       parse_mode: 'Markdown',
-      reply_markup: {
-        keyboard: [
-          [{ text: '📊 Status' }, { text: '⛏️ Miners' }],
-          [{ text: '🔔 Alerts' }, { text: '❓ Help' }],
-        ],
-        resize_keyboard: true,
-      },
+      reply_markup: keyboard,
     });
   });
 
@@ -521,26 +525,7 @@ ${isAuthorized(msg.chat.id) ? '✅ You are authorized to use this bot' : '⚠️
     await sendInteractiveHelp(msg.chat.id);
   });
 
-  // Handle keyboard button presses
-  bot.on('message', async (msg) => {
-    if (!isAuthorized(msg.chat.id)) return;
-    if (!msg.text) return;
-
-    switch (msg.text) {
-      case '📊 Status':
-        await sendFarmStatus(msg.chat.id);
-        break;
-      case '⛏️ Miners':
-        await sendMinersList(msg.chat.id, 0, 'all');
-        break;
-      case '🔔 Alerts':
-        await sendActiveAlerts(msg.chat.id);
-        break;
-      case '❓ Help':
-        await sendInteractiveHelp(msg.chat.id);
-        break;
-    }
-  });
+  // No keyboard button handlers needed - using inline buttons only
 };
 
 /**
@@ -627,6 +612,35 @@ const setupCallbackHandlers = (): void => {
       else if (data.startsWith('help_')) {
         const category = data.replace('help_', '');
         await sendInteractiveHelp(query.message.chat.id, category);
+      }
+      // Main menu
+      else if (data === 'main_menu') {
+        const welcomeMessage = `
+🎉 *Welcome to Mining Stack Bot!*
+
+I'm your mining farm assistant. Use the buttons below to get started, or type /help for all commands.
+
+💡 *Quick Start:*
+• View farm status and stats
+• Browse and search miners
+• Check active alerts
+• Get help and tips
+        `.trim();
+
+        const keyboard = {
+          inline_keyboard: [
+            [
+              { text: '📊 Farm Status', callback_data: 'action_status' },
+              { text: '⛏️ View Miners', callback_data: 'action_miners' },
+            ],
+            [
+              { text: '🔔 Alerts', callback_data: 'action_alerts' },
+              { text: '❓ Help', callback_data: 'help_main' },
+            ],
+          ],
+        };
+
+        await sendOrEditMessage(query.message.chat.id, welcomeMessage, keyboard, 'status');
       }
 
       // Answer callback query to remove loading state
