@@ -43,6 +43,7 @@ const userContexts = new Map<string, UserContext>();
 const userPaginationState = new Map<string, PaginationState>();
 const sentAlertIds = new Set<string>(); // Track sent alert notifications
 const lastRefreshTime = new Map<string, number>(); // Dedupe rapid refresh clicks
+const alertMessageIds = new Map<string, number>(); // Track alert message per chat for updates
 const MINERS_PER_PAGE = 10;
 const REFRESH_DEBOUNCE_MS = 1000; // Ignore refresh within 1s
 
@@ -778,6 +779,10 @@ This will:
       else if (data === 'action_alerts') {
         await sendActiveAlerts(query.message.chat.id, true, messageId);
       }
+      else if (data === 'refresh_alerts') {
+        // Refresh the consolidated alert message
+        await updateConsolidatedAlertMessage();
+      }
       else if (data === 'miners_list') {
         await sendMinersList(query.message.chat.id, 0, 'all');
       }
@@ -1425,8 +1430,8 @@ const sendMessageToChat = async (chatId: string, message: string, options?: any)
 };
 
 /**
- * Send alert notification to all authorized users
- * Only sends if alert hasn't been sent before (based on alert ID)
+ * Send consolidated alert notification to all authorized users
+ * Updates a single message with all active alerts instead of creating new messages
  */
 export const sendAlertNotification = async (alert: any): Promise<void> => {
   if (!bot || !isEnabled || authorizedChatIds.size === 0) {
@@ -1450,67 +1455,152 @@ export const sendAlertNotification = async (alert: any): Promise<void> => {
     idsArray.slice(0, sentAlertIds.size - 1000).forEach(id => sentAlertIds.delete(id));
   }
 
-  // Format alert message
-  const severityEmoji = alert.severity === 'critical' ? '🚨' : 
-                       alert.severity === 'warning' ? '⚠️' : 'ℹ️';
+  // Update consolidated alert message for all users
+  await updateConsolidatedAlertMessage();
+};
+
+/**
+ * Update consolidated alert message with all active alerts
+ * This keeps a single message in the chat that shows all current alerts
+ */
+const updateConsolidatedAlertMessage = async (): Promise<void> => {
+  if (!bot || !isEnabled) return;
+
+  // Get active alerts from alert service
+  const { getActiveAlerts } = require('./alert.service');
+  const activeAlerts = getActiveAlerts();
+
+  // Group alerts by severity
+  const criticalAlerts = activeAlerts.filter((a: any) => a.severity === 'critical');
+  const warningAlerts = activeAlerts.filter((a: any) => a.severity === 'warning');
+  const infoAlerts = activeAlerts.filter((a: any) => a.severity === 'info');
+
+  // Build consolidated message
+  let message = '';
   
-  let message = `${severityEmoji} *${alert.severity.toUpperCase()} ALERT*\n\n`;
-  message += `${alert.summary}\n`;
-  
-  if (alert.miner) {
-    message += `\n🖥️ Miner: \`${alert.miner}\``;
+  if (activeAlerts.length === 0) {
+    message = '✅ *No Active Alerts*\n\nAll systems operating normally.';
+  } else {
+    message = `🔔 *Active Alerts (${activeAlerts.length})*\n\n`;
+    
+    if (criticalAlerts.length > 0) {
+      message += `🚨 *CRITICAL (${criticalAlerts.length})*\n`;
+      criticalAlerts.slice(0, 5).forEach((alert: any) => {
+        const timeAgo = getTimeAgo(alert.timestamp);
+        message += `  • ${alert.miner || 'Farm'}: ${alert.summary} _(${timeAgo})_\n`;
+      });
+      if (criticalAlerts.length > 5) {
+        message += `  • _...and ${criticalAlerts.length - 5} more_\n`;
+      }
+      message += '\n';
+    }
+    
+    if (warningAlerts.length > 0) {
+      message += `⚠️  *WARNING (${warningAlerts.length})*\n`;
+      warningAlerts.slice(0, 5).forEach((alert: any) => {
+        const timeAgo = getTimeAgo(alert.timestamp);
+        message += `  • ${alert.miner || 'Farm'}: ${alert.summary} _(${timeAgo})_\n`;
+      });
+      if (warningAlerts.length > 5) {
+        message += `  • _...and ${warningAlerts.length - 5} more_\n`;
+      }
+      message += '\n';
+    }
+    
+    if (infoAlerts.length > 0 && infoAlerts.length <= 3) {
+      message += `ℹ️  *INFO (${infoAlerts.length})*\n`;
+      infoAlerts.forEach((alert: any) => {
+        const timeAgo = getTimeAgo(alert.timestamp);
+        message += `  • ${alert.miner || 'Farm'}: ${alert.summary} _(${timeAgo})_\n`;
+      });
+    }
   }
-  
-  if (alert.details) {
-    message += `\n📝 ${alert.details}`;
-  }
-  
-  message += `\n\n🕐 ${new Date(alert.timestamp).toLocaleString()}`;
 
   // Add action buttons
   const keyboard = {
     inline_keyboard: [
       [
-        { text: '🔔 View All Alerts', callback_data: 'action_alerts' },
+        { text: '🔄 Refresh', callback_data: 'refresh_alerts' },
+        { text: '🔔 View All', callback_data: 'action_alerts' },
+      ],
+      [
         { text: '📊 Farm Status', callback_data: 'action_status' },
       ],
     ],
   };
 
-  // Send to all authorized chats
-  // Note: Alerts are broadcast notifications, so they create new messages by design.
-  // This is intentional - users need to see each alert as it happens.
-  // For interactive alert viewing, use the "View All Alerts" button.
+  // Update or create alert message for each chat
   for (const chatId of authorizedChatIds) {
     try {
       const chatIdNum = Number(chatId);
-      if (Number.isNaN(chatIdNum)) {
-        // Non-numeric chat ID, use sendMessage
-        await bot.sendMessage(chatId, message, {
+      if (Number.isNaN(chatIdNum)) continue;
+
+      const existingMessageId = alertMessageIds.get(chatId);
+      
+      if (existingMessageId) {
+        // Try to edit existing message
+        try {
+          await bot.editMessageText(message, {
+            chat_id: chatIdNum,
+            message_id: existingMessageId,
+            parse_mode: 'Markdown',
+            reply_markup: keyboard,
+          });
+          logger.info('Telegram: Consolidated alert message updated', { 
+            service: 'telegram', 
+            chatId: chatId.substring(0, 4) + '***',
+            alertCount: activeAlerts.length
+          });
+        } catch (editError: any) {
+          // Message not found or too old, send new one
+          const errMsg = (editError?.response?.body?.description || editError?.message || '').toLowerCase();
+          if (errMsg.includes('message') && (errMsg.includes('not found') || errMsg.includes('too old'))) {
+            const msg = await bot.sendMessage(chatIdNum, message, {
+              parse_mode: 'Markdown',
+              reply_markup: keyboard,
+            });
+            alertMessageIds.set(chatId, msg.message_id);
+            logger.info('Telegram: New consolidated alert message sent', { 
+              service: 'telegram', 
+              chatId: chatId.substring(0, 4) + '***'
+            });
+          }
+        }
+      } else {
+        // No existing message, send new one
+        const msg = await bot.sendMessage(chatIdNum, message, {
           parse_mode: 'Markdown',
           reply_markup: keyboard,
         });
-      } else {
-        // Numeric chat ID - send as new message (broadcast alert)
-        await bot.sendMessage(chatIdNum, message, {
-          parse_mode: 'Markdown',
-          reply_markup: keyboard,
+        alertMessageIds.set(chatId, msg.message_id);
+        logger.info('Telegram: Consolidated alert message created', { 
+          service: 'telegram', 
+          chatId: chatId.substring(0, 4) + '***',
+          alertCount: activeAlerts.length
         });
       }
-      logger.info('Telegram: Alert notification sent', { 
-        service: 'telegram', 
-        chatId: chatId.substring(0, 4) + '***',
-        severity: alert.severity,
-        type: alert.type
-      });
     } catch (error) {
-      logger.error('Telegram: Error sending alert notification', { 
+      logger.error('Telegram: Error updating consolidated alert message', { 
         service: 'telegram', 
         chatId, 
         error 
       });
     }
   }
+};
+
+/**
+ * Get human-readable time ago string
+ */
+const getTimeAgo = (timestamp: number): string => {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  
+  if (seconds < 60) return 'just now';
+  if (seconds < 120) return '1m ago';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 7200) return '1h ago';
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 };
 
 /**
