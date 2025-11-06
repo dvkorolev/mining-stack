@@ -75,17 +75,32 @@ export const initTelegramBot = (token: string, chatIds: string | string[]): void
     setupCallbackHandlers();
 
     // Send startup main menu to all authorized users
+    const startupTasks: Promise<void>[] = [];
     for (const chatId of authorizedChatIds) {
       const idNum = Number(chatId);
       if (!Number.isNaN(idNum)) {
-        sendMainMenu(idNum).catch((e) =>
-          logger.warn('Startup main menu failed', { service: 'telegram', chatId, error: e?.message || String(e) })
+        startupTasks.push(
+          sendMainMenu(idNum).catch((e) => {
+            logger.warn('Startup main menu failed', { service: 'telegram', chatId, error: e?.message || String(e) });
+          })
         );
       } else {
-        sendMessageToChat(chatId, '🚀 Mining Stack Bot is online and ready!');
+        startupTasks.push(
+          sendMessageToChat(chatId, '🚀 Mining Stack Bot is online and ready!').catch((e: any) => {
+            logger.warn('Startup notification failed', { service: 'telegram', chatId, error: e?.message || String(e) });
+          })
+        );
       }
     }
-    logger.info('Telegram startup menus sent', { service: 'telegram', count: authorizedChatIds.size });
+
+    Promise.allSettled(startupTasks).then((results) => {
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      logger.info('Telegram startup menus processed', {
+        service: 'telegram',
+        count: authorizedChatIds.size,
+        failed,
+      });
+    });
   } catch (error) {
     logger.error('Failed to initialize Telegram bot:', { service: 'telegram', error });
     isEnabled = false;
@@ -670,22 +685,27 @@ const setupCallbackHandlers = (): void => {
           // Restore previous view based on type
           switch (previousView.type) {
             case 'status':
-              await sendFarmStatus(query.message.chat.id);
+              await sendFarmStatus(query.message.chat.id, true, messageId);
               break;
             case 'miners':
               const minerData = previousView.data || { page: 0, filter: 'all' };
-              await sendMinersList(query.message.chat.id, minerData.page, minerData.filter);
+              await sendMinersList(query.message.chat.id, minerData.page, minerData.filter, true, messageId);
               break;
             case 'miner_details':
               if (previousView.data?.minerName) {
-                await sendMinerDetails(query.message.chat.id, previousView.data.minerName);
+                await sendMinerDetails(query.message.chat.id, previousView.data.minerName, true, messageId);
               }
               break;
             case 'alerts':
-              await sendActiveAlerts(query.message.chat.id);
+              await sendActiveAlerts(query.message.chat.id, true, messageId);
+              break;
+            case 'pools':
+              if (previousView.data?.minerName) {
+                await sendMinerPools(query.message.chat.id, previousView.data.minerName, true, messageId);
+              }
               break;
             default:
-              await sendFarmStatus(query.message.chat.id);
+              await sendMainMenu(query.message.chat.id, true, messageId);
           }
         }
       }
@@ -740,7 +760,7 @@ This will:
       // Pool actions
       else if (data.startsWith('pools_')) {
         const minerName = data.replace('pools_', '');
-        await sendMinerPools(query.message.chat.id, minerName);
+        await sendMinerPools(query.message.chat.id, minerName, true, messageId);
       }
       // Quick actions (refresh = true, use callback message ID)
       else if (data === 'action_status') {
@@ -1205,12 +1225,14 @@ const executeReboot = async (chatId: number, minerName: string, messageId?: numb
 /**
  * Send miner pool configuration
  */
-const sendMinerPools = async (chatId: number, minerName: string): Promise<void> => {
+const sendMinerPools = async (chatId: number, minerName: string, isRefresh: boolean = false, messageId?: number): Promise<void> => {
   try {
     logger.info('Telegram: Fetching pool configuration', { service: 'telegram', chatId, minerName });
     const miner = getMinerById(minerName);
     if (!miner) {
-      await bot?.sendMessage(chatId, `❌ Miner "${minerName}" not found`);
+      await sendOrEditMessage(chatId, `❌ Miner "${minerName}" not found`, {
+        inline_keyboard: [[{ text: '⬅️ Back to Miners', callback_data: 'miners_list' }]],
+      }, 'pools', { minerName, error: true }, messageId, isRefresh);
       return;
     }
 
@@ -1229,7 +1251,7 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
         ],
       };
       
-      await sendOrEditMessage(chatId, errorMessage, keyboard, 'pools', { minerName, error: true });
+      await sendOrEditMessage(chatId, errorMessage, keyboard, 'pools', { minerName, error: true }, messageId, isRefresh);
       return;
     }
 
@@ -1254,11 +1276,14 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
       ],
     };
 
-    await sendOrEditMessage(chatId, message, keyboard, 'pools', { minerName });
+    await sendOrEditMessage(chatId, message, keyboard, 'pools', { minerName }, messageId, isRefresh);
     logger.info('Telegram: Pool configuration sent', { service: 'telegram', chatId, minerName, poolCount: result.pools!.length });
   } catch (error) {
     logger.error('Telegram: Error sending pool configuration', { service: 'telegram', chatId, minerName, error });
-    await bot?.sendMessage(chatId, `❌ Error fetching pool configuration for "${minerName}"`);
+    const errorMsg = `❌ Error fetching pool configuration for "${minerName}"`;
+    await sendOrEditMessage(chatId, errorMsg, {
+      inline_keyboard: [[{ text: '⬅️ Back to Miner', callback_data: `miner_${minerName}` }]],
+    }, 'pools', { minerName, error: true }, messageId, isRefresh);
   }
 };
 
