@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { logger } from '../utils/logger';
+import { cacheMiddleware } from '../services/cache.service';
 import { 
   getMiningStats, 
   getMinerStats,
@@ -36,8 +37,8 @@ import {
 
 const router = Router();
 
-// Get current mining stats
-router.get('/mining/stats', async (req, res, next) => {
+// Get current mining stats (cached for 5 seconds)
+router.get('/mining/stats', cacheMiddleware(5), async (req, res, next) => {
   try {
     const stats = getMiningStats();
     res.json(stats);
@@ -355,8 +356,8 @@ router.post('/alerts/webhook', async (req, res, next) => {
   }
 });
 
-// Get active alerts
-router.get('/alerts/active', async (req, res, next) => {
+// Get active alerts (cached for 3 seconds)
+router.get('/alerts/active', cacheMiddleware(3), async (req, res, next) => {
   try {
     const alerts = getActiveAlerts();
     res.json(alerts);
@@ -365,8 +366,8 @@ router.get('/alerts/active', async (req, res, next) => {
   }
 });
 
-// Get alert history
-router.get('/alerts/history', async (req, res, next) => {
+// Get alert history (cached for 10 seconds)
+router.get('/alerts/history', cacheMiddleware(10), async (req, res, next) => {
   try {
     const { limit = 100 } = req.query;
     const alerts = getAlertHistory(parseInt(limit as string, 10));
@@ -376,8 +377,8 @@ router.get('/alerts/history', async (req, res, next) => {
   }
 });
 
-// Get alerts for specific miner
-router.get('/alerts/miner/:minerId', async (req, res, next) => {
+// Get alerts for specific miner (cached for 5 seconds)
+router.get('/alerts/miner/:minerId', cacheMiddleware(5), async (req, res, next) => {
   try {
     const { minerId } = req.params;
     const alerts = getMinerAlerts(minerId);

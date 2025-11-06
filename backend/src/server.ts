@@ -3,6 +3,7 @@ import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import miningRoutes from './routes/mining.routes';
 import poolsRoutes from './routes/pools.routes';
@@ -41,6 +42,7 @@ const strictLimiter = rateLimit({
 // Middleware
 app.use(helmet());
 app.use(cors());
+app.use(compression()); // Compress responses
 app.use(express.json());
 app.use(morgan('dev'));
 

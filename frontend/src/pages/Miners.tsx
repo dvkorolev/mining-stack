@@ -35,6 +35,7 @@ import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAP
 import { useNotification } from '../context/NotificationContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import MinerCardList from '../components/MinerCardList';
+import VirtualizedMinerTable from '../components/VirtualizedMinerTable';
 
 interface MinerError {
   code: string;
@@ -324,8 +325,16 @@ const Miners: React.FC = () => {
           onReboot={handleRebootMiner}
           onEdit={(miner) => handleOpenDialog(miner as any)}
         />
+      ) : miners.length > 50 ? (
+        /* Desktop View: Virtualized Table for large lists (50+ miners) */
+        <VirtualizedMinerTable
+          miners={miners}
+          onReboot={handleRebootMiner}
+          onEdit={(miner) => handleOpenDialog(miner)}
+          onDelete={handleDeleteMiner}
+        />
       ) : (
-        /* Desktop View: Table */
+        /* Desktop View: Regular Table for small lists */
         <Paper>
           <TableContainer>
             <Table>
