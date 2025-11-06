@@ -29,6 +29,8 @@ import WarningIcon from '@mui/icons-material/Warning';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectMiners, setMinerRebooting } from '../features/mining/miningSlice';
 import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
@@ -84,6 +86,8 @@ const Miners: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingMiner, setEditingMiner] = useState<Miner | null>(null);
   const [selectedMiners, setSelectedMiners] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'hashrate' | 'temperature' | 'errors'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [formData, setFormData] = useState({
     name: '',
     ip: '',
@@ -308,6 +312,52 @@ const Miners: React.FC = () => {
     }
   };
 
+  // Handle sorting
+  const handleSort = (column: 'name' | 'status' | 'hashrate' | 'temperature' | 'errors') => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+  };
+
+  // Sort miners
+  const sortedMiners = [...miners].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+
+    switch (sortBy) {
+      case 'name':
+        aValue = a.name.toLowerCase();
+        bValue = b.name.toLowerCase();
+        break;
+      case 'status':
+        const statusOrder = { online: 1, error: 2, offline: 3 };
+        aValue = statusOrder[a.status] || 4;
+        bValue = statusOrder[b.status] || 4;
+        break;
+      case 'hashrate':
+        aValue = a.currentHashrate || 0;
+        bValue = b.currentHashrate || 0;
+        break;
+      case 'temperature':
+        aValue = a.hardware?.temperature || 0;
+        bValue = b.hardware?.temperature || 0;
+        break;
+      case 'errors':
+        aValue = a.errorCount || 0;
+        bValue = b.errorCount || 0;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+    if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   if (loading && miners.length === 0) {
     return (
       <Box>
@@ -374,8 +424,28 @@ const Miners: React.FC = () => {
                     </IconButton>
                   </Tooltip>
                 </TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Name</TableCell>
+                <TableCell 
+                  onClick={() => handleSort('status')}
+                  sx={{ cursor: 'pointer', userSelect: 'none' }}
+                >
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    Status
+                    {sortBy === 'status' && (
+                      sortOrder === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />
+                    )}
+                  </Box>
+                </TableCell>
+                <TableCell 
+                  onClick={() => handleSort('name')}
+                  sx={{ cursor: 'pointer', userSelect: 'none' }}
+                >
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    Name
+                    {sortBy === 'name' && (
+                      sortOrder === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />
+                    )}
+                  </Box>
+                </TableCell>
                 <TableCell>IP Address</TableCell>
                 <TableCell>Model</TableCell>
                 <TableCell>Alias</TableCell>
@@ -384,7 +454,7 @@ const Miners: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {miners.length === 0 ? (
+              {sortedMiners.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} align="center">
                     <Typography color="textSecondary" sx={{ py: 4 }}>
@@ -393,7 +463,7 @@ const Miners: React.FC = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                miners.map((miner) => (
+                sortedMiners.map((miner) => (
                   <TableRow key={miner.minerId} selected={selectedMiners.includes(miner.minerId)}>
                     <TableCell padding="checkbox">
                       <IconButton
