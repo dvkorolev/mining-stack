@@ -862,7 +862,18 @@ const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 
 
     if (filteredMiners.length === 0) {
       const filterText = filter === 'all' ? '' : ` with status "${filter}"`;
-      await bot?.sendMessage(chatId, `⚠️ No miners found${filterText}`);
+      const emptyMessage = `⚠️ *No Miners Found*\n\n${filterText ? `No miners ${filterText}.` : 'No miners configured.'}\n\n💡 Try a different filter or check your miner configuration.`;
+      
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '🔄 Show All', callback_data: 'miners_page_0_all' },
+            { text: '📊 Farm Status', callback_data: 'action_status' },
+          ],
+        ],
+      };
+      
+      await sendOrEditMessage(chatId, emptyMessage, keyboard, 'miners', { page: 0, filter }, messageId, isRefresh);
       return;
     }
 
@@ -1003,7 +1014,18 @@ const searchMiners = async (chatId: number, keyword: string): Promise<void> => {
     );
 
     if (matchingMiners.length === 0) {
-      await bot?.sendMessage(chatId, `🔍 No miners found matching "${keyword}"`);
+      const emptyMessage = `🔍 *Search Results*\n\nNo miners found matching "${keyword}".\n\n💡 Try a different search term or browse all miners.`;
+      
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '⛏️ View All Miners', callback_data: 'action_miners' },
+            { text: '📊 Farm Status', callback_data: 'action_status' },
+          ],
+        ],
+      };
+      
+      await sendOrEditMessage(chatId, emptyMessage, keyboard, 'miners', { search: keyword });
       return;
     }
 
