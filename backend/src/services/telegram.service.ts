@@ -20,6 +20,14 @@ let bot: TelegramBot | null = null;
 let isEnabled = false;
 let authorizedChatIds: Set<string> = new Set();
 
+// Pagination state for each user
+interface PaginationState {
+  page: number;
+  filter?: 'all' | 'online' | 'offline' | 'error';
+}
+const userPaginationState = new Map<string, PaginationState>();
+const MINERS_PER_PAGE = 10;
+
 /**
  * Initialize Telegram bot
  */
@@ -95,7 +103,10 @@ const setupCommandHandlers = (): void => {
 
 Available commands:
 /status - Farm overview
-/miners - List all miners
+/miners - List all miners (paginated)
+/miners offline - Show only offline miners
+/miners error - Show only miners with errors
+/find <keyword> - Search miners by name/IP
 /miner <name> - Get specific miner stats
 /reboot <name> - Reboot a miner
 /pools <name> - View miner pool config
@@ -123,10 +134,20 @@ Use inline buttons for easier navigation!
     await sendFarmStatus(msg.chat.id);
   });
 
-  // /miners - List all miners
-  bot.onText(/\/miners/, async (msg) => {
+  // /miners - List all miners (with optional filter)
+  bot.onText(/\/miners(?:\s+(offline|error|online))?/, async (msg, match) => {
     if (!isAuthorized(msg.chat.id)) return;
-    await sendMinersList(msg.chat.id);
+    const filter = match?.[1] as 'offline' | 'error' | 'online' | undefined;
+    await sendMinersList(msg.chat.id, 0, filter || 'all');
+  });
+
+  // /find <keyword> - Search miners
+  bot.onText(/\/find (.+)/, async (msg, match) => {
+    if (!isAuthorized(msg.chat.id)) return;
+    const keyword = match?.[1];
+    if (keyword) {
+      await searchMiners(msg.chat.id, keyword);
+    }
   });
 
   // /miner <name> - Specific miner stats
@@ -189,7 +210,14 @@ ${isAuthorized(msg.chat.id) ? '✅ You are authorized to use this bot' : '⚠️
 
 *Farm Management:*
 /status - Overall farm statistics
-/miners - List all configured miners
+/miners - List all miners (paginated)
+/miners offline - Show only offline miners
+/miners error - Show only miners with errors
+/miners online - Show only online miners
+
+*Miner Explorer:*
+/find <keyword> - Search by name, alias, or IP
+  Example: \`/find 192.168\` or \`/find rig-1\`
 
 *Miner Control:*
 /miner <name> - Detailed stats for a miner
@@ -199,11 +227,21 @@ ${isAuthorized(msg.chat.id) ? '✅ You are authorized to use this bot' : '⚠️
 *Alerts:*
 /alerts - View active alerts
 
+*Other:*
+/whoami - Get your chat ID
+/help - Show this help message
+
+*Navigation Tips:*
+• Use ⬅️ Previous / Next ➡️ buttons to browse pages
+• Use filter buttons (📋 All, ⚫ Offline, 🔴 Error) to filter miners
+• Click on any miner name to see detailed stats
+• Use keyboard buttons at bottom for quick access
+
 *Examples:*
 \`/miner miner-1\`
 \`/reboot miner-192-168-1-100\`
-
-💡 Tip: Use the keyboard buttons for quick access!
+\`/find 192.168.1\`
+\`/miners offline\`
     `.trim();
 
     await bot?.sendMessage(msg.chat.id, helpMessage, { parse_mode: 'Markdown' });
@@ -244,8 +282,15 @@ const setupCallbackHandlers = (): void => {
     if (!data) return;
 
     try {
+      // Pagination for miners list
+      if (data.startsWith('miners_page_')) {
+        const parts = data.replace('miners_page_', '').split('_');
+        const page = parseInt(parts[0], 10);
+        const filter = (parts[1] || 'all') as 'all' | 'online' | 'offline' | 'error';
+        await sendMinersList(query.message.chat.id, page, filter);
+      }
       // Miner selection
-      if (data.startsWith('miner_')) {
+      else if (data.startsWith('miner_')) {
         const minerName = data.replace('miner_', '');
         await sendMinerDetails(query.message.chat.id, minerName);
       } 
@@ -267,13 +312,13 @@ const setupCallbackHandlers = (): void => {
         await sendFarmStatus(query.message.chat.id);
       }
       else if (data === 'action_miners') {
-        await sendMinersList(query.message.chat.id);
+        await sendMinersList(query.message.chat.id, 0, 'all');
       }
       else if (data === 'action_alerts') {
         await sendActiveAlerts(query.message.chat.id);
       }
       else if (data === 'miners_list') {
-        await sendMinersList(query.message.chat.id);
+        await sendMinersList(query.message.chat.id, 0, 'all');
       }
 
       // Answer callback query to remove loading state
@@ -329,36 +374,70 @@ const sendFarmStatus = async (chatId: number): Promise<void> => {
 };
 
 /**
- * Send list of all miners with inline buttons
+ * Send list of all miners with pagination and filtering
  */
-const sendMinersList = async (chatId: number): Promise<void> => {
+const sendMinersList = async (
+  chatId: number, 
+  page: number = 0, 
+  filter: 'all' | 'online' | 'offline' | 'error' = 'all'
+): Promise<void> => {
   try {
-    logger.info('Telegram: Sending miners list', { service: 'telegram', chatId });
-    const miners = getMiners();
+    logger.info('Telegram: Sending miners list', { service: 'telegram', chatId, page, filter });
+    const allMiners = getMiners();
     const stats = getMiningStats();
 
-    if (miners.length === 0) {
+    if (allMiners.length === 0) {
       await bot?.sendMessage(chatId, '⚠️ No miners configured');
       return;
     }
 
+    // Filter miners based on status
+    let filteredMiners = allMiners;
+    if (filter !== 'all') {
+      filteredMiners = allMiners.filter(miner => {
+        const minerStats = stats.miners.find(m => m.minerId === miner.name);
+        return minerStats?.status === filter;
+      });
+    }
+
+    if (filteredMiners.length === 0) {
+      const filterText = filter === 'all' ? '' : ` with status "${filter}"`;
+      await bot?.sendMessage(chatId, `⚠️ No miners found${filterText}`);
+      return;
+    }
+
+    // Store pagination state
+    userPaginationState.set(chatId.toString(), { page, filter });
+
+    // Calculate pagination
+    const totalPages = Math.ceil(filteredMiners.length / MINERS_PER_PAGE);
+    const currentPage = Math.max(0, Math.min(page, totalPages - 1));
+    const startIdx = currentPage * MINERS_PER_PAGE;
+    const endIdx = Math.min(startIdx + MINERS_PER_PAGE, filteredMiners.length);
+    const minersToShow = filteredMiners.slice(startIdx, endIdx);
+
     // Summary overview
     const onlineCount = stats.miners.filter(m => m.status === 'online').length;
-    const offlineCount = miners.length - onlineCount;
+    const offlineCount = allMiners.length - onlineCount;
+    const errorCount = stats.miners.filter(m => m.status === 'error').length;
     const totalHashrate = stats.totalHashrate.toFixed(2);
 
-    let message = '⛏️ *Miners Overview*\n\n';
-    message += `📊 Total: ${miners.length} miners\n`;
-    message += `🟢 Online: ${onlineCount} | ⚫ Offline: ${offlineCount}\n`;
+    const filterEmoji = filter === 'offline' ? '⚫' : filter === 'error' ? '🔴' : filter === 'online' ? '🟢' : '⛏️';
+    const filterText = filter === 'all' ? 'All Miners' : `${filter.charAt(0).toUpperCase() + filter.slice(1)} Miners`;
+
+    let message = `${filterEmoji} *${filterText}*\n\n`;
+    message += `📊 Total: ${allMiners.length} miners\n`;
+    message += `🟢 Online: ${onlineCount} | 🔴 Error: ${errorCount} | ⚫ Offline: ${offlineCount}\n`;
     message += `⚡ Total Hashrate: ${totalHashrate} TH/s\n\n`;
+    
+    if (filter !== 'all') {
+      message += `Showing ${filteredMiners.length} ${filter} miner${filteredMiners.length !== 1 ? 's' : ''}\n`;
+    }
+    
+    message += `📄 Page ${currentPage + 1}/${totalPages} (${startIdx + 1}-${endIdx} of ${filteredMiners.length})\n\n`;
     message += '💡 _Select a miner below for details_';
 
-    // Create inline keyboard with 2 miners per row for better layout
-    // Telegram limits: max 100 buttons total, max 8 buttons per row
-    // We'll show up to 40 miners (20 rows x 2 buttons) to stay well within limits
-    const maxMinersToShow = 40;
-    const minersToShow = miners.slice(0, maxMinersToShow);
-    
+    // Create inline keyboard with 2 miners per row
     const minerButtons: any[] = [];
     for (let i = 0; i < minersToShow.length; i += 2) {
       const row = [];
@@ -387,15 +466,43 @@ const sendMinersList = async (chatId: number): Promise<void> => {
 
       minerButtons.push(row);
     }
-    
-    // Add note if there are more miners than shown
-    if (miners.length > maxMinersToShow) {
-      message += `\n\n⚠️ _Showing ${maxMinersToShow} of ${miners.length} miners. Use /miner <name> for others._`;
+
+    // Pagination controls
+    const paginationRow = [];
+    if (currentPage > 0) {
+      paginationRow.push({ 
+        text: '⬅️ Previous', 
+        callback_data: `miners_page_${currentPage - 1}_${filter}` 
+      });
+    }
+    if (currentPage < totalPages - 1) {
+      paginationRow.push({ 
+        text: 'Next ➡️', 
+        callback_data: `miners_page_${currentPage + 1}_${filter}` 
+      });
+    }
+    if (paginationRow.length > 0) {
+      minerButtons.push(paginationRow);
     }
 
-    // Add action buttons at the bottom
+    // Filter buttons
+    const filterRow = [];
+    if (filter !== 'all') {
+      filterRow.push({ text: '📋 All', callback_data: 'miners_page_0_all' });
+    }
+    if (filter !== 'offline') {
+      filterRow.push({ text: '⚫ Offline', callback_data: 'miners_page_0_offline' });
+    }
+    if (filter !== 'error') {
+      filterRow.push({ text: '🔴 Error', callback_data: 'miners_page_0_error' });
+    }
+    if (filterRow.length > 0) {
+      minerButtons.push(filterRow);
+    }
+
+    // Action buttons at the bottom
     minerButtons.push([
-      { text: '🔄 Refresh', callback_data: 'miners_list' },
+      { text: '🔄 Refresh', callback_data: `miners_page_${currentPage}_${filter}` },
       { text: '📊 Farm Status', callback_data: 'action_status' },
     ]);
 
@@ -405,10 +512,107 @@ const sendMinersList = async (chatId: number): Promise<void> => {
         inline_keyboard: minerButtons,
       },
     });
-    logger.info('Telegram: Miners list sent', { service: 'telegram', chatId, minerCount: miners.length });
+    logger.info('Telegram: Miners list sent', { 
+      service: 'telegram', 
+      chatId, 
+      page: currentPage, 
+      filter,
+      totalMiners: filteredMiners.length 
+    });
   } catch (error) {
     logger.error('Telegram: Error sending miners list', { service: 'telegram', chatId, error });
     await bot?.sendMessage(chatId, '❌ Error fetching miners list');
+  }
+};
+
+/**
+ * Search miners by keyword
+ */
+const searchMiners = async (chatId: number, keyword: string): Promise<void> => {
+  try {
+    logger.info('Telegram: Searching miners', { service: 'telegram', chatId, keyword });
+    const allMiners = getMiners();
+    const stats = getMiningStats();
+
+    if (allMiners.length === 0) {
+      await bot?.sendMessage(chatId, '⚠️ No miners configured');
+      return;
+    }
+
+    // Search by name, alias, or IP
+    const searchTerm = keyword.toLowerCase();
+    const matchingMiners = allMiners.filter(miner => 
+      miner.name.toLowerCase().includes(searchTerm) ||
+      (miner.alias && miner.alias.toLowerCase().includes(searchTerm)) ||
+      miner.ip.includes(searchTerm)
+    );
+
+    if (matchingMiners.length === 0) {
+      await bot?.sendMessage(chatId, `🔍 No miners found matching "${keyword}"`);
+      return;
+    }
+
+    let message = `🔍 *Search Results for "${keyword}"*\n\n`;
+    message += `Found ${matchingMiners.length} miner${matchingMiners.length !== 1 ? 's' : ''}\n\n`;
+    message += '💡 _Select a miner below for details_';
+
+    // Create inline keyboard with matching miners
+    const minerButtons: any[] = [];
+    const maxResults = 20; // Limit search results
+    const minersToShow = matchingMiners.slice(0, maxResults);
+
+    for (let i = 0; i < minersToShow.length; i += 2) {
+      const row = [];
+      
+      // First miner in row
+      const miner1 = minersToShow[i];
+      const stats1 = stats.miners.find(m => m.minerId === miner1.name);
+      const status1 = stats1?.status || 'offline';
+      const emoji1 = status1 === 'online' ? '🟢' : status1 === 'error' ? '🔴' : '⚫';
+      row.push({
+        text: `${emoji1} ${miner1.alias || miner1.name}`,
+        callback_data: `miner_${miner1.name}`,
+      });
+
+      // Second miner in row (if exists)
+      if (i + 1 < minersToShow.length) {
+        const miner2 = minersToShow[i + 1];
+        const stats2 = stats.miners.find(m => m.minerId === miner2.name);
+        const status2 = stats2?.status || 'offline';
+        const emoji2 = status2 === 'online' ? '🟢' : status2 === 'error' ? '🔴' : '⚫';
+        row.push({
+          text: `${emoji2} ${miner2.alias || miner2.name}`,
+          callback_data: `miner_${miner2.name}`,
+        });
+      }
+
+      minerButtons.push(row);
+    }
+
+    if (matchingMiners.length > maxResults) {
+      message += `\n\n⚠️ _Showing first ${maxResults} of ${matchingMiners.length} results. Refine your search for better results._`;
+    }
+
+    // Add back button
+    minerButtons.push([
+      { text: '⬅️ Back to Miners', callback_data: 'miners_page_0_all' },
+    ]);
+
+    await bot?.sendMessage(chatId, message, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: minerButtons,
+      },
+    });
+    logger.info('Telegram: Search results sent', { 
+      service: 'telegram', 
+      chatId, 
+      keyword,
+      resultsCount: matchingMiners.length 
+    });
+  } catch (error) {
+    logger.error('Telegram: Error searching miners', { service: 'telegram', chatId, keyword, error });
+    await bot?.sendMessage(chatId, '❌ Error searching miners');
   }
 };
 
