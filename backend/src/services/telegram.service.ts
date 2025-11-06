@@ -173,6 +173,24 @@ const sendOrEditMessage = async (
       // Update context with this message ID
       context.lastMessageId = targetMessageId;
       
+      // Update navigation stack if view type provided
+      if (viewType) {
+        // Check if we're navigating to a new view or refreshing current view
+        const currentView = context.navigationStack[context.navigationStack.length - 1];
+        if (!currentView || currentView.type !== viewType) {
+          // New view - push to stack
+          pushView(chatId.toString(), {
+            type: viewType as any,
+            data: viewData,
+            messageId: targetMessageId,
+          });
+        } else {
+          // Same view - update data (refresh)
+          currentView.data = viewData;
+          currentView.messageId = targetMessageId;
+        }
+      }
+      
       logger.debug('Telegram: Message edited', { 
         service: 'telegram', 
         chatId, 
