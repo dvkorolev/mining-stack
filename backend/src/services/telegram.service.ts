@@ -752,7 +752,7 @@ const sendMinersList = async (
 
     // Summary overview
     const onlineCount = stats.miners.filter(m => m.status === 'online').length;
-    const offlineCount = allMiners.length - onlineCount;
+    const offlineCount = stats.miners.filter(m => m.status === 'offline').length;
     const errorCount = stats.miners.filter(m => m.status === 'error').length;
     const totalHashrate = stats.totalHashrate.toFixed(2);
 
