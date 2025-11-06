@@ -531,13 +531,13 @@ ${isAuthorized(msg.chat.id) ? '✅ You are authorized to use this bot' : '⚠️
         await sendFarmStatus(msg.chat.id);
         break;
       case '⛏️ Miners':
-        await sendMinersList(msg.chat.id);
+        await sendMinersList(msg.chat.id, 0, 'all');
         break;
       case '🔔 Alerts':
         await sendActiveAlerts(msg.chat.id);
         break;
       case '❓ Help':
-        bot?.sendMessage(msg.chat.id, 'Use /help to see all available commands');
+        await sendInteractiveHelp(msg.chat.id);
         break;
     }
   });
