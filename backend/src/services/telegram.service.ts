@@ -42,7 +42,9 @@ interface PaginationState {
 const userContexts = new Map<string, UserContext>();
 const userPaginationState = new Map<string, PaginationState>();
 const sentAlertIds = new Set<string>(); // Track sent alert notifications
+const lastRefreshTime = new Map<string, number>(); // Dedupe rapid refresh clicks
 const MINERS_PER_PAGE = 10;
+const REFRESH_DEBOUNCE_MS = 1000; // Ignore refresh within 1s
 
 /**
  * Initialize Telegram bot
@@ -154,116 +156,105 @@ const sendOrEditMessage = async (
   keyboard?: any,
   viewType?: string,
   viewData?: any,
-  messageId?: number  // Optional: specific message ID to edit (from callback query)
+  messageId?: number,  // Optional: specific message ID to edit (from callback query)
+  isRefresh: boolean = false  // If true, never fall back to sendMessage
 ): Promise<void> => {
   const context = getUserContext(chatId.toString());
   
   // Use provided messageId or fall back to context
   const targetMessageId = messageId || context.lastMessageId;
   
-  logger.debug('Telegram: sendOrEditMessage called', {
-    service: 'telegram',
-    chatId,
-    targetMessageId,
-    viewType,
-    hasKeyboard: !!keyboard,
-    contextLastMessageId: context.lastMessageId,
-    providedMessageId: messageId
-  });
-  
   try {
-    if (targetMessageId) {
-      // Try to edit existing message
-      await bot?.editMessageText(text, {
-        chat_id: chatId,
-        message_id: targetMessageId,
+    if (!targetMessageId) {
+      if (isRefresh) {
+        logger.info(`edit failed: no message_id (refresh ignored)`);
+        return; // Refresh with no target = no-op
+      }
+      throw new Error('No message ID to edit');
+    }
+
+    // Try to edit existing message
+    logger.info(`editing message_id=${targetMessageId}`);
+    await bot?.editMessageText(text, {
+      chat_id: chatId,
+      message_id: targetMessageId,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+    logger.info(`editing message_id=${targetMessageId} → edited ok`);
+    
+    // Update context with this message ID
+    context.lastMessageId = targetMessageId;
+    
+    // Update navigation stack if view type provided
+    if (viewType) {
+      const currentView = context.navigationStack[context.navigationStack.length - 1];
+      if (!currentView || currentView.type !== viewType) {
+        pushView(chatId.toString(), {
+          type: viewType as any,
+          data: viewData,
+          messageId: targetMessageId,
+        });
+      } else {
+        currentView.data = viewData;
+        currentView.messageId = targetMessageId;
+      }
+    }
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    
+    // "message is not modified" = no-op (content unchanged)
+    if (errMsg.includes('message is not modified')) {
+      logger.info(`edit failed: message is not modified (no-op)`);
+      // Still update navigation stack
+      if (viewType) {
+        const currentView = context.navigationStack[context.navigationStack.length - 1];
+        if (!currentView || currentView.type !== viewType) {
+          pushView(chatId.toString(), {
+            type: viewType as any,
+            data: viewData,
+            messageId: targetMessageId,
+          });
+        } else {
+          currentView.data = viewData;
+          currentView.messageId = targetMessageId;
+        }
+      }
+      return;
+    }
+    
+    // Message not found / can't be edited
+    const isNotFound = errMsg.includes('message to edit not found') || 
+                       errMsg.includes('message can\'t be edited') ||
+                       errMsg.includes('MESSAGE_ID_INVALID');
+    
+    if (isRefresh) {
+      // For refresh: never send new message, just log and return
+      logger.info(`edit failed: ${errMsg} (refresh ignored)`);
+      return;
+    }
+    
+    // For non-refresh: only send new message if truly not found
+    if (isNotFound) {
+      logger.info(`edit failed: ${errMsg} (sending new)`);
+      const msg = await bot?.sendMessage(chatId, text, {
         parse_mode: 'Markdown',
         reply_markup: keyboard,
       });
       
-      // Update context with this message ID
-      context.lastMessageId = targetMessageId;
-      
-      // Update navigation stack if view type provided
-      if (viewType) {
-        // Check if we're navigating to a new view or refreshing current view
-        const currentView = context.navigationStack[context.navigationStack.length - 1];
-        if (!currentView || currentView.type !== viewType) {
-          // New view - push to stack
+      if (msg) {
+        context.lastMessageId = msg.message_id;
+        if (viewType) {
           pushView(chatId.toString(), {
             type: viewType as any,
             data: viewData,
-            messageId: targetMessageId,
+            messageId: msg.message_id,
           });
-        } else {
-          // Same view - update data (refresh)
-          currentView.data = viewData;
-          currentView.messageId = targetMessageId;
         }
       }
-      
-      logger.debug('Telegram: Message edited', { 
-        service: 'telegram', 
-        chatId, 
-        messageId: targetMessageId 
-      });
     } else {
-      throw new Error('No message ID to edit');
-    }
-  } catch (error: any) {
-    // Check if error is "message is not modified" (same content)
-    if (error?.message?.includes('message is not modified')) {
-      logger.debug('Telegram: Message content unchanged, skipping edit', { 
-        service: 'telegram', 
-        chatId, 
-        messageId: targetMessageId 
-      });
-      // Still update navigation stack even if content unchanged
-      if (viewType) {
-        const currentView = context.navigationStack[context.navigationStack.length - 1];
-        if (!currentView || currentView.type !== viewType) {
-          pushView(chatId.toString(), {
-            type: viewType as any,
-            data: viewData,
-            messageId: targetMessageId,
-          });
-        } else {
-          currentView.data = viewData;
-          currentView.messageId = targetMessageId;
-        }
-      }
-      return; // Don't send new message
-    }
-    
-    // For other errors (message too old, deleted, etc.) - send new one
-    logger.warn('Telegram: Failed to edit message, sending new one', { 
-      service: 'telegram', 
-      chatId, 
-      error: error?.message 
-    });
-    
-    const msg = await bot?.sendMessage(chatId, text, {
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
-    
-    if (msg) {
-      context.lastMessageId = msg.message_id;
-      
-      // Push to navigation stack if view type provided
-      if (viewType) {
-        pushView(chatId.toString(), {
-          type: viewType as any,
-          data: viewData,
-          messageId: msg.message_id,
-        });
-      }
-      
-      logger.debug('Telegram: New message sent', { 
-        service: 'telegram', 
-        chatId, 
-        messageId: msg.message_id 
-      });
+      // Other errors: log and no-op
+      logger.info(`edit failed: ${errMsg}`);
     }
   }
 };
@@ -606,9 +597,34 @@ const setupCallbackHandlers = (): void => {
     const data = query.data;
     if (!data) return;
 
-    // Store the message ID from the callback query for editing
     const messageId = query.message.message_id;
     const chatId = query.message.chat.id;
+    
+    logger.info(`cb.message_id=${messageId}, chatId=${chatId}, action=${data}`);
+    
+    // Dedupe rapid refresh clicks
+    const isRefreshAction = data === 'action_status' || data === 'action_alerts' || 
+                           data.startsWith('miners_page_') || data.startsWith('miner_');
+    
+    if (isRefreshAction) {
+      const dedupeKey = `${chatId}_${messageId}`;
+      const lastTime = lastRefreshTime.get(dedupeKey) || 0;
+      const now = Date.now();
+      
+      if (now - lastTime < REFRESH_DEBOUNCE_MS) {
+        logger.info(`refresh debounced: <${REFRESH_DEBOUNCE_MS}ms since last`);
+        await bot?.answerCallbackQuery(query.id);
+        return;
+      }
+      
+      lastRefreshTime.set(dedupeKey, now);
+      
+      // Cleanup old entries (keep last 100)
+      if (lastRefreshTime.size > 100) {
+        const keys = Array.from(lastRefreshTime.keys());
+        keys.slice(0, lastRefreshTime.size - 100).forEach(k => lastRefreshTime.delete(k));
+      }
+    }
     
     // Update user context with this message ID
     const context = getUserContext(chatId.toString());
@@ -641,17 +657,17 @@ const setupCallbackHandlers = (): void => {
           }
         }
       }
-      // Pagination for miners list
+      // Pagination for miners list (refresh = true)
       else if (data.startsWith('miners_page_')) {
         const parts = data.replace('miners_page_', '').split('_');
         const page = parseInt(parts[0], 10);
         const filter = (parts[1] || 'all') as 'all' | 'online' | 'offline' | 'error';
-        await sendMinersList(query.message.chat.id, page, filter);
+        await sendMinersList(query.message.chat.id, page, filter, true);
       }
-      // Miner selection
+      // Miner selection (refresh = true for same miner)
       else if (data.startsWith('miner_')) {
         const minerName = data.replace('miner_', '');
-        await sendMinerDetails(query.message.chat.id, minerName);
+        await sendMinerDetails(query.message.chat.id, minerName, true);
       } 
       // Reboot actions
       else if (data.startsWith('reboot_confirm_')) {
@@ -666,15 +682,15 @@ const setupCallbackHandlers = (): void => {
         const minerName = data.replace('pools_', '');
         await sendMinerPools(query.message.chat.id, minerName);
       }
-      // Quick actions
+      // Quick actions (refresh = true)
       else if (data === 'action_status') {
-        await sendFarmStatus(query.message.chat.id);
+        await sendFarmStatus(query.message.chat.id, true);
       }
       else if (data === 'action_miners') {
-        await sendMinersList(query.message.chat.id, 0, 'all');
+        await sendMinersList(query.message.chat.id, 0, 'all', true);
       }
       else if (data === 'action_alerts') {
-        await sendActiveAlerts(query.message.chat.id);
+        await sendActiveAlerts(query.message.chat.id, true);
       }
       else if (data === 'miners_list') {
         await sendMinersList(query.message.chat.id, 0, 'all');
@@ -729,7 +745,7 @@ I'm your mining farm assistant. Use the buttons below to get started, or type /h
 /**
  * Send farm status overview
  */
-const sendFarmStatus = async (chatId: number): Promise<void> => {
+const sendFarmStatus = async (chatId: number, isRefresh: boolean = false): Promise<void> => {
   try {
     logger.info('Telegram: Sending farm status', { service: 'telegram', chatId });
     const stats = getMiningStats();
@@ -758,7 +774,7 @@ const sendFarmStatus = async (chatId: number): Promise<void> => {
       ],
     };
 
-    await sendOrEditMessage(chatId, statusMessage, keyboard, 'status');
+    await sendOrEditMessage(chatId, statusMessage, keyboard, 'status', undefined, undefined, isRefresh);
     logger.info('Telegram: Farm status sent successfully', { service: 'telegram', chatId });
   } catch (error) {
     logger.error('Telegram: Error sending farm status', { service: 'telegram', chatId, error });
@@ -769,11 +785,7 @@ const sendFarmStatus = async (chatId: number): Promise<void> => {
 /**
  * Send list of all miners with pagination and filtering
  */
-const sendMinersList = async (
-  chatId: number, 
-  page: number = 0, 
-  filter: 'all' | 'online' | 'offline' | 'error' = 'all'
-): Promise<void> => {
+const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 'online' | 'offline' | 'error' = 'all', isRefresh: boolean = false): Promise<void> => {
   try {
     logger.info('Telegram: Sending miners list', { service: 'telegram', chatId, page, filter });
     const allMiners = getMiners();
@@ -899,7 +911,7 @@ const sendMinersList = async (
       { text: '📊 Farm Status', callback_data: 'action_status' },
     ]);
 
-    await sendOrEditMessage(chatId, message, { inline_keyboard: minerButtons }, 'miners', { page: currentPage, filter });
+    await sendOrEditMessage(chatId, message, { inline_keyboard: minerButtons }, 'miners', { page: currentPage, filter }, undefined, isRefresh);
     logger.info('Telegram: Miners list sent', { 
       service: 'telegram', 
       chatId, 
@@ -1002,7 +1014,7 @@ const searchMiners = async (chatId: number, keyword: string): Promise<void> => {
 /**
  * Send detailed stats for a specific miner
  */
-const sendMinerDetails = async (chatId: number, minerName: string): Promise<void> => {
+const sendMinerDetails = async (chatId: number, minerName: string, isRefresh: boolean = false): Promise<void> => {
   try {
     logger.info('Telegram: Sending miner details', { service: 'telegram', chatId, minerName });
     const miner = getMinerById(minerName);
@@ -1060,7 +1072,7 @@ Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
       ],
     };
 
-    await sendOrEditMessage(chatId, message, keyboard, 'miner_details', { minerName });
+    await sendOrEditMessage(chatId, message, keyboard, 'miner_details', { minerName }, undefined, isRefresh);
     logger.info('Telegram: Miner details sent', { service: 'telegram', chatId, minerName });
   } catch (error) {
     logger.error('Telegram: Error sending miner details', { service: 'telegram', chatId, minerName, error });
@@ -1187,7 +1199,7 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
 /**
  * Send active alerts
  */
-const sendActiveAlerts = async (chatId: number): Promise<void> => {
+const sendActiveAlerts = async (chatId: number, isRefresh: boolean = false): Promise<void> => {
   try {
     logger.info('Telegram: Fetching active alerts', { service: 'telegram', chatId });
     
@@ -1213,7 +1225,7 @@ No active alerts at the moment.
         ],
       };
 
-      await sendOrEditMessage(chatId, message, keyboard, 'alerts');
+      await sendOrEditMessage(chatId, message, keyboard, 'alerts', undefined, undefined, isRefresh);
       return;
     }
 
@@ -1268,7 +1280,7 @@ No active alerts at the moment.
       ],
     };
 
-    await sendOrEditMessage(chatId, message.trim(), keyboard, 'alerts');
+    await sendOrEditMessage(chatId, message.trim(), keyboard, 'alerts', undefined, undefined, isRefresh);
     logger.info('Telegram: Active alerts sent', { service: 'telegram', chatId, alertCount: alerts.length });
   } catch (error) {
     logger.error('Telegram: Error sending active alerts', { service: 'telegram', chatId, error });
