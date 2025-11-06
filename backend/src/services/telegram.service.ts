@@ -20,11 +20,26 @@ let bot: TelegramBot | null = null;
 let isEnabled = false;
 let authorizedChatIds: Set<string> = new Set();
 
-// Pagination state for each user
+// User context and state management
+interface UserContext {
+  lastMessageId?: number;
+  currentView: 'status' | 'miners' | 'miner_details' | 'alerts' | 'pools' | 'help';
+  viewData?: any;
+  navigationStack: NavigationView[];
+}
+
+interface NavigationView {
+  type: 'status' | 'miners' | 'miner_details' | 'alerts' | 'pools' | 'help';
+  data?: any;
+  messageId?: number;
+}
+
 interface PaginationState {
   page: number;
   filter?: 'all' | 'online' | 'offline' | 'error';
 }
+
+const userContexts = new Map<string, UserContext>();
 const userPaginationState = new Map<string, PaginationState>();
 const MINERS_PER_PAGE = 10;
 
@@ -72,6 +87,305 @@ export const initTelegramBot = (token: string, chatIds: string | string[]): void
  */
 const isAuthorized = (chatId: number): boolean => {
   return authorizedChatIds.has(chatId.toString());
+};
+
+/**
+ * Get or create user context
+ */
+const getUserContext = (chatId: string): UserContext => {
+  let context = userContexts.get(chatId);
+  if (!context) {
+    context = {
+      currentView: 'status',
+      navigationStack: [],
+    };
+    userContexts.set(chatId, context);
+  }
+  return context;
+};
+
+/**
+ * Push view to navigation stack
+ */
+const pushView = (chatId: string, view: NavigationView): void => {
+  const context = getUserContext(chatId);
+  context.navigationStack.push(view);
+  context.currentView = view.type;
+  context.viewData = view.data;
+};
+
+/**
+ * Pop view from navigation stack
+ */
+const popView = (chatId: string): NavigationView | null => {
+  const context = getUserContext(chatId);
+  if (context.navigationStack.length > 1) {
+    context.navigationStack.pop();
+    const previousView = context.navigationStack[context.navigationStack.length - 1];
+    context.currentView = previousView.type;
+    context.viewData = previousView.data;
+    return previousView;
+  }
+  return null;
+};
+
+/**
+ * Get view name for display
+ */
+const getViewName = (viewType: string): string => {
+  const names: Record<string, string> = {
+    status: 'Status',
+    miners: 'Miners',
+    miner_details: 'Miner Details',
+    alerts: 'Alerts',
+    pools: 'Pools',
+    help: 'Help',
+  };
+  return names[viewType] || 'Home';
+};
+
+/**
+ * Send or edit message based on context
+ */
+const sendOrEditMessage = async (
+  chatId: number,
+  text: string,
+  keyboard?: any,
+  viewType?: string,
+  viewData?: any
+): Promise<void> => {
+  const context = getUserContext(chatId.toString());
+  
+  try {
+    if (context.lastMessageId) {
+      // Try to edit existing message
+      await bot?.editMessageText(text, {
+        chat_id: chatId,
+        message_id: context.lastMessageId,
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+      
+      logger.debug('Telegram: Message edited', { 
+        service: 'telegram', 
+        chatId, 
+        messageId: context.lastMessageId 
+      });
+    } else {
+      throw new Error('No message ID to edit');
+    }
+  } catch (error) {
+    // Message too old, deleted, or no previous message - send new one
+    const msg = await bot?.sendMessage(chatId, text, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+    
+    if (msg) {
+      context.lastMessageId = msg.message_id;
+      
+      // Push to navigation stack if view type provided
+      if (viewType) {
+        pushView(chatId.toString(), {
+          type: viewType as any,
+          data: viewData,
+          messageId: msg.message_id,
+        });
+      }
+      
+      logger.debug('Telegram: New message sent', { 
+        service: 'telegram', 
+        chatId, 
+        messageId: msg.message_id 
+      });
+    }
+  }
+};
+
+/**
+ * Send interactive help menu
+ */
+const sendInteractiveHelp = async (chatId: number, category?: string): Promise<void> => {
+  try {
+    if (!category) {
+      // Main help menu
+      const message = `
+📚 *Mining Stack Bot Help*
+
+Select a category to learn more:
+      `.trim();
+
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '🏠 Farm Commands', callback_data: 'help_farm' },
+            { text: '⛏️ Miner Commands', callback_data: 'help_miners' },
+          ],
+          [
+            { text: '🔔 Alerts', callback_data: 'help_alerts' },
+            { text: '🔍 Search & Filter', callback_data: 'help_search' },
+          ],
+          [
+            { text: '💡 Tips & Tricks', callback_data: 'help_tips' },
+            { text: '📖 Full Command List', callback_data: 'help_full' },
+          ],
+        ],
+      };
+
+      await sendOrEditMessage(chatId, message, keyboard, 'help');
+    } else {
+      // Category-specific help
+      let message = '';
+      let backButton = { text: '⬅️ Back to Help Menu', callback_data: 'help_main' };
+
+      switch (category) {
+        case 'farm':
+          message = `
+🏠 *Farm Commands*
+
+/status - Overall farm statistics
+  Shows total hashrate, active miners, and farm overview
+
+/miners - List all miners (paginated)
+  Browse through all your miners, 10 per page
+
+/miners offline - Show only offline miners
+/miners error - Show only miners with errors
+/miners online - Show only online miners
+
+💡 Tip: Use the filter buttons to quickly find problematic miners
+          `.trim();
+          break;
+
+        case 'miners':
+          message = `
+⛏️ *Miner Commands*
+
+/miner <name> - Detailed stats for a miner
+  Example: \`/miner rig-1\`
+  Shows hashrate, temperature, shares, uptime
+
+/reboot <name> - Reboot a specific miner
+  Example: \`/reboot rig-1\`
+  Requires confirmation before rebooting
+
+/pools <name> - View pool configuration
+  Example: \`/pools rig-1\`
+  Shows configured mining pools
+
+💡 Tip: Click on any miner name in the list to see its details
+          `.trim();
+          break;
+
+        case 'alerts':
+          message = `
+🔔 *Alerts*
+
+/alerts - View active alerts
+  Shows all current alerts with severity levels
+
+*Alert Types:*
+🔴 Critical - Requires immediate attention
+⚠️ Warning - Should be addressed soon
+ℹ️ Info - Informational only
+
+💡 Tip: Alerts are sent automatically when issues are detected
+          `.trim();
+          break;
+
+        case 'search':
+          message = `
+🔍 *Search & Filter*
+
+/find <keyword> - Search miners
+  Search by name, alias, or IP address
+  Examples:
+  • \`/find 192.168\` - Find by IP
+  • \`/find rig-1\` - Find by name
+  • \`/find main\` - Find by alias
+
+*Filter Buttons:*
+📋 All - Show all miners
+⚫ Offline - Show only offline miners
+🔴 Error - Show only miners with errors
+
+💡 Tip: Use filters to quickly identify problems
+          `.trim();
+          break;
+
+        case 'tips':
+          message = `
+💡 *Tips & Tricks*
+
+*Navigation:*
+• Use ⬅️ Previous / Next ➡️ buttons to browse pages
+• Click miner names for quick details
+• Use filter buttons to find specific miners
+
+*Keyboard Shortcuts:*
+• 📊 Status - Quick farm overview
+• ⛏️ Miners - View all miners
+• 🔔 Alerts - Check alerts
+• ❓ Help - Show this help
+
+*Best Practices:*
+• Check /status daily for farm health
+• Use /miners offline to find down miners
+• Monitor alerts for critical issues
+• Use /find for quick miner lookup
+
+💡 Tip: Bookmark common commands for faster access
+          `.trim();
+          break;
+
+        case 'full':
+          message = `
+📖 *Full Command List*
+
+*Farm Management:*
+/status - Farm overview
+/miners [filter] - List miners
+
+*Miner Control:*
+/miner <name> - Miner details
+/reboot <name> - Reboot miner
+/pools <name> - Pool config
+
+*Search & Filter:*
+/find <keyword> - Search miners
+/miners offline - Offline miners
+/miners error - Error miners
+/miners online - Online miners
+
+*Alerts:*
+/alerts - Active alerts
+
+*Other:*
+/whoami - Get your chat ID
+/help - Show this help
+
+*Examples:*
+\`/miner rig-1\`
+\`/reboot rig-1\`
+\`/find 192.168\`
+\`/miners offline\`
+          `.trim();
+          break;
+
+        default:
+          message = '❌ Unknown help category';
+      }
+
+      const keyboard = {
+        inline_keyboard: [[backButton]],
+      };
+
+      await sendOrEditMessage(chatId, message, keyboard, 'help', { category });
+    }
+  } catch (error) {
+    logger.error('Telegram: Error sending help', { service: 'telegram', chatId, error });
+    await bot?.sendMessage(chatId, '❌ Error loading help');
+  }
 };
 
 /**
@@ -201,50 +515,10 @@ ${isAuthorized(msg.chat.id) ? '✅ You are authorized to use this bot' : '⚠️
     await bot?.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
   });
 
-  // /help - Help message
+  // /help - Interactive help message
   bot.onText(/\/help/, async (msg) => {
     if (!isAuthorized(msg.chat.id)) return;
-    
-    const helpMessage = `
-📚 *Mining Stack Bot Commands*
-
-*Farm Management:*
-/status - Overall farm statistics
-/miners - List all miners (paginated)
-/miners offline - Show only offline miners
-/miners error - Show only miners with errors
-/miners online - Show only online miners
-
-*Miner Explorer:*
-/find <keyword> - Search by name, alias, or IP
-  Example: \`/find 192.168\` or \`/find rig-1\`
-
-*Miner Control:*
-/miner <name> - Detailed stats for a miner
-/reboot <name> - Reboot a specific miner
-/pools <name> - View pool configuration
-
-*Alerts:*
-/alerts - View active alerts
-
-*Other:*
-/whoami - Get your chat ID
-/help - Show this help message
-
-*Navigation Tips:*
-• Use ⬅️ Previous / Next ➡️ buttons to browse pages
-• Use filter buttons (📋 All, ⚫ Offline, 🔴 Error) to filter miners
-• Click on any miner name to see detailed stats
-• Use keyboard buttons at bottom for quick access
-
-*Examples:*
-\`/miner miner-1\`
-\`/reboot miner-192-168-1-100\`
-\`/find 192.168.1\`
-\`/miners offline\`
-    `.trim();
-
-    await bot?.sendMessage(msg.chat.id, helpMessage, { parse_mode: 'Markdown' });
+    await sendInteractiveHelp(msg.chat.id);
   });
 
   // Handle keyboard button presses
@@ -282,8 +556,34 @@ const setupCallbackHandlers = (): void => {
     if (!data) return;
 
     try {
+      // Navigation back
+      if (data === 'nav_back') {
+        const previousView = popView(query.message.chat.id.toString());
+        if (previousView) {
+          // Restore previous view based on type
+          switch (previousView.type) {
+            case 'status':
+              await sendFarmStatus(query.message.chat.id);
+              break;
+            case 'miners':
+              const minerData = previousView.data || { page: 0, filter: 'all' };
+              await sendMinersList(query.message.chat.id, minerData.page, minerData.filter);
+              break;
+            case 'miner_details':
+              if (previousView.data?.minerName) {
+                await sendMinerDetails(query.message.chat.id, previousView.data.minerName);
+              }
+              break;
+            case 'alerts':
+              await sendActiveAlerts(query.message.chat.id);
+              break;
+            default:
+              await sendFarmStatus(query.message.chat.id);
+          }
+        }
+      }
       // Pagination for miners list
-      if (data.startsWith('miners_page_')) {
+      else if (data.startsWith('miners_page_')) {
         const parts = data.replace('miners_page_', '').split('_');
         const page = parseInt(parts[0], 10);
         const filter = (parts[1] || 'all') as 'all' | 'online' | 'offline' | 'error';
@@ -319,6 +619,14 @@ const setupCallbackHandlers = (): void => {
       }
       else if (data === 'miners_list') {
         await sendMinersList(query.message.chat.id, 0, 'all');
+      }
+      // Help menu navigation
+      else if (data === 'help_main') {
+        await sendInteractiveHelp(query.message.chat.id);
+      }
+      else if (data.startsWith('help_')) {
+        const category = data.replace('help_', '');
+        await sendInteractiveHelp(query.message.chat.id, category);
       }
 
       // Answer callback query to remove loading state
@@ -362,10 +670,7 @@ const sendFarmStatus = async (chatId: number): Promise<void> => {
       ],
     };
 
-    await bot?.sendMessage(chatId, statusMessage, { 
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
+    await sendOrEditMessage(chatId, statusMessage, keyboard, 'status');
     logger.info('Telegram: Farm status sent successfully', { service: 'telegram', chatId });
   } catch (error) {
     logger.error('Telegram: Error sending farm status', { service: 'telegram', chatId, error });
@@ -506,12 +811,7 @@ const sendMinersList = async (
       { text: '📊 Farm Status', callback_data: 'action_status' },
     ]);
 
-    await bot?.sendMessage(chatId, message, {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: minerButtons,
-      },
-    });
+    await sendOrEditMessage(chatId, message, { inline_keyboard: minerButtons }, 'miners', { page: currentPage, filter });
     logger.info('Telegram: Miners list sent', { 
       service: 'telegram', 
       chatId, 
@@ -656,6 +956,12 @@ Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
 🕐 Last Seen: ${new Date(minerStats.lastSeen).toLocaleString()}
     `.trim();
 
+    // Get smart back button based on navigation stack
+    const context = getUserContext(chatId.toString());
+    const backButton = context.navigationStack.length > 0 
+      ? { text: `⬅️ Back to ${getViewName(context.currentView)}`, callback_data: 'nav_back' }
+      : { text: '⬅️ Back to Miners', callback_data: 'miners_list' };
+
     const keyboard = {
       inline_keyboard: [
         [
@@ -666,15 +972,12 @@ Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
           { text: '🔄 Refresh Stats', callback_data: `miner_${minerName}` },
         ],
         [
-          { text: '⬅️ Back to Miners', callback_data: 'miners_list' },
+          backButton,
         ],
       ],
     };
 
-    await bot?.sendMessage(chatId, message, {
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
+    await sendOrEditMessage(chatId, message, keyboard, 'miner_details', { minerName });
     logger.info('Telegram: Miner details sent', { service: 'telegram', chatId, minerName });
   } catch (error) {
     logger.error('Telegram: Error sending miner details', { service: 'telegram', chatId, minerName, error });
