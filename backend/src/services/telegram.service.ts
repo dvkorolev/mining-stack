@@ -41,6 +41,7 @@ interface PaginationState {
 
 const userContexts = new Map<string, UserContext>();
 const userPaginationState = new Map<string, PaginationState>();
+const sentAlertIds = new Set<string>(); // Track sent alert notifications
 const MINERS_PER_PAGE = 10;
 
 /**
@@ -1253,6 +1254,82 @@ const sendMessageToChat = async (chatId: string, message: string, options?: any)
 };
 
 /**
+ * Send alert notification to all authorized users
+ * Only sends if alert hasn't been sent before (based on alert ID)
+ */
+export const sendAlertNotification = async (alert: any): Promise<void> => {
+  if (!bot || !isEnabled || authorizedChatIds.size === 0) {
+    return;
+  }
+
+  // Create unique alert ID based on alert properties
+  const alertId = `${alert.severity}_${alert.type}_${alert.miner || 'farm'}_${alert.timestamp}`;
+  
+  // Skip if already sent
+  if (sentAlertIds.has(alertId)) {
+    return;
+  }
+
+  // Mark as sent
+  sentAlertIds.add(alertId);
+  
+  // Clean up old alert IDs (keep last 1000)
+  if (sentAlertIds.size > 1000) {
+    const idsArray = Array.from(sentAlertIds);
+    idsArray.slice(0, sentAlertIds.size - 1000).forEach(id => sentAlertIds.delete(id));
+  }
+
+  // Format alert message
+  const severityEmoji = alert.severity === 'critical' ? '🚨' : 
+                       alert.severity === 'warning' ? '⚠️' : 'ℹ️';
+  
+  let message = `${severityEmoji} *${alert.severity.toUpperCase()} ALERT*\n\n`;
+  message += `${alert.summary}\n`;
+  
+  if (alert.miner) {
+    message += `\n🖥️ Miner: \`${alert.miner}\``;
+  }
+  
+  if (alert.details) {
+    message += `\n📝 ${alert.details}`;
+  }
+  
+  message += `\n\n🕐 ${new Date(alert.timestamp).toLocaleString()}`;
+
+  // Add action buttons
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: '🔔 View All Alerts', callback_data: 'action_alerts' },
+        { text: '📊 Farm Status', callback_data: 'action_status' },
+      ],
+    ],
+  };
+
+  // Send to all authorized chats (as NEW message, not editing)
+  for (const chatId of authorizedChatIds) {
+    try {
+      await bot.sendMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+      logger.info('Telegram: Alert notification sent', { 
+        service: 'telegram', 
+        chatId: chatId.substring(0, 4) + '***',
+        severity: alert.severity,
+        type: alert.type
+      });
+    } catch (error) {
+      logger.error('Telegram: Error sending alert notification', { 
+        service: 'telegram', 
+        chatId, 
+        error 
+      });
+    }
+  }
+};
+
+/**
  * Send notification message to all authorized users
  */
 export const sendMessage = async (message: string, options?: any): Promise<void> => {
@@ -1268,7 +1345,7 @@ export const sendMessage = async (message: string, options?: any): Promise<void>
 };
 
 /**
- * Send alert notification
+ * Send alert notification (legacy function - now uses sendAlertNotification)
  */
 export const sendAlert = async (alert: {
   severity: 'critical' | 'warning' | 'info';
@@ -1276,35 +1353,15 @@ export const sendAlert = async (alert: {
   description: string;
   miner?: string;
 }): Promise<void> => {
-  if (!bot || !isEnabled || authorizedChatIds.size === 0) return;
-
-  logger.info('Telegram: Sending alert', { 
-    service: 'telegram', 
-    severity: alert.severity, 
-    title: alert.title, 
-    miner: alert.miner 
+  // Convert to new alert format and use sendAlertNotification
+  await sendAlertNotification({
+    severity: alert.severity,
+    type: 'alert',
+    summary: alert.title,
+    details: alert.description,
+    miner: alert.miner,
+    timestamp: Date.now(),
   });
-
-  const emoji = alert.severity === 'critical' ? '🔥' : 
-                alert.severity === 'warning' ? '⚠️' : 'ℹ️';
-
-  const message = `
-${emoji} *${alert.title}*
-
-${alert.description}
-
-${alert.miner ? `Miner: \`${alert.miner}\`` : ''}
-Time: ${new Date().toLocaleString()}
-  `.trim();
-
-  for (const chatId of authorizedChatIds) {
-    try {
-      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    } catch (error) {
-      logger.error('Telegram: Error sending alert to chat', { service: 'telegram', chatId, error });
-    }
-  }
-  logger.info('Telegram: Alert sent to all users', { service: 'telegram', severity: alert.severity, userCount: authorizedChatIds.size });
 };
 
 /**
