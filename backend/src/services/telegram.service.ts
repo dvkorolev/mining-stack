@@ -161,6 +161,16 @@ const sendOrEditMessage = async (
   // Use provided messageId or fall back to context
   const targetMessageId = messageId || context.lastMessageId;
   
+  logger.debug('Telegram: sendOrEditMessage called', {
+    service: 'telegram',
+    chatId,
+    targetMessageId,
+    viewType,
+    hasKeyboard: !!keyboard,
+    contextLastMessageId: context.lastMessageId,
+    providedMessageId: messageId
+  });
+  
   try {
     if (targetMessageId) {
       // Try to edit existing message
@@ -200,8 +210,38 @@ const sendOrEditMessage = async (
     } else {
       throw new Error('No message ID to edit');
     }
-  } catch (error) {
-    // Message too old, deleted, or no previous message - send new one
+  } catch (error: any) {
+    // Check if error is "message is not modified" (same content)
+    if (error?.message?.includes('message is not modified')) {
+      logger.debug('Telegram: Message content unchanged, skipping edit', { 
+        service: 'telegram', 
+        chatId, 
+        messageId: targetMessageId 
+      });
+      // Still update navigation stack even if content unchanged
+      if (viewType) {
+        const currentView = context.navigationStack[context.navigationStack.length - 1];
+        if (!currentView || currentView.type !== viewType) {
+          pushView(chatId.toString(), {
+            type: viewType as any,
+            data: viewData,
+            messageId: targetMessageId,
+          });
+        } else {
+          currentView.data = viewData;
+          currentView.messageId = targetMessageId;
+        }
+      }
+      return; // Don't send new message
+    }
+    
+    // For other errors (message too old, deleted, etc.) - send new one
+    logger.warn('Telegram: Failed to edit message, sending new one', { 
+      service: 'telegram', 
+      chatId, 
+      error: error?.message 
+    });
+    
     const msg = await bot?.sendMessage(chatId, text, {
       parse_mode: 'Markdown',
       reply_markup: keyboard,
