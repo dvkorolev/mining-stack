@@ -155,6 +155,12 @@ const ERROR_CODES = {
     description: 'One or more ASIC chips are not responding',
     severity: 'critical' as const,
   },
+  MISSING_CHIPS: {
+    code: 'MISSING_CHIPS',
+    message: 'Missing Chips on Hashboard',
+    description: 'One or more hashboards are reporting fewer chips than expected',
+    severity: 'warning' as const,
+  },
 };
 
 /**

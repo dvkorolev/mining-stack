@@ -35,12 +35,13 @@ groups:
           summary: "Miner {{ $labels.name }} stopped mining"
           description: "Miner {{ $labels.name }} is online but not mining for 5 minutes."
           
-      # Critical: Hashrate dropped significantly
-      - alert: MinerHashrateDrop
+      # Critical: Hashrate dropped significantly (50% below expected)
+      - alert: MinerHashrateCritical
         expr: |
           (
-            miner_hashrate_ths < 50
+            miner_hashrate_ths < (miner_expected_hashrate_ths * 0.5)
             and miner_is_mining == 1
+            and miner_expected_hashrate_ths > 0
           )
         for: 10m
         labels:
@@ -48,7 +49,7 @@ groups:
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} hashrate critically low"
-          description: "Miner {{ $labels.name }} hashrate is {{ $value }} TH/s (expected >50 TH/s)"
+          description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} TH/s (expected: {{ $labels.expected_hashrate }} TH/s, threshold: 50% below)"
 
   - name: mining_warning
     interval: 30s
@@ -64,8 +65,43 @@ groups:
           summary: "Miner {{ $labels.name }} temperature elevated"
           description: "Miner {{ $labels.name }} temperature is {{ $value }}°C (warning threshold: 75°C)"
           
-      # Warning: High rejection rate
-      - alert: MinerHighRejectionRate
+      # Warning: Hashrate below expected (20% below expected)
+      - alert: MinerHashrateWarning
+        expr: |
+          (
+            miner_hashrate_ths < (miner_expected_hashrate_ths * 0.8)
+            and miner_hashrate_ths >= (miner_expected_hashrate_ths * 0.5)
+            and miner_is_mining == 1
+            and miner_expected_hashrate_ths > 0
+          )
+        for: 10m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} hashrate below expected"
+          description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} TH/s (expected: {{ $labels.expected_hashrate }} TH/s, threshold: 20% below)"
+          
+      # Warning: Elevated rejection rate (2-5%)
+      - alert: MinerRejectionRateWarning
+        expr: |
+          (
+            rate(miner_pool_rejected_total[5m]) / 
+            (rate(miner_pool_accepted_total[5m]) + rate(miner_pool_rejected_total[5m]))
+          ) > 0.02 and (
+            rate(miner_pool_rejected_total[5m]) / 
+            (rate(miner_pool_accepted_total[5m]) + rate(miner_pool_rejected_total[5m]))
+          ) <= 0.05
+        for: 10m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} elevated rejection rate"
+          description: "Miner {{ $labels.name }} rejection rate is {{ $value | humanizePercentage }} (warning threshold: 2%)"
+          
+      # Critical: High rejection rate (>5%)
+      - alert: MinerRejectionRateCritical
         expr: |
           (
             rate(miner_pool_rejected_total[5m]) / 
@@ -73,11 +109,11 @@ groups:
           ) > 0.05
         for: 10m
         labels:
-          severity: warning
+          severity: critical
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} high rejection rate"
-          description: "Miner {{ $labels.name }} rejection rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+          description: "Miner {{ $labels.name }} rejection rate is {{ $value | humanizePercentage }} (critical threshold: 5%)"
           
       # Warning: Fault light on
       - alert: MinerFaultLight
@@ -101,27 +137,39 @@ groups:
           summary: "Miner {{ $labels.name }} reporting errors"
           description: "Miner {{ $labels.name }} has {{ $value }} error(s)."
           
-      # Warning: Missing hashboards
+      # Warning: Missing chips on hashboard
       - alert: MinerMissingChips
-        expr: miner_board_chips_count < miner_board_chips_expected
+        expr: |
+          miner_board_chips_count < on(ip, name, slot) group_left() miner_board_chips_expected
         for: 10m
         labels:
           severity: warning
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} missing chips on board {{ $labels.slot }}"
-          description: "Board {{ $labels.slot }} has {{ $value }} chips (expected: {{ $labels.expected }})"
+          description: "Board {{ $labels.slot }} has {{ $value | printf \"%.0f\" }} chips (expected: {{ with query (printf \"miner_board_chips_expected{name='%s',slot='%s'}\" $labels.name $labels.slot) }}{{ . | first | value | printf \"%.0f\" }}{{ end }})"
           
-      # Warning: Fan speed low
-      - alert: MinerFanSpeedLow
-        expr: miner_fan_speed_rpm < 2000 and miner_is_mining == 1
+      # Warning: Fan speed low (below 3000 RPM)
+      - alert: MinerFanSpeedWarning
+        expr: miner_fan_speed_rpm < 3000 and miner_fan_speed_rpm >= 2000 and miner_is_mining == 1
         for: 5m
         labels:
           severity: warning
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} fan speed low"
-          description: "Fan {{ $labels.fan_id }} speed is {{ $value }} RPM (threshold: 2000 RPM)"
+          description: "Fan {{ $labels.fan_id }} speed is {{ $value | printf \"%.0f\" }} RPM (warning threshold: 3000 RPM)"
+          
+      # Critical: Fan speed critically low (below 2000 RPM)
+      - alert: MinerFanSpeedCritical
+        expr: miner_fan_speed_rpm < 2000 and miner_is_mining == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} fan speed critically low"
+          description: "Fan {{ $labels.fan_id }} speed is {{ $value | printf \"%.0f\" }} RPM (critical threshold: 2000 RPM)"
           
       # Warning: Poor efficiency
       - alert: MinerPoorEfficiency

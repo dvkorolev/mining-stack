@@ -4,13 +4,16 @@
  * Handles alert management and integration with Alertmanager
  * - Receives webhooks from Alertmanager
  * - Forwards alerts to Telegram
- * - Stores alert history
+ * - Stores alert history (in-memory + SQLite persistence)
  * 
  * @module services/alert
  */
 
 import { logger } from '../utils/logger';
 import { sendAlert } from './telegram.service';
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
 
 export interface Alert {
   id: string;
@@ -30,6 +33,133 @@ export interface Alert {
 const activeAlerts = new Map<string, Alert>();
 const alertHistory: Alert[] = [];
 const MAX_HISTORY_SIZE = 1000;
+
+// SQLite database for persistent storage
+let db: Database.Database | null = null;
+
+/**
+ * Initialize SQLite database for alert persistence
+ */
+const initDatabase = (): void => {
+  try {
+    const dataDir = process.env.DATA_DIR || path.join(__dirname, '../../data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    
+    const dbPath = path.join(dataDir, 'alerts.db');
+    db = new Database(dbPath);
+    
+    // Create alerts table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alerts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        status TEXT NOT NULL,
+        miner TEXT,
+        summary TEXT NOT NULL,
+        description TEXT,
+        fired_at INTEGER NOT NULL,
+        resolved_at INTEGER,
+        labels TEXT,
+        annotations TEXT,
+        created_at INTEGER DEFAULT (strftime('%s', 'now'))
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
+      CREATE INDEX IF NOT EXISTS idx_alerts_miner ON alerts(miner);
+      CREATE INDEX IF NOT EXISTS idx_alerts_fired_at ON alerts(fired_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
+    `);
+    
+    logger.info('Alert database initialized', { dbPath });
+  } catch (error) {
+    logger.error('Failed to initialize alert database', error);
+  }
+};
+
+/**
+ * Save alert to database
+ */
+const saveAlertToDb = (alert: Alert): void => {
+  if (!db) return;
+  
+  try {
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO alerts (id, name, severity, status, miner, summary, description, fired_at, resolved_at, labels, annotations)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    stmt.run(
+      alert.id,
+      alert.name,
+      alert.severity,
+      alert.status,
+      alert.miner || null,
+      alert.summary,
+      alert.description,
+      alert.firedAt,
+      alert.resolvedAt || null,
+      JSON.stringify(alert.labels),
+      JSON.stringify(alert.annotations)
+    );
+  } catch (error) {
+    logger.error('Failed to save alert to database', { alertId: alert.id, error });
+  }
+};
+
+/**
+ * Load recent alerts from database on startup
+ */
+const loadAlertsFromDb = (): void => {
+  if (!db) return;
+  
+  try {
+    const stmt = db.prepare(`
+      SELECT * FROM alerts 
+      WHERE fired_at > ? 
+      ORDER BY fired_at DESC 
+      LIMIT ?
+    `);
+    
+    const last24h = Date.now() - 24 * 60 * 60 * 1000;
+    const rows = stmt.all(last24h, MAX_HISTORY_SIZE) as any[];
+    
+    rows.forEach(row => {
+      const alert: Alert = {
+        id: row.id,
+        name: row.name,
+        severity: row.severity,
+        status: row.status,
+        miner: row.miner,
+        summary: row.summary,
+        description: row.description,
+        firedAt: row.fired_at,
+        resolvedAt: row.resolved_at,
+        labels: JSON.parse(row.labels || '{}'),
+        annotations: JSON.parse(row.annotations || '{}'),
+      };
+      
+      // Add to in-memory storage
+      if (alert.status === 'firing') {
+        activeAlerts.set(alert.id, alert);
+      }
+      alertHistory.push(alert);
+    });
+    
+    logger.info('Loaded alerts from database', { 
+      activeCount: activeAlerts.size, 
+      historyCount: alertHistory.length 
+    });
+  } catch (error) {
+    logger.error('Failed to load alerts from database', error);
+  }
+};
+
+// Initialize database on module load
+initDatabase();
+loadAlertsFromDb();
 
 /**
  * Process incoming alert webhook from Alertmanager
@@ -73,15 +203,15 @@ export const processAlertWebhook = async (payload: any): Promise<void> => {
         activeAlerts.delete(alertId);
         alertData.resolvedAt = Date.now();
         
-        // Optionally send resolution notification
-        if (severity === 'critical') {
-          await sendAlert({
-            severity: 'info',
-            title: `✅ Resolved: ${alertData.name}`,
-            description: alertData.summary,
-            miner: alertData.miner,
-          });
-        }
+        // Send resolution notification for all severities
+        // Use different emojis based on original severity
+        const resolvedEmoji = severity === 'critical' ? '✅' : severity === 'warning' ? '✔️' : 'ℹ️';
+        await sendAlert({
+          severity: 'info',
+          title: `${resolvedEmoji} Resolved: ${alertData.name}`,
+          description: alertData.summary,
+          miner: alertData.miner,
+        });
         
         logger.info(`Alert resolved: ${alertData.name} - ${alertData.summary}`);
       }
@@ -136,7 +266,7 @@ const generateAlertId = (alert: any): string => {
 };
 
 /**
- * Add alert to history
+ * Add alert to history (in-memory and database)
  */
 const addToHistory = (alert: Alert): void => {
   alertHistory.unshift(alert);
@@ -145,6 +275,9 @@ const addToHistory = (alert: Alert): void => {
   if (alertHistory.length > MAX_HISTORY_SIZE) {
     alertHistory.splice(MAX_HISTORY_SIZE);
   }
+  
+  // Persist to database
+  saveAlertToDb(alert);
 };
 
 /**
