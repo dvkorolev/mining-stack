@@ -40,6 +40,27 @@ const miningSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    
+    // Optimistic update: Set miner status immediately
+    setMinerStatusOptimistic: (state, action: PayloadAction<{ minerId: string; status: 'online' | 'offline' | 'error' }>) => {
+      if (state.stats) {
+        const miner = state.stats.miners.find(m => m.minerId === action.payload.minerId);
+        if (miner) {
+          miner.status = action.payload.status;
+        }
+      }
+    },
+    
+    // Optimistic update: Mark miner as rebooting
+    setMinerRebooting: (state, action: PayloadAction<string>) => {
+      if (state.stats) {
+        const miner = state.stats.miners.find(m => m.minerId === action.payload);
+        if (miner) {
+          miner.status = 'offline';
+          miner.statusMessage = 'Rebooting...';
+        }
+      }
+    },
   },
 });
 
@@ -47,7 +68,9 @@ export const {
   updateStats, 
   setConnectionStatus, 
   setError, 
-  clearError 
+  clearError,
+  setMinerStatusOptimistic,
+  setMinerRebooting
 } = miningSlice.actions;
 
 // Selectors

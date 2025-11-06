@@ -3,6 +3,7 @@ import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
 import miningRoutes from './routes/mining.routes';
 import poolsRoutes from './routes/pools.routes';
 import logsRoutes from './routes/logs.routes';
@@ -20,11 +21,31 @@ const server = http.createServer(app);
 // Setup WebSocket Server
 setupWebSocket(server);
 
+// Rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const strictLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10, // Limit each IP to 10 requests per windowMs for sensitive endpoints
+  message: 'Too many requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Middleware
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
+
+// Apply rate limiting to API routes
+app.use('/api', apiLimiter);
 
 // API Routes
 app.use('/api', miningRoutes);
@@ -146,48 +167,55 @@ server.listen(PORT, async () => {
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal: string) => {
-  logger.info(`Received ${signal} signal, shutting down gracefully...`);
+  logger.info(`${signal} received. Starting graceful shutdown...`);
   
-  try {
-    // Stop accepting new connections
-    server.close(() => {
-      logger.info('HTTP server closed');
-    });
+  // Stop accepting new connections
+  server.close(async () => {
+    logger.info('HTTP server closed');
     
-    // Stop mining simulation
-    const { stopMining } = require('./services/mining.service');
-    await stopMining();
-    logger.info('Mining simulation stopped');
-    
-    // Close WebSocket connections
-    const { closeWebSocket } = require('./services/websocket.service');
-    closeWebSocket();
-    logger.info('WebSocket connections closed');
-    
-    logger.info('Graceful shutdown completed');
-    process.exit(0);
-  } catch (error) {
-    logger.error('Error during graceful shutdown:', error);
-    process.exit(1);
-  }
+    try {
+      // Stop mining service
+      const { stopMining } = require('./services/mining.service');
+      await stopMining();
+      logger.info('Mining service stopped');
+      
+      // Close database connections
+      const { getDatabase } = require('./services/database.service');
+      const db = getDatabase();
+      db.close();
+      logger.info('Database connections closed');
+      
+      // Close WebSocket connections
+      const { closeWebSocket } = require('./services/websocket.service');
+      closeWebSocket();
+      logger.info('WebSocket connections closed');
+      
+      logger.info('Graceful shutdown completed');
+      process.exit(0);
+    } catch (error) {
+      logger.error('Error during graceful shutdown:', error);
+      process.exit(1);
+    }
+  });
   
-  // Force shutdown after 10 seconds
+  // Force shutdown after 30 seconds
   setTimeout(() => {
     logger.error('Forced shutdown after timeout');
     process.exit(1);
-  }, 10000);
+  }, 30000);
 };
 
-// Handle shutdown signals
+// Register shutdown handlers
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Handle uncaught errors
+// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught exception:', error);
   gracefulShutdown('uncaughtException');
 });
 
+// Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled rejection at:', promise, 'reason:', reason);
   gracefulShutdown('unhandledRejection');

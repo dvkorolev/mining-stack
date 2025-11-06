@@ -29,8 +29,8 @@ import WarningIcon from '@mui/icons-material/Warning';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
-import { useSelector } from 'react-redux';
-import { selectMiners } from '../features/mining/miningSlice';
+import { useSelector, useDispatch } from 'react-redux';
+import { selectMiners, setMinerRebooting } from '../features/mining/miningSlice';
 import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -73,6 +73,7 @@ const Miners: React.FC = () => {
     lastSeen: new Date(m.lastSeen),
   }));
   
+  const dispatch = useDispatch();
   const { showSuccess, showError, showWarning } = useNotification();
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
@@ -175,13 +176,18 @@ const Miners: React.FC = () => {
     }
   };
 
-  // Reboot single miner
+  // Reboot single miner with optimistic update
   const handleRebootMiner = async (minerId: string, minerName: string) => {
     if (!window.confirm(`Reboot ${minerName}? This will temporarily interrupt mining.`)) {
       return;
     }
     
     try {
+      // Optimistic update: immediately show rebooting status
+      dispatch(setMinerRebooting(minerId));
+      showSuccess(`Rebooting ${minerName}...`);
+      
+      // Make API call
       const result = await rebootMinerAPI(minerId);
       if (result.success) {
         showSuccess(result.message);
