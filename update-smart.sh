@@ -74,19 +74,50 @@ fi
 echo ""
 
 # Services to check
+declare -a SERVICES=()
+
 if [ -n "$SPECIFIC_SERVICE" ]; then
     SERVICES=("$SPECIFIC_SERVICE")
     echo -e "${BLUE}🎯 Checking specific service: $SPECIFIC_SERVICE${NC}"
 else
-    # Dynamically get services from docker-compose
     echo -e "${BLUE}🔍 Detecting services...${NC}"
-    SERVICES=($(docker compose $COMPOSE_FILES config --services 2>/dev/null | grep -E '^(backend|frontend|python-scheduler)$' || echo "backend frontend python-scheduler"))
+
+    # shellcheck disable=SC2207
+    mapfile -t DETECTED_SERVICES < <(docker compose $COMPOSE_FILES config --services 2>/dev/null)
+
+    if [ ${#DETECTED_SERVICES[@]} -eq 0 ]; then
+        echo -e "${YELLOW}   ⚠️  Unable to detect services automatically, using default list${NC}"
+        DETECTED_SERVICES=(backend frontend python-scheduler)
+    fi
+
+    if [ -n "$SERVICE_WHITELIST" ]; then
+        IFS=', ' read -r -a WHITELIST <<< "$SERVICE_WHITELIST"
+        declare -a FILTERED_SERVICES=()
+        for svc in "${DETECTED_SERVICES[@]}"; do
+            for allowed in "${WHITELIST[@]}"; do
+                if [ -n "$allowed" ] && [ "$svc" = "$allowed" ]; then
+                    FILTERED_SERVICES+=("$svc")
+                    break
+                fi
+            done
+        done
+
+        if [ ${#FILTERED_SERVICES[@]} -eq 0 ]; then
+            echo -e "${YELLOW}   ⚠️  Whitelist provided but none matched detected services; using whitelist as-is${NC}"
+            FILTERED_SERVICES=("${WHITELIST[@]}")
+        fi
+
+        SERVICES=("${FILTERED_SERVICES[@]}")
+    else
+        SERVICES=("${DETECTED_SERVICES[@]}")
+    fi
+
     echo -e "${BLUE}   Found services: ${SERVICES[*]}${NC}"
     echo -e "${BLUE}🔍 Checking for updates...${NC}"
 fi
 
 CHANGED_SERVICES=()
-PULLED_IMAGES=()
+declare -A PULLED_IMAGES=()
 
 # Check each service for updates
 for service in "${SERVICES[@]}"; do
@@ -98,7 +129,7 @@ for service in "${SERVICES[@]}"; do
     if [ -z "$CURRENT_IMAGE" ]; then
         echo -e "${YELLOW}   ⚠️  $service not running, will pull and start${NC}"
         CHANGED_SERVICES+=("$service")
-        PULLED_IMAGES+=("$service")
+        PULLED_IMAGES["$service"]=1
         # Pull now since we need it
         timeout 60 docker compose $COMPOSE_FILES pull $service > /dev/null 2>&1 || {
             echo -e "${RED}   ✗ Failed to pull $service${NC}"
@@ -108,13 +139,13 @@ for service in "${SERVICES[@]}"; do
     fi
     
     # Pull latest image with timeout
-    timeout 60 docker compose $COMPOSE_FILES pull $service > /dev/null 2>&1 || {
-        echo -e "${YELLOW}   ⚠️  Failed to pull $service (timeout or error), assuming no update${NC}"
-        continue
-    }
-    
-    # Mark as pulled
-    PULLED_IMAGES+=("$service")
+    if [[ ! "${PULLED_IMAGES[$service]}" ]]; then
+        timeout 60 docker compose $COMPOSE_FILES pull $service > /dev/null 2>&1 || {
+            echo -e "${YELLOW}   ⚠️  Failed to pull $service (timeout or error), assuming no update${NC}"
+            continue
+        }
+        PULLED_IMAGES["$service"]=1
+    fi
     
     # Get new image ID
     NEW_IMAGE=$(docker compose $COMPOSE_FILES images -q $service 2>/dev/null || echo "")
@@ -172,13 +203,14 @@ for service in "${CHANGED_SERVICES[@]}"; do
     echo -e "${BLUE}📥 Updating $service...${NC}"
     
     # Pull latest image only if not already pulled
-    if [[ ! " ${PULLED_IMAGES[*]} " =~ " ${service} " ]]; then
+    if [[ -z "${PULLED_IMAGES[$service]}" ]]; then
         echo -e "${BLUE}   Pulling image...${NC}"
         timeout 60 docker compose $COMPOSE_FILES pull $service || {
             echo -e "${RED}   ✗ Failed to pull $service${NC}"
             FAILED_SERVICES+=("$service")
             continue
         }
+        PULLED_IMAGES["$service"]=1
     fi
     
     # Restart only this service
