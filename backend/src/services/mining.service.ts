@@ -106,6 +106,17 @@ const minerPersistentState = new Map<string, {
   lastStatusChange: number;
 }>();
 
+// Share history for time-windowed rejection rate calculation
+interface ShareSnapshot {
+  timestamp: number;
+  accepted: number;
+  rejected: number;
+}
+
+const minerShareHistory = new Map<string, ShareSnapshot[]>();
+const SHARE_HISTORY_WINDOW = 5 * 60 * 1000; // 5 minutes (matching Prometheus)
+const MAX_SHARE_SNAPSHOTS = 10; // Keep last 10 snapshots
+
 // Minimum time between status changes (5 minutes)
 const MIN_STATUS_CHANGE_INTERVAL = 5 * 60 * 1000;
 
@@ -216,6 +227,57 @@ const generateRandomError = (temperature: number, rejectionRate: number): MinerE
 };
 
 /**
+ * Calculate time-windowed rejection rate (similar to Prometheus rate())
+ * Uses share deltas over the last 5 minutes
+ */
+const calculateRejectionRate = (minerId: string, currentAccepted: number, currentRejected: number): number => {
+  const now = Date.now();
+  const history = minerShareHistory.get(minerId) || [];
+  
+  // Add current snapshot
+  const currentSnapshot: ShareSnapshot = {
+    timestamp: now,
+    accepted: currentAccepted,
+    rejected: currentRejected,
+  };
+  
+  // Remove snapshots older than the window
+  const validHistory = history.filter(s => now - s.timestamp < SHARE_HISTORY_WINDOW);
+  
+  // Add current snapshot and limit size
+  validHistory.push(currentSnapshot);
+  if (validHistory.length > MAX_SHARE_SNAPSHOTS) {
+    validHistory.shift();
+  }
+  
+  // Update history
+  minerShareHistory.set(minerId, validHistory);
+  
+  // Need at least 2 snapshots to calculate rate
+  if (validHistory.length < 2) {
+    // Fallback to simple calculation for first snapshot
+    const total = currentAccepted + currentRejected;
+    return total > 0 ? (currentRejected / total) * 100 : 0;
+  }
+  
+  // Calculate deltas from oldest to newest snapshot
+  const oldest = validHistory[0];
+  const newest = validHistory[validHistory.length - 1];
+  
+  const acceptedDelta = newest.accepted - oldest.accepted;
+  const rejectedDelta = newest.rejected - oldest.rejected;
+  const totalDelta = acceptedDelta + rejectedDelta;
+  
+  // Calculate rejection rate from deltas (rate over time window)
+  if (totalDelta > 0) {
+    return (rejectedDelta / totalDelta) * 100;
+  }
+  
+  // No new shares in window, return 0
+  return 0;
+};
+
+/**
  * Get real miner stats from Prometheus
  * Uses actual data from pyasic metrics
  */
@@ -287,6 +349,12 @@ const getRealMinerStats = async (
   
   const lastError = errors.length > 0 ? errors[errors.length - 1] : undefined;
   
+  // Get share data from Prometheus if available
+  // Note: These would need to be added to the metrics parameter if available
+  const accepted = 0; // TODO: Add pool_accepted to Prometheus metrics
+  const rejected = 0; // TODO: Add pool_rejected to Prometheus metrics
+  const rejectionRate = calculateRejectionRate(minerId, accepted, rejected);
+  
   return {
     minerId,
     name: miner.alias || miner.name || miner.ip,
@@ -298,8 +366,9 @@ const getRealMinerStats = async (
     currentHashrate,
     averageHashrate: currentHashrate * 0.98, // Slightly lower average
     shares: {
-      accepted: 0, // Would need pool data from Prometheus
-      rejected: 0,
+      accepted,
+      rejected,
+      rejectionRate,
     },
     hardware: {
       temperature,
@@ -385,9 +454,15 @@ const simulateMinerStats = (miner: any): MinerStats => {
   
   // Generate hardware stats
   const temperature = config.simulation.tempMin + Math.random() * (config.simulation.tempMax - config.simulation.tempMin);
-  const acceptedShares = Math.floor(Math.random() * 1000);
-  const rejectedShares = Math.floor(Math.random() * 10);
-  const rejectionRate = acceptedShares > 0 ? (rejectedShares / (acceptedShares + rejectedShares)) * 100 : 0;
+  
+  // Generate cumulative share counts (increasing over time)
+  const baseAccepted = 1000000; // Start with high base
+  const baseRejected = 10000;
+  const acceptedShares = baseAccepted + Math.floor(Math.random() * 1000);
+  const rejectedShares = baseRejected + Math.floor(Math.random() * 50);
+  
+  // Use time-windowed rejection rate calculation
+  const rejectionRate = calculateRejectionRate(minerId, acceptedShares, rejectedShares);
   
   // Generate errors if status is error
   const errors: MinerError[] = [];
@@ -867,8 +942,9 @@ const updateMetricsFromScheduler = async (
       
       const accepted = m.pool_accepted || 0;
       const rejected = m.pool_rejected || 0;
-      const totalShares = accepted + rejected;
-      const rejectionRate = totalShares > 0 ? (rejected / totalShares) * 100 : 0;
+      
+      // Use time-windowed rejection rate calculation
+      const rejectionRate = calculateRejectionRate(m.name || m.ip, accepted, rejected);
       
       return {
         minerId: m.name || m.ip,
