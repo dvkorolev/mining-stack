@@ -40,6 +40,7 @@ import MinerCardList from '../components/MinerCardList';
 import VirtualizedMinerTable from '../components/VirtualizedMinerTable';
 import MinersTableSkeleton from '../components/MinersTableSkeleton';
 import ConfirmDialog from '../components/ConfirmDialog';
+import MinerDetailsModal from '../components/MinerDetailsModal';
 
 interface MinerError {
   code: string;
@@ -61,10 +62,18 @@ interface Miner {
   statusMessage?: string;
   lastSeen: Date;
   currentHashrate?: number;
+  averageHashrate?: number;
+  shares?: {
+    accepted: number;
+    rejected: number;
+    rejectionRate?: number;
+  };
   hardware?: {
     temperature?: number;
+    fanSpeed?: number;
     powerUsage?: number;
   };
+  uptime?: number;
   errors?: MinerError[];
   errorCount?: number;
   lastError?: MinerError;
@@ -106,6 +115,8 @@ const Miners: React.FC = () => {
     message: '',
     onConfirm: () => {},
   });
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [selectedMinerForDetails, setSelectedMinerForDetails] = useState<Miner | null>(null);
 
   // Load miners data (only for manual refresh)
   const loadMiners = async () => {
@@ -312,6 +323,18 @@ const Miners: React.FC = () => {
     }
   };
 
+  // Open miner details modal
+  const handleOpenDetails = (miner: Miner) => {
+    setSelectedMinerForDetails(miner);
+    setDetailsModalOpen(true);
+  };
+
+  // Close miner details modal
+  const handleCloseDetails = () => {
+    setDetailsModalOpen(false);
+    setSelectedMinerForDetails(null);
+  };
+
   // Handle sorting
   const handleSort = (column: 'name' | 'status' | 'hashrate' | 'temperature' | 'errors') => {
     if (sortBy === column) {
@@ -509,7 +532,20 @@ const Miners: React.FC = () => {
                         )}
                       </Box>
                     </TableCell>
-                    <TableCell>{miner.name}</TableCell>
+                    <TableCell>
+                      <Typography
+                        sx={{
+                          cursor: 'pointer',
+                          color: 'primary.main',
+                          '&:hover': {
+                            textDecoration: 'underline',
+                          },
+                        }}
+                        onClick={() => handleOpenDetails(miner)}
+                      >
+                        {miner.name}
+                      </Typography>
+                    </TableCell>
                     <TableCell>{miner.ip}</TableCell>
                     <TableCell>{miner.model}</TableCell>
                     <TableCell>{(miner as any).alias || '-'}</TableCell>
@@ -637,6 +673,14 @@ const Miners: React.FC = () => {
         confirmColor="error"
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog({ ...confirmDialog, open: false })}
+      />
+
+      {/* Miner Details Modal */}
+      <MinerDetailsModal
+        open={detailsModalOpen}
+        miner={selectedMinerForDetails}
+        onClose={handleCloseDetails}
+        onReboot={handleRebootMiner}
       />
     </Box>
   );
