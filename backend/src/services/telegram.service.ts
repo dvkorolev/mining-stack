@@ -927,12 +927,7 @@ const searchMiners = async (chatId: number, keyword: string): Promise<void> => {
       { text: '⬅️ Back to Miners', callback_data: 'miners_page_0_all' },
     ]);
 
-    await bot?.sendMessage(chatId, message, {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: minerButtons,
-      },
-    });
+    await sendOrEditMessage(chatId, message, { inline_keyboard: minerButtons }, 'miners', { keyword });
     logger.info('Telegram: Search results sent', { 
       service: 'telegram', 
       chatId, 
@@ -1097,10 +1092,7 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
         ],
       };
       
-      await bot?.sendMessage(chatId, errorMessage, { 
-        parse_mode: 'Markdown',
-        reply_markup: keyboard,
-      });
+      await sendOrEditMessage(chatId, errorMessage, keyboard, 'pools', { minerName, error: true });
       return;
     }
 
@@ -1125,10 +1117,7 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
       ],
     };
 
-    await bot?.sendMessage(chatId, message, { 
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
+    await sendOrEditMessage(chatId, message, keyboard, 'pools', { minerName });
     logger.info('Telegram: Pool configuration sent', { service: 'telegram', chatId, minerName, poolCount: result.pools!.length });
   } catch (error) {
     logger.error('Telegram: Error sending pool configuration', { service: 'telegram', chatId, minerName, error });
@@ -1156,7 +1145,16 @@ No active alerts at the moment.
 ✅ All systems operational
       `.trim();
 
-      await bot?.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '🔄 Refresh', callback_data: 'action_alerts' },
+            { text: '📊 Farm Status', callback_data: 'action_status' },
+          ],
+        ],
+      };
+
+      await sendOrEditMessage(chatId, message, keyboard, 'alerts');
       return;
     }
 
@@ -1211,10 +1209,7 @@ No active alerts at the moment.
       ],
     };
 
-    await bot?.sendMessage(chatId, message.trim(), { 
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
+    await sendOrEditMessage(chatId, message.trim(), keyboard, 'alerts');
     logger.info('Telegram: Active alerts sent', { service: 'telegram', chatId, alertCount: alerts.length });
   } catch (error) {
     logger.error('Telegram: Error sending active alerts', { service: 'telegram', chatId, error });
