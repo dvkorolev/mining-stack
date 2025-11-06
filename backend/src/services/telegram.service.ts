@@ -74,11 +74,18 @@ export const initTelegramBot = (token: string, chatIds: string | string[]): void
     setupCommandHandlers();
     setupCallbackHandlers();
 
-    // Send startup notification to all authorized users
+    // Send startup main menu to all authorized users
     for (const chatId of authorizedChatIds) {
-      sendMessageToChat(chatId, '🚀 Mining Stack Bot is online and ready!');
+      const idNum = Number(chatId);
+      if (!Number.isNaN(idNum)) {
+        sendMainMenu(idNum).catch((e) =>
+          logger.warn('Startup main menu failed', { service: 'telegram', chatId, error: e?.message || String(e) })
+        );
+      } else {
+        sendMessageToChat(chatId, '🚀 Mining Stack Bot is online and ready!');
+      }
     }
-    logger.info('Telegram startup notifications sent', { service: 'telegram', count: authorizedChatIds.size });
+    logger.info('Telegram startup menus sent', { service: 'telegram', count: authorizedChatIds.size });
   } catch (error) {
     logger.error('Failed to initialize Telegram bot:', { service: 'telegram', error });
     isEnabled = false;
@@ -278,6 +285,38 @@ const sendOrEditMessage = async (
       logger.info(`edit failed: ${errMsg}`);
     }
   }
+};
+
+/**
+ * Send main menu (used on /start and on startup)
+ */
+const sendMainMenu = async (chatId: number, isRefresh: boolean = false, messageId?: number): Promise<void> => {
+  const welcomeMessage = `
+🎉 *Welcome to Mining Stack Bot!*
+
+I'm your mining farm assistant. Use the buttons below to get started, or type /help for all commands.
+
+💡 *Quick Start:*
+• View farm status and stats
+• Browse and search miners
+• Check active alerts
+• Get help and tips
+  `.trim();
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: '📊 Farm Status', callback_data: 'action_status' },
+        { text: '⛏️ View Miners', callback_data: 'action_miners' },
+      ],
+      [
+        { text: '🔔 Alerts', callback_data: 'action_alerts' },
+        { text: '❓ Help', callback_data: 'help_main' },
+      ],
+    ],
+  };
+
+  await sendOrEditMessage(chatId, welcomeMessage, keyboard, 'status', undefined, messageId, isRefresh);
 };
 
 /**
@@ -493,35 +532,7 @@ const setupCommandHandlers = (): void => {
       return;
     }
 
-    const welcomeMessage = `
-🎉 *Welcome to Mining Stack Bot!*
-
-I'm your mining farm assistant. Use the buttons below to get started, or type /help for all commands.
-
-💡 *Quick Start:*
-• View farm status and stats
-• Browse and search miners
-• Check active alerts
-• Get help and tips
-    `.trim();
-
-    const keyboard = {
-      inline_keyboard: [
-        [
-          { text: '📊 Farm Status', callback_data: 'action_status' },
-          { text: '⛏️ View Miners', callback_data: 'action_miners' },
-        ],
-        [
-          { text: '🔔 Alerts', callback_data: 'action_alerts' },
-          { text: '❓ Help', callback_data: 'help_main' },
-        ],
-      ],
-    };
-
-    await bot?.sendMessage(msg.chat.id, welcomeMessage, {
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
+    await sendMainMenu(msg.chat.id);
   });
 
   // /status - Farm overview
@@ -683,12 +694,12 @@ const setupCallbackHandlers = (): void => {
         const parts = data.replace('miners_page_', '').split('_');
         const page = parseInt(parts[0], 10);
         const filter = (parts[1] || 'all') as 'all' | 'online' | 'offline' | 'error';
-        await sendMinersList(query.message.chat.id, page, filter, true);
+        await sendMinersList(query.message.chat.id, page, filter, true, messageId);
       }
       // Miner selection (refresh = true for same miner)
       else if (data.startsWith('miner_')) {
         const minerName = data.replace('miner_', '');
-        await sendMinerDetails(query.message.chat.id, minerName, true);
+        await sendMinerDetails(query.message.chat.id, minerName, true, messageId);
       } 
       // Reboot actions
       else if (data.startsWith('reboot_confirm_')) {
@@ -726,32 +737,7 @@ const setupCallbackHandlers = (): void => {
       }
       // Main menu
       else if (data === 'main_menu') {
-        const welcomeMessage = `
-🎉 *Welcome to Mining Stack Bot!*
-
-I'm your mining farm assistant. Use the buttons below to get started, or type /help for all commands.
-
-💡 *Quick Start:*
-• View farm status and stats
-• Browse and search miners
-• Check active alerts
-• Get help and tips
-        `.trim();
-
-        const keyboard = {
-          inline_keyboard: [
-            [
-              { text: '📊 Farm Status', callback_data: 'action_status' },
-              { text: '⛏️ View Miners', callback_data: 'action_miners' },
-            ],
-            [
-              { text: '🔔 Alerts', callback_data: 'action_alerts' },
-              { text: '❓ Help', callback_data: 'help_main' },
-            ],
-          ],
-        };
-
-        await sendOrEditMessage(query.message.chat.id, welcomeMessage, keyboard, 'status');
+        await sendMainMenu(query.message.chat.id, true, messageId);
       }
 
       // Answer callback query to remove loading state
@@ -1035,7 +1021,7 @@ const searchMiners = async (chatId: number, keyword: string): Promise<void> => {
 /**
  * Send detailed stats for a specific miner
  */
-const sendMinerDetails = async (chatId: number, minerName: string, isRefresh: boolean = false): Promise<void> => {
+const sendMinerDetails = async (chatId: number, minerName: string, isRefresh: boolean = false, messageId?: number): Promise<void> => {
   try {
     logger.info('Telegram: Sending miner details', { service: 'telegram', chatId, minerName });
     const miner = getMinerById(minerName);
@@ -1093,7 +1079,7 @@ Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
       ],
     };
 
-    await sendOrEditMessage(chatId, message, keyboard, 'miner_details', { minerName }, undefined, isRefresh);
+    await sendOrEditMessage(chatId, message, keyboard, 'miner_details', { minerName }, messageId, isRefresh);
     logger.info('Telegram: Miner details sent', { service: 'telegram', chatId, minerName });
   } catch (error) {
     logger.error('Telegram: Error sending miner details', { service: 'telegram', chatId, minerName, error });
