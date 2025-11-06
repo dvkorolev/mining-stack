@@ -36,6 +36,8 @@ import { useNotification } from '../context/NotificationContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import MinerCardList from '../components/MinerCardList';
 import VirtualizedMinerTable from '../components/VirtualizedMinerTable';
+import MinersTableSkeleton from '../components/MinersTableSkeleton';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 interface MinerError {
   code: string;
@@ -88,6 +90,17 @@ const Miners: React.FC = () => {
     model: '',
     alias: '',
     owner: '',
+  });
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
   });
 
   // Load miners data (only for manual refresh)
@@ -164,17 +177,26 @@ const Miners: React.FC = () => {
 
   // Delete miner
   const handleDeleteMiner = async (minerId: string) => {
-    if (!window.confirm('Are you sure you want to delete this miner?')) {
-      return;
-    }
+    const miner = miners.find(m => m.minerId === minerId);
+    const minerName = miner?.name || minerId;
     
-    try {
-      await deleteMinerAPI(minerId);
-      await loadMiners();
-    } catch (error) {
-      console.error('Error deleting miner:', error);
-      setError('Failed to delete miner');
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Miner',
+      message: `Are you sure you want to delete ${minerName}? This action cannot be undone.`,
+      onConfirm: async () => {
+        try {
+          await deleteMinerAPI(minerId);
+          showSuccess(`Miner ${minerName} deleted successfully`);
+          await loadMiners();
+        } catch (error) {
+          console.error('Error deleting miner:', error);
+          showError('Failed to delete miner');
+        } finally {
+          setConfirmDialog({ ...confirmDialog, open: false });
+        }
+      },
+    });
   };
 
   // Reboot single miner with optimistic update
@@ -288,8 +310,13 @@ const Miners: React.FC = () => {
 
   if (loading && miners.length === 0) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
+      <Box>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+          <Typography variant="h4">
+            Miners Management
+          </Typography>
+        </Box>
+        <MinersTableSkeleton />
       </Box>
     );
   }
@@ -530,6 +557,17 @@ const Miners: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText="Delete"
+        confirmColor="error"
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog({ ...confirmDialog, open: false })}
+      />
     </Box>
   );
 };
