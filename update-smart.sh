@@ -74,16 +74,19 @@ fi
 echo ""
 
 # Services to check
-SERVICES=("backend" "frontend" "python-scheduler")
-
 if [ -n "$SPECIFIC_SERVICE" ]; then
     SERVICES=("$SPECIFIC_SERVICE")
     echo -e "${BLUE}🎯 Checking specific service: $SPECIFIC_SERVICE${NC}"
 else
+    # Dynamically get services from docker-compose
+    echo -e "${BLUE}🔍 Detecting services...${NC}"
+    SERVICES=($(docker compose $COMPOSE_FILES config --services 2>/dev/null | grep -E '^(backend|frontend|python-scheduler)$' || echo "backend frontend python-scheduler"))
+    echo -e "${BLUE}   Found services: ${SERVICES[*]}${NC}"
     echo -e "${BLUE}🔍 Checking for updates...${NC}"
 fi
 
 CHANGED_SERVICES=()
+PULLED_IMAGES=()
 
 # Check each service for updates
 for service in "${SERVICES[@]}"; do
@@ -95,6 +98,12 @@ for service in "${SERVICES[@]}"; do
     if [ -z "$CURRENT_IMAGE" ]; then
         echo -e "${YELLOW}   ⚠️  $service not running, will pull and start${NC}"
         CHANGED_SERVICES+=("$service")
+        PULLED_IMAGES+=("$service")
+        # Pull now since we need it
+        timeout 60 docker compose $COMPOSE_FILES pull $service > /dev/null 2>&1 || {
+            echo -e "${RED}   ✗ Failed to pull $service${NC}"
+            continue
+        }
         continue
     fi
     
@@ -103,6 +112,9 @@ for service in "${SERVICES[@]}"; do
         echo -e "${YELLOW}   ⚠️  Failed to pull $service (timeout or error), assuming no update${NC}"
         continue
     }
+    
+    # Mark as pulled
+    PULLED_IMAGES+=("$service")
     
     # Get new image ID
     NEW_IMAGE=$(docker compose $COMPOSE_FILES images -q $service 2>/dev/null || echo "")
@@ -154,24 +166,37 @@ fi
 echo -e "${BLUE}🔄 Updating services...${NC}"
 echo ""
 
+FAILED_SERVICES=()
+
 for service in "${CHANGED_SERVICES[@]}"; do
     echo -e "${BLUE}📥 Updating $service...${NC}"
     
-    # Pull latest image (already done above, but ensures we have it)
-    docker compose $COMPOSE_FILES pull $service
+    # Pull latest image only if not already pulled
+    if [[ ! " ${PULLED_IMAGES[*]} " =~ " ${service} " ]]; then
+        echo -e "${BLUE}   Pulling image...${NC}"
+        timeout 60 docker compose $COMPOSE_FILES pull $service || {
+            echo -e "${RED}   ✗ Failed to pull $service${NC}"
+            FAILED_SERVICES+=("$service")
+            continue
+        }
+    fi
     
     # Restart only this service
     echo -e "${BLUE}🔄 Restarting $service...${NC}"
-    docker compose $COMPOSE_FILES up -d $service
-    
-    # Wait a bit for service to start
-    sleep 3
-    
-    # Check health
-    if docker compose $COMPOSE_FILES ps $service | grep -q "Up"; then
-        echo -e "${GREEN}✓ $service updated successfully${NC}"
+    if docker compose $COMPOSE_FILES up -d $service; then
+        # Wait a bit for service to start
+        sleep 3
+        
+        # Check health
+        if docker compose $COMPOSE_FILES ps $service | grep -q "Up"; then
+            echo -e "${GREEN}✓ $service updated successfully${NC}"
+        else
+            echo -e "${RED}⚠️  $service may have issues, check logs${NC}"
+            FAILED_SERVICES+=("$service")
+        fi
     else
-        echo -e "${RED}⚠️  $service may have issues, check logs${NC}"
+        echo -e "${RED}✗ Failed to restart $service${NC}"
+        FAILED_SERVICES+=("$service")
     fi
     echo ""
 done
@@ -181,16 +206,42 @@ echo -e "${BLUE}📊 Final Status:${NC}"
 docker compose $COMPOSE_FILES ps
 
 echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}✅ Smart update completed!${NC}"
-echo -e "${GREEN}========================================${NC}"
+if [ ${#FAILED_SERVICES[@]} -eq 0 ]; then
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}✅ Smart update completed!${NC}"
+    echo -e "${GREEN}========================================${NC}"
+else
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "${YELLOW}⚠️  Update completed with warnings${NC}"
+    echo -e "${YELLOW}========================================${NC}"
+fi
 echo ""
 
 # Show what was updated
-echo -e "${BLUE}Updated services:${NC}"
-for service in "${CHANGED_SERVICES[@]}"; do
-    echo -e "${GREEN}   ✓ $service${NC}"
-done
+if [ ${#CHANGED_SERVICES[@]} -gt 0 ]; then
+    echo -e "${BLUE}Updated services:${NC}"
+    for service in "${CHANGED_SERVICES[@]}"; do
+        if [[ " ${FAILED_SERVICES[*]} " =~ " ${service} " ]]; then
+            echo -e "${RED}   ✗ $service (failed)${NC}"
+        else
+            echo -e "${GREEN}   ✓ $service${NC}"
+        fi
+    done
+fi
+
+# Show failed services if any
+if [ ${#FAILED_SERVICES[@]} -gt 0 ]; then
+    echo ""
+    echo -e "${RED}Failed services:${NC}"
+    for service in "${FAILED_SERVICES[@]}"; do
+        echo -e "${RED}   ✗ $service${NC}"
+    done
+    echo ""
+    echo -e "${YELLOW}💡 Check logs for failed services:${NC}"
+    for service in "${FAILED_SERVICES[@]}"; do
+        echo -e "   docker compose $COMPOSE_FILES logs --tail=50 $service"
+    done
+fi
 
 echo ""
 echo -e "${BLUE}To view logs:${NC}"
