@@ -201,7 +201,8 @@ const sendOrEditMessage = async (
       }
     }
   } catch (error: any) {
-    const errMsg = error?.message || String(error);
+    // Extract error message from various possible locations
+    const errMsg = error?.response?.body?.description || error?.message || String(error);
     
     // "message is not modified" = no-op (content unchanged)
     if (errMsg.includes('message is not modified')) {
@@ -682,15 +683,15 @@ const setupCallbackHandlers = (): void => {
         const minerName = data.replace('pools_', '');
         await sendMinerPools(query.message.chat.id, minerName);
       }
-      // Quick actions (refresh = true)
+      // Quick actions (refresh = true, use callback message ID)
       else if (data === 'action_status') {
-        await sendFarmStatus(query.message.chat.id, true);
+        await sendFarmStatus(query.message.chat.id, true, messageId);
       }
       else if (data === 'action_miners') {
-        await sendMinersList(query.message.chat.id, 0, 'all', true);
+        await sendMinersList(query.message.chat.id, 0, 'all', true, messageId);
       }
       else if (data === 'action_alerts') {
-        await sendActiveAlerts(query.message.chat.id, true);
+        await sendActiveAlerts(query.message.chat.id, true, messageId);
       }
       else if (data === 'miners_list') {
         await sendMinersList(query.message.chat.id, 0, 'all');
@@ -745,7 +746,7 @@ I'm your mining farm assistant. Use the buttons below to get started, or type /h
 /**
  * Send farm status overview
  */
-const sendFarmStatus = async (chatId: number, isRefresh: boolean = false): Promise<void> => {
+const sendFarmStatus = async (chatId: number, isRefresh: boolean = false, messageId?: number): Promise<void> => {
   try {
     logger.info('Telegram: Sending farm status', { service: 'telegram', chatId });
     const stats = getMiningStats();
@@ -774,7 +775,7 @@ const sendFarmStatus = async (chatId: number, isRefresh: boolean = false): Promi
       ],
     };
 
-    await sendOrEditMessage(chatId, statusMessage, keyboard, 'status', undefined, undefined, isRefresh);
+    await sendOrEditMessage(chatId, statusMessage, keyboard, 'status', undefined, messageId, isRefresh);
     logger.info('Telegram: Farm status sent successfully', { service: 'telegram', chatId });
   } catch (error) {
     logger.error('Telegram: Error sending farm status', { service: 'telegram', chatId, error });
@@ -785,7 +786,7 @@ const sendFarmStatus = async (chatId: number, isRefresh: boolean = false): Promi
 /**
  * Send list of all miners with pagination and filtering
  */
-const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 'online' | 'offline' | 'error' = 'all', isRefresh: boolean = false): Promise<void> => {
+const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 'online' | 'offline' | 'error' = 'all', isRefresh: boolean = false, messageId?: number): Promise<void> => {
   try {
     logger.info('Telegram: Sending miners list', { service: 'telegram', chatId, page, filter });
     const allMiners = getMiners();
@@ -911,7 +912,7 @@ const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 
       { text: '📊 Farm Status', callback_data: 'action_status' },
     ]);
 
-    await sendOrEditMessage(chatId, message, { inline_keyboard: minerButtons }, 'miners', { page: currentPage, filter }, undefined, isRefresh);
+    await sendOrEditMessage(chatId, message, { inline_keyboard: minerButtons }, 'miners', { page: currentPage, filter }, messageId, isRefresh);
     logger.info('Telegram: Miners list sent', { 
       service: 'telegram', 
       chatId, 
@@ -1199,7 +1200,7 @@ const sendMinerPools = async (chatId: number, minerName: string): Promise<void> 
 /**
  * Send active alerts
  */
-const sendActiveAlerts = async (chatId: number, isRefresh: boolean = false): Promise<void> => {
+const sendActiveAlerts = async (chatId: number, isRefresh: boolean = false, messageId?: number): Promise<void> => {
   try {
     logger.info('Telegram: Fetching active alerts', { service: 'telegram', chatId });
     
@@ -1225,7 +1226,7 @@ No active alerts at the moment.
         ],
       };
 
-      await sendOrEditMessage(chatId, message, keyboard, 'alerts', undefined, undefined, isRefresh);
+      await sendOrEditMessage(chatId, message, keyboard, 'alerts', undefined, messageId, isRefresh);
       return;
     }
 
@@ -1280,7 +1281,7 @@ No active alerts at the moment.
       ],
     };
 
-    await sendOrEditMessage(chatId, message.trim(), keyboard, 'alerts', undefined, undefined, isRefresh);
+    await sendOrEditMessage(chatId, message.trim(), keyboard, 'alerts', undefined, messageId, isRefresh);
     logger.info('Telegram: Active alerts sent', { service: 'telegram', chatId, alertCount: alerts.length });
   } catch (error) {
     logger.error('Telegram: Error sending active alerts', { service: 'telegram', chatId, error });
