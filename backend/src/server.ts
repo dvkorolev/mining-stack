@@ -50,9 +50,10 @@ app.use(morgan('dev'));
 // Apply rate limiting to API routes
 app.use('/api', apiLimiter);
 
-// Apply authentication to all API routes
-// Note: Health and metrics endpoints are public
-app.use('/api', authenticate);
+// Apply optional authentication to all API routes
+// This allows both authenticated and unauthenticated access
+// Individual routes can require authentication using requireAdmin middleware
+app.use('/api', optionalAuth);
 
 // API Routes
 app.use('/api', miningRoutes);
