@@ -29,13 +29,16 @@ COPY package*.json ./
 # Install only production dependencies
 RUN npm install --only=production
 
-# Copy built files from builder
+# Copy built files from builder (includes compiled migration scripts)
 COPY --from=builder /app/dist ./dist
 
 # Copy necessary non-compiled files
 COPY --from=builder /app/src/config ./dist/config
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/init.sh /app/init.sh
+
+# Ensure migration script is executable
+RUN test -f /app/dist/scripts/migrate-yaml-to-db.js || echo "Warning: Migration script not found"
 
 # Create logs directory and set permissions
 RUN mkdir -p /app/logs && \

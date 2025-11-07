@@ -110,18 +110,26 @@ docker-compose -f docker-compose.prod.yml pull
 
 ```bash
 # Stop services
-docker-compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml down
+
+# Pull latest images (important!)
+docker compose -f docker-compose.prod.yml pull
 
 # Start backend only
-docker-compose -f docker-compose.prod.yml up -d backend
+docker compose -f docker-compose.prod.yml up -d backend
+
+# Wait for backend to be healthy
+sleep 10
 
 # Run migration
 export ADMIN_TELEGRAM_CHAT_ID="your_chat_id"
-docker-compose -f docker-compose.prod.yml exec backend npm run migrate
+docker compose -f docker-compose.prod.yml exec backend npm run migrate
 
 # Start all services
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
+
+**Note:** Use `docker compose` (with space) instead of `docker-compose` (with hyphen) for newer Docker versions.
 
 ### Step 5: Verify Migration
 
