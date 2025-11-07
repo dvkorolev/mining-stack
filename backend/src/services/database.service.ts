@@ -42,6 +42,21 @@ export interface AggregatedStats {
   dataPoints: number;
 }
 
+export interface MinerRecord {
+  ip: string;
+  name: string;
+  model: string;
+  alias?: string;
+  owner: string;
+  status?: string;
+  credentials?: string; // JSON string
+  use_https?: number; // 0 or 1 (SQLite boolean)
+  static_power?: number;
+  api_port?: number;
+  created_at?: number;
+  updated_at?: number;
+}
+
 class DatabaseService {
   private db: Database.Database;
   private dbPath: string;
@@ -132,6 +147,28 @@ class DatabaseService {
         value TEXT NOT NULL,
         updated_at INTEGER DEFAULT (strftime('%s', 'now'))
       );
+    `);
+
+    // Miners table for multi-user miner inventory
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS miners (
+        ip TEXT PRIMARY KEY NOT NULL,
+        name TEXT UNIQUE NOT NULL,
+        model TEXT NOT NULL,
+        alias TEXT,
+        owner TEXT NOT NULL,
+        status TEXT DEFAULT 'active',
+        credentials TEXT,
+        use_https INTEGER DEFAULT 0,
+        static_power INTEGER,
+        api_port INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+        updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_miners_owner ON miners(owner);
+      CREATE INDEX IF NOT EXISTS idx_miners_status ON miners(status);
+      CREATE INDEX IF NOT EXISTS idx_miners_name ON miners(name);
     `);
 
     logger.info('Database schema initialized');
@@ -457,6 +494,127 @@ class DatabaseService {
     });
     
     return settings;
+  }
+
+  /**
+   * Insert or update a miner record
+   */
+  upsertMiner(miner: MinerRecord): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO miners (
+        ip, name, model, alias, owner, status, credentials, 
+        use_https, static_power, api_port, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+      ON CONFLICT(ip) DO UPDATE SET 
+        name = excluded.name,
+        model = excluded.model,
+        alias = excluded.alias,
+        owner = excluded.owner,
+        status = excluded.status,
+        credentials = excluded.credentials,
+        use_https = excluded.use_https,
+        static_power = excluded.static_power,
+        api_port = excluded.api_port,
+        updated_at = strftime('%s', 'now')
+    `);
+    
+    try {
+      stmt.run(
+        miner.ip,
+        miner.name,
+        miner.model,
+        miner.alias || null,
+        miner.owner,
+        miner.status || 'active',
+        miner.credentials || null,
+        miner.use_https || 0,
+        miner.static_power || null,
+        miner.api_port || null
+      );
+      logger.info(`Miner upserted: ${miner.name} (${miner.ip})`);
+    } catch (error) {
+      logger.error(`Error upserting miner ${miner.name}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all miners for a specific owner
+   */
+  getMinersByOwner(owner: string): MinerRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM miners 
+      WHERE owner = ? 
+      ORDER BY name ASC
+    `);
+    return stmt.all(owner) as MinerRecord[];
+  }
+
+  /**
+   * Get all miners (admin only)
+   */
+  getAllMiners(): MinerRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM miners 
+      ORDER BY owner ASC, name ASC
+    `);
+    return stmt.all() as MinerRecord[];
+  }
+
+  /**
+   * Get a single miner by IP
+   */
+  getMinerByIp(ip: string): MinerRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM miners WHERE ip = ?');
+    const result = stmt.get(ip) as MinerRecord | undefined;
+    return result || null;
+  }
+
+  /**
+   * Get a single miner by name
+   */
+  getMinerByName(name: string): MinerRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM miners WHERE name = ?');
+    const result = stmt.get(name) as MinerRecord | undefined;
+    return result || null;
+  }
+
+  /**
+   * Delete a miner by IP
+   */
+  deleteMiner(ip: string): boolean {
+    const stmt = this.db.prepare('DELETE FROM miners WHERE ip = ?');
+    
+    try {
+      const result = stmt.run(ip);
+      if (result.changes > 0) {
+        logger.info(`Miner deleted: ${ip}`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      logger.error(`Error deleting miner ${ip}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update miner status
+   */
+  updateMinerStatus(ip: string, status: string): void {
+    const stmt = this.db.prepare(`
+      UPDATE miners 
+      SET status = ?, updated_at = strftime('%s', 'now') 
+      WHERE ip = ?
+    `);
+    
+    try {
+      stmt.run(status, ip);
+      logger.info(`Miner status updated: ${ip} -> ${status}`);
+    } catch (error) {
+      logger.error(`Error updating miner status ${ip}:`, error);
+      throw error;
+    }
   }
 
   /**

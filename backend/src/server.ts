@@ -12,6 +12,7 @@ import telegramRoutes from './routes/telegram.routes';
 import { setupWebSocket } from './services/websocket.service';
 import { startMining } from './services/mining.service';
 import { errorHandler } from './middleware/error.middleware';
+import { authenticate, optionalAuth } from './middleware/auth.middleware';
 import { config } from './config/config';
 import { logger } from './utils/logger';
 
@@ -48,6 +49,10 @@ app.use(morgan('dev'));
 
 // Apply rate limiting to API routes
 app.use('/api', apiLimiter);
+
+// Apply authentication to all API routes
+// Note: Health and metrics endpoints are public
+app.use('/api', authenticate);
 
 // API Routes
 app.use('/api', miningRoutes);
