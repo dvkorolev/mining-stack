@@ -14,6 +14,8 @@ import {
   updateMetricsFromScheduler 
 } from '../services/mining.service';
 import { getMiners, addMiner, updateMiner, deleteMiner } from '../config/miners.config';
+import { requireAdmin } from '../middleware/auth.middleware';
+import { getDatabase } from '../services/database.service';
 import { 
   initTelegramBot, 
   testConnection, 
@@ -202,6 +204,56 @@ router.delete('/mining/miners/:minerId', async (req, res, next) => {
     }
     
     res.json({ success: true, message: `Miner ${minerId} deleted` });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Transfer miner ownership (admin only)
+router.post('/mining/miners/:minerId/transfer', requireAdmin, async (req, res, next) => {
+  try {
+    const { minerId } = req.params;
+    const { newOwner } = req.body;
+    
+    if (!newOwner) {
+      return res.status(400).json({ error: 'newOwner (Telegram chat ID) is required' });
+    }
+    
+    const db = getDatabase();
+    const miner = db.getMinerByName(minerId) || db.getMinerByIp(minerId);
+    
+    if (!miner) {
+      return res.status(404).json({ error: `Miner ${minerId} not found` });
+    }
+    
+    const oldOwner = miner.owner;
+    
+    // Update ownership in database
+    const updatedMiner = {
+      ...miner,
+      owner: newOwner,
+    };
+    
+    db.upsertMiner(updatedMiner);
+    
+    logger.info(`Ownership transferred: ${miner.name} from ${oldOwner.substring(0, 4)}*** to ${newOwner.substring(0, 4)}***`, {
+      minerId: miner.name,
+      oldOwner,
+      newOwner,
+      adminChatId: req.user?.chatId,
+    });
+    
+    res.json({ 
+      success: true, 
+      message: `Ownership of ${miner.name} transferred successfully`,
+      miner: {
+        ip: miner.ip,
+        name: miner.name,
+        model: miner.model,
+        oldOwner,
+        newOwner,
+      }
+    });
   } catch (error) {
     next(error);
   }

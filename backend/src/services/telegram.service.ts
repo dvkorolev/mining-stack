@@ -902,6 +902,59 @@ ${isAuthorized(msg.chat.id) ? '✅ You are authorized to use this bot' : '⚠️
     await sendInteractiveHelp(msg.chat.id);
   });
 
+  // /transfer <miner> <new_owner> - Transfer miner ownership (admin only)
+  bot.onText(/\/transfer\s+(\S+)\s+(\S+)/, async (msg, match) => {
+    if (!isAuthorized(msg.chat.id)) return;
+    
+    const adminChatId = process.env.ADMIN_TELEGRAM_CHAT_ID || '';
+    if (msg.chat.id.toString() !== adminChatId) {
+      await bot?.sendMessage(msg.chat.id, '❌ This command is only available to administrators.');
+      return;
+    }
+    
+    const minerName = match?.[1];
+    const newOwner = match?.[2];
+    
+    if (!minerName || !newOwner) {
+      await bot?.sendMessage(msg.chat.id, '❌ Usage: /transfer <miner_name_or_ip> <new_owner_chat_id>');
+      return;
+    }
+    
+    try {
+      const { getDatabase } = require('./database.service');
+      const db = getDatabase();
+      const miner = db.getMinerByName(minerName) || db.getMinerByIp(minerName);
+      
+      if (!miner) {
+        await bot?.sendMessage(msg.chat.id, `❌ Miner "${minerName}" not found`);
+        return;
+      }
+      
+      const oldOwner = miner.owner;
+      
+      // Update ownership
+      const updatedMiner = {
+        ...miner,
+        owner: newOwner,
+      };
+      
+      db.upsertMiner(updatedMiner);
+      
+      logger.info(`Ownership transferred via Telegram: ${miner.name} from ${oldOwner.substring(0, 4)}*** to ${newOwner.substring(0, 4)}***`, {
+        minerId: miner.name,
+        oldOwner,
+        newOwner,
+        adminChatId: msg.chat.id,
+      });
+      
+      const message = `✅ *Ownership Transferred*\n\nMiner: *${miner.name}* (${miner.ip})\nModel: ${miner.model}\n\nOld Owner: \`${oldOwner.substring(0, 4)}***\`\nNew Owner: \`${newOwner.substring(0, 4)}***\``;
+      await bot?.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
+    } catch (error) {
+      logger.error('Error transferring miner ownership:', error);
+      await bot?.sendMessage(msg.chat.id, '❌ Error transferring ownership. Check logs for details.');
+    }
+  });
+
   // No keyboard button handlers needed - using inline buttons only
 };
 
