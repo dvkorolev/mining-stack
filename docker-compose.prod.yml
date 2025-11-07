@@ -16,6 +16,10 @@ services:
       - POOL_TEST_INTERVAL=${POOL_TEST_INTERVAL:-5}
       - LOG_FORMAT=${LOG_FORMAT:-json}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - BACKEND_URL=http://backend:5000
+      - PUSH_TO_BACKEND=${PUSH_TO_BACKEND:-true}
+      - SYSTEM_API_KEY=${SYSTEM_API_KEY:-}
+      - USE_DATABASE_CONFIG=${USE_DATABASE_CONFIG:-true}
     volumes:
       - ./etc:/app/etc
       - ./data/python-scheduler:/app/data
@@ -75,6 +79,10 @@ services:
       - MINER_CONFIG_PATH=/opt/mining-stack/etc/miners.yaml
       - DATA_DIR=/app/data
       - JOB_RUNNER_URL=http://python-scheduler:8000
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - ADMIN_TELEGRAM_CHAT_ID=${ADMIN_TELEGRAM_CHAT_ID:-}
+      - SYSTEM_API_KEY=${SYSTEM_API_KEY:-}
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
