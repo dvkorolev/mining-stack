@@ -27,7 +27,7 @@ async def collect_whatsminer_cgminer(miner_config: Dict) -> Optional[Dict]:
         Normalized data dict or None on failure
     """
     ip = miner_config.get('ip')
-    port = miner_config.get('api_port', 4028)
+    port = miner_config.get('api_port') or 4028
     
     if not ip:
         logger.error("Whatsminer CGMiner: No IP provided")
