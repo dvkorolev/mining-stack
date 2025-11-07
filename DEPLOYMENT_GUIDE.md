@@ -134,8 +134,18 @@ docker compose -f docker-compose.prod.yml up -d
 ### Step 5: Verify Migration
 
 ```bash
-# Check database
-docker-compose -f docker-compose.prod.yml exec backend sqlite3 /app/data/mining-stats.db "SELECT ip, name, owner FROM miners;"
+# Check database using Node.js
+docker compose -f docker-compose.prod.yml exec backend node -e "
+const Database = require('better-sqlite3');
+const db = new Database('/app/data/mining-stats.db', { readonly: true });
+const miners = db.prepare('SELECT ip, name, owner FROM miners').all();
+console.log('Migrated miners:', miners.length);
+miners.forEach(m => console.log(\`  - \${m.name} (\${m.ip}) -> Owner: \${m.owner}\`));
+db.close();
+"
+
+# Check migration logs
+docker compose -f docker-compose.prod.yml logs backend | grep -i "migration"
 
 # Test Telegram bot
 # Send /miners to your bot - you should see all your miners
@@ -258,9 +268,12 @@ docker-compose -f docker-compose.prod.yml exec backend npm run migrate
 **Problem:** Miners not showing in Telegram bot
 
 **Solution:**
-1. Check database: `docker-compose exec backend sqlite3 /app/data/mining-stats.db "SELECT * FROM miners;"`
+1. Check database:
+   ```bash
+   docker compose exec backend node -e "const db = require('better-sqlite3')('/app/data/mining-stats.db', {readonly: true}); console.log(db.prepare('SELECT * FROM miners').all()); db.close();"
+   ```
 2. Verify owner matches your chat ID
-3. Restart backend: `docker-compose restart backend`
+3. Restart backend: `docker compose restart backend`
 
 ### Python Scheduler Issues
 
@@ -350,17 +363,24 @@ docker-compose -f docker-compose.prod.yml logs --tail=100 backend
 ### Database Inspection
 
 ```bash
-# Connect to database
-docker-compose -f docker-compose.prod.yml exec backend sqlite3 /app/data/mining-stats.db
+# View miners using Node.js
+docker compose -f docker-compose.prod.yml exec backend node -e "
+const Database = require('better-sqlite3');
+const db = new Database('/app/data/mining-stats.db', { readonly: true });
+console.log('\n=== MINERS ===');
+const miners = db.prepare('SELECT ip, name, model, owner FROM miners').all();
+miners.forEach(m => console.log(JSON.stringify(m, null, 2)));
+console.log('\n=== RECENT ALERTS ===');
+const alerts = db.prepare('SELECT * FROM alerts ORDER BY fired_at DESC LIMIT 10').all();
+alerts.forEach(a => console.log(JSON.stringify(a, null, 2)));
+db.close();
+"
 
-# View miners
-SELECT ip, name, model, owner FROM miners;
-
-# View alerts
-SELECT * FROM alerts ORDER BY fired_at DESC LIMIT 10;
-
-# Exit
-.quit
+# Alternative: Install sqlite3 temporarily (requires root)
+docker compose -f docker-compose.prod.yml exec -u root backend sh -c "
+  apk add --no-cache sqlite && 
+  sqlite3 /app/data/mining-stats.db 'SELECT ip, name, model, owner FROM miners;'
+"
 ```
 
 ## Backup and Restore
