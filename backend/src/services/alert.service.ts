@@ -36,6 +36,31 @@ const MAX_HISTORY_SIZE = 1000;
 
 // SQLite database for persistent storage
 let db: Database.Database | null = null;
+let dbQueue: Promise<void> = Promise.resolve();
+
+interface AlertPersistenceMetrics {
+  pendingWrites: number;
+  maxPendingWrites: number;
+  enqueuedWrites: number;
+  completedWrites: number;
+  failedWrites: number;
+  lastQueueLatencyMs: number;
+  averageQueueLatencyMs: number;
+  lastWriteDurationMs: number;
+  averageWriteDurationMs: number;
+}
+
+const queueMetrics = {
+  pendingWrites: 0,
+  maxPendingWrites: 0,
+  enqueuedWrites: 0,
+  completedWrites: 0,
+  failedWrites: 0,
+  lastQueueLatencyMs: 0,
+  totalQueueLatencyMs: 0,
+  lastWriteDurationMs: 0,
+  totalWriteDurationMs: 0,
+};
 
 /**
  * Initialize SQLite database for alert persistence
@@ -82,31 +107,67 @@ const initDatabase = (): void => {
 /**
  * Save alert to database
  */
-const saveAlertToDb = (alert: Alert): void => {
-  if (!db) return;
-  
-  try {
-    const stmt = db.prepare(`
-      INSERT OR REPLACE INTO alerts (id, name, severity, status, miner, summary, description, fired_at, resolved_at, labels, annotations)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    stmt.run(
-      alert.id,
-      alert.name,
-      alert.severity,
-      alert.status,
-      alert.miner || null,
-      alert.summary,
-      alert.description,
-      alert.firedAt,
-      alert.resolvedAt || null,
-      JSON.stringify(alert.labels),
-      JSON.stringify(alert.annotations)
-    );
-  } catch (error) {
-    logger.error('Failed to save alert to database', { alertId: alert.id, error });
+const enqueueAlertPersistence = (alert: Alert): void => {
+  if (!db) {
+    queueMetrics.failedWrites += 1;
+    return;
   }
+
+  queueMetrics.enqueuedWrites += 1;
+  queueMetrics.pendingWrites += 1;
+  if (queueMetrics.pendingWrites > queueMetrics.maxPendingWrites) {
+    queueMetrics.maxPendingWrites = queueMetrics.pendingWrites;
+  }
+
+  const enqueuedAt = Date.now();
+
+  dbQueue = dbQueue
+    .then(async () => {
+      const activeDb = db;
+      const queueLatency = Date.now() - enqueuedAt;
+      queueMetrics.lastQueueLatencyMs = queueLatency;
+      queueMetrics.totalQueueLatencyMs += queueLatency;
+
+      try {
+        if (!activeDb) {
+          queueMetrics.failedWrites += 1;
+          return;
+        }
+
+        const start = Date.now();
+        const stmt = activeDb.prepare(`
+          INSERT OR REPLACE INTO alerts (id, name, severity, status, miner, summary, description, fired_at, resolved_at, labels, annotations)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        stmt.run(
+          alert.id,
+          alert.name,
+          alert.severity,
+          alert.status,
+          alert.miner || null,
+          alert.summary,
+          alert.description,
+          alert.firedAt,
+          alert.resolvedAt || null,
+          JSON.stringify(alert.labels),
+          JSON.stringify(alert.annotations)
+        );
+
+        const duration = Date.now() - start;
+        queueMetrics.lastWriteDurationMs = duration;
+        queueMetrics.totalWriteDurationMs += duration;
+        queueMetrics.completedWrites += 1;
+      } catch (error) {
+        queueMetrics.failedWrites += 1;
+        throw error;
+      } finally {
+        queueMetrics.pendingWrites = Math.max(queueMetrics.pendingWrites - 1, 0);
+      }
+    })
+    .catch((error: unknown) => {
+      logger.error('Alert DB queue task failed', { alertId: alert.id, error });
+    });
 };
 
 /**
@@ -277,7 +338,7 @@ const addToHistory = (alert: Alert): void => {
   }
   
   // Persist to database
-  saveAlertToDb(alert);
+  enqueueAlertPersistence(alert);
 };
 
 /**
@@ -301,4 +362,27 @@ export const getAlertStats = (): {
   const total24h = alertHistory.filter(a => a.firedAt >= last24h).length;
   
   return { active, critical, warning, info, total24h };
+};
+
+export const getAlertPersistenceMetrics = (): AlertPersistenceMetrics => {
+  const averageQueueLatencyMs =
+    queueMetrics.enqueuedWrites > 0
+      ? queueMetrics.totalQueueLatencyMs / queueMetrics.enqueuedWrites
+      : 0;
+  const averageWriteDurationMs =
+    queueMetrics.completedWrites > 0
+      ? queueMetrics.totalWriteDurationMs / queueMetrics.completedWrites
+      : 0;
+
+  return {
+    pendingWrites: queueMetrics.pendingWrites,
+    maxPendingWrites: queueMetrics.maxPendingWrites,
+    enqueuedWrites: queueMetrics.enqueuedWrites,
+    completedWrites: queueMetrics.completedWrites,
+    failedWrites: queueMetrics.failedWrites,
+    lastQueueLatencyMs: queueMetrics.lastQueueLatencyMs,
+    averageQueueLatencyMs,
+    lastWriteDurationMs: queueMetrics.lastWriteDurationMs,
+    averageWriteDurationMs,
+  };
 };

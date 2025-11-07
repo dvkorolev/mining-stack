@@ -26,6 +26,7 @@ interface UserContext {
   currentView: 'status' | 'miners' | 'miner_details' | 'alerts' | 'pools' | 'help';
   viewData?: any;
   navigationStack: NavigationView[];
+  lastUpdated: number;
 }
 
 interface NavigationView {
@@ -41,11 +42,245 @@ interface PaginationState {
 
 const userContexts = new Map<string, UserContext>();
 const userPaginationState = new Map<string, PaginationState>();
-const sentAlertIds = new Set<string>(); // Track sent alert notifications
+const sentAlertIds = new Map<string, number>(); // Track sent alert notifications with timestamps
 const lastRefreshTime = new Map<string, number>(); // Dedupe rapid refresh clicks
-const alertMessageIds = new Map<string, number>(); // Track alert message per chat for updates
+const alertMessageIds = new Map<string, { messageId: number; updatedAt: number }>(); // Track alert message per chat for updates
 const MINERS_PER_PAGE = 10;
 const REFRESH_DEBOUNCE_MS = 1000; // Ignore refresh within 1s
+const CONTEXT_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const ALERT_MESSAGE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const ALERT_DEDUP_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+const MAX_TRACKED_ALERTS = 1000;
+const CLEANUP_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+let cleanupTimer: NodeJS.Timeout | null = null;
+
+const runCleanup = (): void => {
+  const now = Date.now();
+
+  for (const [chatId, context] of userContexts.entries()) {
+    if (now - context.lastUpdated > CONTEXT_TTL_MS) {
+      userContexts.delete(chatId);
+      userPaginationState.delete(chatId);
+    }
+  }
+
+  for (const [chatId, entry] of alertMessageIds.entries()) {
+    if (now - entry.updatedAt > ALERT_MESSAGE_TTL_MS) {
+      alertMessageIds.delete(chatId);
+    }
+  }
+
+  for (const [alertId, timestamp] of sentAlertIds.entries()) {
+    if (now - timestamp > ALERT_DEDUP_TTL_MS) {
+      sentAlertIds.delete(alertId);
+    }
+  }
+};
+
+type TelegramSendMeta = {
+  description?: string;
+  chatId?: string | number;
+  messageId?: number;
+};
+
+const telegramSendFailureState = {
+  consecutiveFailures: 0,
+  lastFailureAt: 0,
+  alertRaised: false,
+};
+
+const telegramApi = {
+  async sendMessage(
+    chatId: number | string,
+    text: string,
+    options?: TelegramBot.SendMessageOptions,
+    meta: TelegramSendMeta = {}
+  ): Promise<TelegramBot.Message> {
+    const activeBot = bot;
+    if (!activeBot || !isEnabled) {
+      throw new Error('Telegram bot not initialized or disabled');
+    }
+
+    const description = meta.description || 'sendMessage';
+
+    try {
+      const result = await withTelegramRetry(
+        () => activeBot.sendMessage(chatId, text, options),
+        {
+          description,
+          chatId: meta.chatId ?? chatId,
+          messageId: meta.messageId,
+        }
+      );
+
+      if (telegramSendFailureState.consecutiveFailures > 0) {
+        logger.info('Telegram adapter: sendMessage recovered', {
+          service: 'telegram',
+          chatId,
+          previousFailures: telegramSendFailureState.consecutiveFailures,
+        });
+      }
+
+      telegramSendFailureState.consecutiveFailures = 0;
+      telegramSendFailureState.alertRaised = false;
+
+      return result;
+    } catch (error: any) {
+      telegramSendFailureState.consecutiveFailures += 1;
+      telegramSendFailureState.lastFailureAt = Date.now();
+
+      const errMsg = getTelegramErrorMessage(error) || error?.message || String(error);
+
+      logger.error('Telegram adapter: sendMessage failed', {
+        service: 'telegram',
+        chatId,
+        description,
+        error: errMsg,
+        consecutiveFailures: telegramSendFailureState.consecutiveFailures,
+      });
+
+      if (
+        !telegramSendFailureState.alertRaised &&
+        telegramSendFailureState.consecutiveFailures >= TELEGRAM_SEND_FAILURE_THRESHOLD
+      ) {
+        telegramSendFailureState.alertRaised = true;
+        logger.error('Telegram adapter: repeated sendMessage failures', {
+          service: 'telegram',
+          consecutiveFailures: telegramSendFailureState.consecutiveFailures,
+          lastFailureAt: telegramSendFailureState.lastFailureAt,
+        });
+      }
+
+      throw error;
+    }
+  },
+};
+
+const safeTelegramSend = async (
+  chatId: number | string,
+  text: string,
+  options?: TelegramBot.SendMessageOptions,
+  meta: TelegramSendMeta = {}
+): Promise<void> => {
+  try {
+    await telegramApi.sendMessage(chatId, text, options, meta);
+  } catch (error: any) {
+    logger.error('Telegram adapter: safe send failed', {
+      service: 'telegram',
+      chatId,
+      description: meta.description || 'safeSend',
+      error: error?.message || String(error),
+    });
+  }
+};
+
+const ensureCleanupTimer = (): void => {
+  if (!cleanupTimer) {
+    cleanupTimer = setInterval(runCleanup, CLEANUP_INTERVAL_MS);
+  }
+};
+
+const stopCleanupTimer = (): void => {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
+};
+
+const disableTelegramBot = async (reason: string, details?: Record<string, any>): Promise<void> => {
+  const shutdownDetails = details || {};
+
+  if (bot) {
+    try {
+      await bot.stopPolling();
+    } catch (error) {
+      logger.warn('Telegram: stopPolling failed during disable', {
+        service: 'telegram',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  bot = null;
+  isEnabled = false;
+  authorizedChatIds.clear();
+  stopCleanupTimer();
+
+  logger.error('Telegram bot disabled', {
+    service: 'telegram',
+    reason,
+    ...shutdownDetails,
+  });
+};
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const TELEGRAM_MAX_RETRIES = 3;
+const TELEGRAM_RETRY_BASE_DELAY_MS = 500;
+const TELEGRAM_SEND_FAILURE_THRESHOLD = 3;
+
+const getTelegramErrorMessage = (error: any): string => {
+  return (error?.response?.body?.description || error?.message || String(error) || '').toLowerCase();
+};
+
+const shouldRetryTelegramError = (error: any): boolean => {
+  const status = error?.response?.status;
+  if (status === 429 || (typeof status === 'number' && status >= 500)) {
+    return true;
+  }
+
+  const errMsg = getTelegramErrorMessage(error);
+  if (!errMsg) return false;
+
+  return (
+    errMsg.includes('retry later') ||
+    errMsg.includes('too many requests') ||
+    errMsg.includes('flood') ||
+    errMsg.includes('timeout') ||
+    errMsg.includes('terminated by other getupdates request') ||
+    errMsg.includes('connection') ||
+    errMsg.includes('conflict') ||
+    errMsg.includes('bad gateway') ||
+    errMsg.includes('service unavailable')
+  );
+};
+
+const withTelegramRetry = async <T>(
+  action: () => Promise<T>,
+  meta: { description: string; chatId?: string | number; messageId?: number }
+): Promise<T> => {
+  let attempt = 0;
+  let delay = TELEGRAM_RETRY_BASE_DELAY_MS;
+
+  while (true) {
+    attempt += 1;
+    try {
+      return await action();
+    } catch (error: any) {
+      if (attempt >= TELEGRAM_MAX_RETRIES || !shouldRetryTelegramError(error)) {
+        throw error;
+      }
+
+      const errMsg = getTelegramErrorMessage(error) || 'unknown error';
+      const retryAfter = Number(error?.response?.body?.parameters?.retry_after);
+      const waitMs = Number.isFinite(retryAfter) ? Math.max((retryAfter + 1) * 1000, delay) : delay;
+
+      logger.warn('Telegram: transient API failure, retrying', {
+        service: 'telegram',
+        description: meta.description,
+        chatId: meta.chatId,
+        messageId: meta.messageId,
+        attempt,
+        waitMs,
+        error: errMsg,
+      });
+
+      await sleep(waitMs);
+      delay = Math.min(delay * 2, TELEGRAM_RETRY_BASE_DELAY_MS * 8);
+    }
+  }
+};
 
 /**
  * Initialize Telegram bot
@@ -71,35 +306,57 @@ export const initTelegramBot = (token: string, chatIds: string | string[]): void
       authorizedUsers: authorizedChatIds.size
     });
 
+    ensureCleanupTimer();
+
     // Setup command handlers
     setupCommandHandlers();
     setupCallbackHandlers();
 
-    // Send startup main menu to all authorized users
-    const startupTasks: Promise<void>[] = [];
-    for (const chatId of authorizedChatIds) {
-      const idNum = Number(chatId);
-      if (!Number.isNaN(idNum)) {
-        startupTasks.push(
-          sendMainMenu(idNum).catch((e) => {
-            logger.warn('Startup main menu failed', { service: 'telegram', chatId, error: e?.message || String(e) });
-          })
-        );
-      } else {
-        startupTasks.push(
-          sendMessageToChat(chatId, '🚀 Mining Stack Bot is online and ready!').catch((e: any) => {
-            logger.warn('Startup notification failed', { service: 'telegram', chatId, error: e?.message || String(e) });
-          })
-        );
-      }
-    }
+    // Send startup main menu to all authorized users with retry/backoff
+    (async () => {
+      let failureCount = 0;
+      const MAX_FAILURES = 3;
 
-    Promise.allSettled(startupTasks).then((results) => {
-      const failed = results.filter((r) => r.status === 'rejected').length;
-      logger.info('Telegram startup menus processed', {
+      for (const chatId of authorizedChatIds) {
+        const idNum = Number(chatId);
+        const description = 'startup notification';
+
+        try {
+          await withTelegramRetry(async () => {
+            if (!Number.isNaN(idNum)) {
+              await sendMainMenu(idNum);
+            } else {
+              await sendMessageToChat(chatId, '🚀 Mining Stack Bot is online and ready!');
+            }
+          }, { description, chatId });
+        } catch (error: any) {
+          failureCount += 1;
+          const errMsg = error?.message || String(error);
+          logger.error('Telegram: startup notification failed after retries', {
+            service: 'telegram',
+            chatId,
+            error: errMsg,
+            failureCount,
+          });
+
+          if (failureCount >= MAX_FAILURES) {
+            await disableTelegramBot('Startup notifications failed', {
+              failures: failureCount,
+            });
+            return;
+          }
+        }
+      }
+
+      logger.info('Telegram startup notifications completed', {
         service: 'telegram',
-        count: authorizedChatIds.size,
-        failed,
+        totalChats: authorizedChatIds.size,
+        failures: failureCount,
+      });
+    })().catch(error => {
+      logger.error('Telegram: unexpected error during startup notifications', {
+        service: 'telegram',
+        error: error?.message || String(error),
       });
     });
   } catch (error) {
@@ -124,10 +381,21 @@ const getUserContext = (chatId: string): UserContext => {
     context = {
       currentView: 'status',
       navigationStack: [],
+      lastUpdated: Date.now(),
     };
     userContexts.set(chatId, context);
+  } else {
+    context.lastUpdated = Date.now();
   }
   return context;
+};
+
+const trimSentAlerts = (): void => {
+  while (sentAlertIds.size > MAX_TRACKED_ALERTS) {
+    const oldestKey = sentAlertIds.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    sentAlertIds.delete(oldestKey);
+  }
 };
 
 /**
@@ -182,6 +450,15 @@ const sendOrEditMessage = async (
   messageId?: number,  // Optional: specific message ID to edit (from callback query)
   isRefresh: boolean = false  // If true, never fall back to sendMessage
 ): Promise<void> => {
+  const activeBot = bot;
+  if (!activeBot) {
+    logger.warn('Telegram: sendOrEditMessage called before bot initialization', {
+      service: 'telegram',
+      chatId,
+    });
+    return;
+  }
+
   const context = getUserContext(chatId.toString());
   
   // Use provided messageId or fall back to context
@@ -195,9 +472,12 @@ const sendOrEditMessage = async (
       }
       // No message ID and not refresh = send new message
       logger.info(`no message_id (sending new)`);
-      const msg = await bot?.sendMessage(chatId, text, {
+      const msg = await withTelegramRetry(() => activeBot.sendMessage(chatId, text, {
         parse_mode: 'Markdown',
         reply_markup: keyboard,
+      }), {
+        description: 'sendMessage',
+        chatId,
       });
       if (msg) {
         context.lastMessageId = msg.message_id;
@@ -214,11 +494,15 @@ const sendOrEditMessage = async (
 
     // Try to edit existing message
     logger.info(`editing message_id=${targetMessageId}`);
-    await bot?.editMessageText(text, {
+    await withTelegramRetry(() => activeBot.editMessageText(text, {
       chat_id: chatId,
       message_id: targetMessageId,
       parse_mode: 'Markdown',
       reply_markup: keyboard,
+    }), {
+      description: 'editMessageText',
+      chatId,
+      messageId: targetMessageId,
     });
     logger.info(`editing message_id=${targetMessageId} → edited ok`);
     
@@ -240,52 +524,35 @@ const sendOrEditMessage = async (
       }
     }
   } catch (error: any) {
-    // Extract error message from various possible locations and normalize
-    const errMsg = (error?.response?.body?.description || error?.message || String(error)).toLowerCase();
-    
-    // "message is not modified" = no-op (content unchanged)
-    if (errMsg.includes('message is not modified') || errMsg.includes('message not modified')) {
-      logger.info(`edit failed: message is not modified (no-op)`);
-      // Still update navigation stack
-      if (viewType) {
-        const currentView = context.navigationStack[context.navigationStack.length - 1];
-        if (!currentView || currentView.type !== viewType) {
-          pushView(chatId.toString(), {
-            type: viewType as any,
-            data: viewData,
-            messageId: targetMessageId,
-          });
-        } else {
-          currentView.data = viewData;
-          currentView.messageId = targetMessageId;
-        }
-      }
+    const errMsg = getTelegramErrorMessage(error);
+
+    if (errMsg.includes('message is not modified')) {
+      logger.info(`edit failed: ${errMsg} (ignored)`);
       return;
     }
-    
-    // Message not found / can't be edited (widen matching)
-    const isNotFound = errMsg.includes('message to edit not found') || 
-                       errMsg.includes('message to delete not found') ||
-                       errMsg.includes('message can\'t be edited') ||
-                       errMsg.includes('message can\'t be deleted') ||
-                       errMsg.includes('message_id_invalid') ||
-                       errMsg.includes('message is too old') ||
-                       errMsg.includes('message to modify not found');
-    
+
+    const isNotFound = errMsg.includes('message to edit not found') ||
+      errMsg.includes('message to delete not found') ||
+      errMsg.includes("message can't be edited") ||
+      errMsg.includes("message can't be deleted") ||
+      errMsg.includes('message_id_invalid') ||
+      errMsg.includes('message is too old') ||
+      errMsg.includes('message to modify not found');
+
     if (isRefresh) {
-      // For refresh: never send new message, just log and return
       logger.info(`edit failed: ${errMsg} (refresh ignored)`);
       return;
     }
-    
-    // For non-refresh: only send new message if truly not found
+
     if (isNotFound) {
       logger.info(`edit failed: ${errMsg} (sending new)`);
-      const msg = await bot?.sendMessage(chatId, text, {
+      const msg = await withTelegramRetry(() => activeBot.sendMessage(chatId, text, {
         parse_mode: 'Markdown',
         reply_markup: keyboard,
+      }), {
+        description: 'sendMessage (fallback after edit failure)',
+        chatId,
       });
-      
       if (msg) {
         context.lastMessageId = msg.message_id;
         if (viewType) {
@@ -297,7 +564,6 @@ const sendOrEditMessage = async (
         }
       }
     } else {
-      // Other errors: log and no-op
       logger.info(`edit failed: ${errMsg}`);
     }
   }
@@ -1416,13 +1682,17 @@ No active alerts at the moment.
  * Send message to a specific chat
  */
 const sendMessageToChat = async (chatId: string, message: string, options?: any): Promise<void> => {
-  if (!bot || !isEnabled) {
+  const activeBot = bot;
+  if (!activeBot || !isEnabled) {
     logger.warn('Telegram bot not initialized or disabled', { service: 'telegram' });
     return;
   }
 
   try {
-    await bot.sendMessage(chatId, message, options);
+    await telegramApi.sendMessage(chatId, message, options, {
+      description: 'sendMessageToChat',
+      chatId,
+    });
     logger.debug('Telegram: Message sent to chat', { service: 'telegram', chatId: chatId.substring(0, 4) + '***' });
   } catch (error) {
     logger.error('Telegram: Error sending message', { service: 'telegram', chatId, error });
@@ -1447,13 +1717,8 @@ export const sendAlertNotification = async (alert: any): Promise<void> => {
   }
 
   // Mark as sent
-  sentAlertIds.add(alertId);
-  
-  // Clean up old alert IDs (keep last 1000)
-  if (sentAlertIds.size > 1000) {
-    const idsArray = Array.from(sentAlertIds);
-    idsArray.slice(0, sentAlertIds.size - 1000).forEach(id => sentAlertIds.delete(id));
-  }
+  sentAlertIds.set(alertId, Date.now());
+  trimSentAlerts();
 
   // Update consolidated alert message for all users
   await updateConsolidatedAlertMessage();
@@ -1464,7 +1729,8 @@ export const sendAlertNotification = async (alert: any): Promise<void> => {
  * This keeps a single message in the chat that shows all current alerts
  */
 const updateConsolidatedAlertMessage = async (): Promise<void> => {
-  if (!bot || !isEnabled) return;
+  const activeBot = bot;
+  if (!activeBot || !isEnabled) return;
 
   // Get active alerts from alert service
   const { getActiveAlerts } = require('./alert.service');
@@ -1535,17 +1801,23 @@ const updateConsolidatedAlertMessage = async (): Promise<void> => {
       const chatIdNum = Number(chatId);
       if (Number.isNaN(chatIdNum)) continue;
 
-      const existingMessageId = alertMessageIds.get(chatId);
+      const entry = alertMessageIds.get(chatId);
+      const existingMessageId = entry?.messageId;
       
       if (existingMessageId) {
         // Try to edit existing message
         try {
-          await bot.editMessageText(message, {
+          await withTelegramRetry(() => activeBot.editMessageText(message, {
             chat_id: chatIdNum,
             message_id: existingMessageId,
             parse_mode: 'Markdown',
             reply_markup: keyboard,
+          }), {
+            description: 'alert message edit',
+            chatId,
+            messageId: existingMessageId,
           });
+          alertMessageIds.set(chatId, { messageId: existingMessageId, updatedAt: Date.now() });
           logger.info('Telegram: Consolidated alert message updated', { 
             service: 'telegram', 
             chatId: chatId.substring(0, 4) + '***',
@@ -1555,11 +1827,14 @@ const updateConsolidatedAlertMessage = async (): Promise<void> => {
           // Message not found or too old, send new one
           const errMsg = (editError?.response?.body?.description || editError?.message || '').toLowerCase();
           if (errMsg.includes('message') && (errMsg.includes('not found') || errMsg.includes('too old'))) {
-            const msg = await bot.sendMessage(chatIdNum, message, {
+            const msg = await withTelegramRetry(() => activeBot.sendMessage(chatIdNum, message, {
               parse_mode: 'Markdown',
               reply_markup: keyboard,
+            }), {
+              description: 'alert message replace after edit not found',
+              chatId,
             });
-            alertMessageIds.set(chatId, msg.message_id);
+            alertMessageIds.set(chatId, { messageId: msg.message_id, updatedAt: Date.now() });
             logger.info('Telegram: New consolidated alert message sent', { 
               service: 'telegram', 
               chatId: chatId.substring(0, 4) + '***'
@@ -1568,11 +1843,14 @@ const updateConsolidatedAlertMessage = async (): Promise<void> => {
         }
       } else {
         // No existing message, send new one
-        const msg = await bot.sendMessage(chatIdNum, message, {
+        const msg = await withTelegramRetry(() => activeBot.sendMessage(chatIdNum, message, {
           parse_mode: 'Markdown',
           reply_markup: keyboard,
+        }), {
+          description: 'alert message initial send',
+          chatId,
         });
-        alertMessageIds.set(chatId, msg.message_id);
+        alertMessageIds.set(chatId, { messageId: msg.message_id, updatedAt: Date.now() });
         logger.info('Telegram: Consolidated alert message created', { 
           service: 'telegram', 
           chatId: chatId.substring(0, 4) + '***',

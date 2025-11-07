@@ -108,8 +108,11 @@ app.get('/health', (req, res) => {
 // Basic Prometheus metrics endpoint
 app.get('/metrics', (req, res) => {
   const { getMiningStats } = require('./services/mining.service');
+  const { getAlertPersistenceMetrics } = require('./services/alert.service');
+
   const stats = getMiningStats();
-  
+  const alertMetrics = getAlertPersistenceMetrics();
+
   // Simple Prometheus text format
   const metrics = [
     `# HELP mining_hashrate_total Total hashrate in TH/s`,
@@ -123,8 +126,44 @@ app.get('/metrics', (req, res) => {
     `# HELP mining_total_mined Total amount mined`,
     `# TYPE mining_total_mined counter`,
     `mining_total_mined ${stats.totalMined || 0}`,
+    ``,
+    `# HELP alert_queue_pending Number of alert writes currently pending in the queue`,
+    `# TYPE alert_queue_pending gauge`,
+    `alert_queue_pending ${alertMetrics.pendingWrites}`,
+    ``,
+    `# HELP alert_queue_max_pending Maximum observed pending alert writes`,
+    `# TYPE alert_queue_max_pending gauge`,
+    `alert_queue_max_pending ${alertMetrics.maxPendingWrites}`,
+    ``,
+    `# HELP alert_queue_enqueued_total Total alert writes enqueued`,
+    `# TYPE alert_queue_enqueued_total counter`,
+    `alert_queue_enqueued_total ${alertMetrics.enqueuedWrites}`,
+    ``,
+    `# HELP alert_queue_completed_total Total alert writes completed`,
+    `# TYPE alert_queue_completed_total counter`,
+    `alert_queue_completed_total ${alertMetrics.completedWrites}`,
+    ``,
+    `# HELP alert_queue_failed_total Total alert writes that failed`,
+    `# TYPE alert_queue_failed_total counter`,
+    `alert_queue_failed_total ${alertMetrics.failedWrites}`,
+    ``,
+    `# HELP alert_queue_last_latency_ms Most recent queue wait time in milliseconds`,
+    `# TYPE alert_queue_last_latency_ms gauge`,
+    `alert_queue_last_latency_ms ${alertMetrics.lastQueueLatencyMs}`,
+    ``,
+    `# HELP alert_queue_average_latency_ms Average queue wait time in milliseconds`,
+    `# TYPE alert_queue_average_latency_ms gauge`,
+    `alert_queue_average_latency_ms ${alertMetrics.averageQueueLatencyMs}`,
+    ``,
+    `# HELP alert_queue_last_duration_ms Most recent alert write duration in milliseconds`,
+    `# TYPE alert_queue_last_duration_ms gauge`,
+    `alert_queue_last_duration_ms ${alertMetrics.lastWriteDurationMs}`,
+    ``,
+    `# HELP alert_queue_average_duration_ms Average alert write duration in milliseconds`,
+    `# TYPE alert_queue_average_duration_ms gauge`,
+    `alert_queue_average_duration_ms ${alertMetrics.averageWriteDurationMs}`,
   ].join('\n');
-  
+
   res.set('Content-Type', 'text/plain');
   res.send(metrics);
 });
