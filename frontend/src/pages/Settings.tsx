@@ -26,6 +26,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 const Settings: React.FC = () => {
   const [botToken, setBotToken] = useState('');
   const [chatIds, setChatIds] = useState('');
+  const [adminChatId, setAdminChatId] = useState(localStorage.getItem('adminChatId') || '');
   const [showToken, setShowToken] = useState(false);
   const [botStatus, setBotStatus] = useState<{ enabled: boolean; chatIds: string[] } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -348,6 +349,44 @@ const Settings: React.FC = () => {
             </Link>
           </Typography>
         </Box>
+      </Paper>
+
+      {/* Admin Settings Section */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Admin Settings
+        </Typography>
+        <Divider sx={{ mb: 3 }} />
+        
+        <Alert severity="info" sx={{ mb: 3 }}>
+          <Typography variant="body2" gutterBottom>
+            <strong>Admin Chat ID</strong> is required for admin-only features like transferring miner ownership.
+          </Typography>
+          <Typography variant="body2">
+            Send <code>/whoami</code> to your Telegram bot to get your Chat ID.
+          </Typography>
+        </Alert>
+
+        <TextField
+          fullWidth
+          label="Admin Telegram Chat ID"
+          value={adminChatId}
+          onChange={(e) => setAdminChatId(e.target.value)}
+          placeholder="e.g., 123456789"
+          helperText="Your Telegram Chat ID for admin operations"
+          sx={{ mb: 2 }}
+        />
+
+        <Button
+          variant="contained"
+          onClick={() => {
+            localStorage.setItem('adminChatId', adminChatId);
+            setMessage({ type: 'success', text: 'Admin Chat ID saved successfully!' });
+          }}
+          disabled={!adminChatId.trim()}
+        >
+          Save Admin Chat ID
+        </Button>
       </Paper>
 
       {/* Future Settings Sections */}

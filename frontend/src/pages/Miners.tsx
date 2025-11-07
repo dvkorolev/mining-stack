@@ -31,6 +31,7 @@ import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectMiners, setMinerRebooting } from '../features/mining/miningSlice';
 import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
@@ -41,6 +42,7 @@ import VirtualizedMinerTable from '../components/VirtualizedMinerTable';
 import MinersTableSkeleton from '../components/MinersTableSkeleton';
 import ConfirmDialog from '../components/ConfirmDialog';
 import MinerDetailsModal from '../components/MinerDetailsModal';
+import TransferOwnershipDialog from '../components/TransferOwnershipDialog';
 
 interface MinerError {
   code: string;
@@ -97,6 +99,8 @@ const Miners: React.FC = () => {
   const [selectedMiners, setSelectedMiners] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'name' | 'status' | 'hashrate' | 'temperature' | 'errors'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [minerToTransfer, setMinerToTransfer] = useState<Miner | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     ip: '',
@@ -577,6 +581,18 @@ const Miners: React.FC = () => {
                           <DeleteIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      <Tooltip title="Transfer ownership (Admin)">
+                        <IconButton
+                          size="small"
+                          color="info"
+                          onClick={() => {
+                            setMinerToTransfer(miner);
+                            setTransferDialogOpen(true);
+                          }}
+                        >
+                          <SwapHorizIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))
@@ -673,6 +689,20 @@ const Miners: React.FC = () => {
         confirmColor="error"
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog({ ...confirmDialog, open: false })}
+      />
+
+      {/* Transfer Ownership Dialog */}
+      <TransferOwnershipDialog
+        open={transferDialogOpen}
+        onClose={() => {
+          setTransferDialogOpen(false);
+          setMinerToTransfer(null);
+        }}
+        miner={minerToTransfer}
+        onTransferSuccess={() => {
+          showSuccess('Ownership transferred successfully');
+          dispatch(fetchMiningStats() as any);
+        }}
       />
 
       {/* Miner Details Modal */}
