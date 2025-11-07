@@ -30,6 +30,14 @@ interface YamlMiner {
     username?: string;
     password?: string;
   };
+  thresholds?: {
+    hashrate?: {
+      expected?: number;
+    };
+    power?: {
+      expected?: number;
+    };
+  };
   useHttps?: boolean;
   static_power?: number;
   api_port?: number;
@@ -98,6 +106,7 @@ async function migrateYamlToDb(): Promise<void> {
           owner: ADMIN_CHAT_ID,
           status: 'active',
           credentials: yamlMiner.credentials ? JSON.stringify(yamlMiner.credentials) : undefined,
+          thresholds: yamlMiner.thresholds ? JSON.stringify(yamlMiner.thresholds) : undefined,
           use_https: yamlMiner.useHttps ? 1 : 0,
           static_power: yamlMiner.static_power,
           api_port: yamlMiner.api_port,

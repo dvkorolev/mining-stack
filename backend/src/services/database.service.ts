@@ -49,7 +49,8 @@ export interface MinerRecord {
   alias?: string;
   owner: string;
   status?: string;
-  credentials?: string; // JSON string
+  credentials?: string; // JSON string: {username, password}
+  thresholds?: string; // JSON string: {hashrate: {expected}, power: {expected}}
   use_https?: number; // 0 or 1 (SQLite boolean)
   static_power?: number;
   api_port?: number;
@@ -159,6 +160,7 @@ class DatabaseService {
         owner TEXT NOT NULL,
         status TEXT DEFAULT 'active',
         credentials TEXT,
+        thresholds TEXT,
         use_https INTEGER DEFAULT 0,
         static_power INTEGER,
         api_port INTEGER,
@@ -170,6 +172,17 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_miners_status ON miners(status);
       CREATE INDEX IF NOT EXISTS idx_miners_name ON miners(name);
     `);
+    
+    // Add thresholds column if it doesn't exist (migration for existing databases)
+    try {
+      this.db.exec(`ALTER TABLE miners ADD COLUMN thresholds TEXT`);
+      logger.info('Added thresholds column to miners table');
+    } catch (error: any) {
+      // Column already exists, ignore error
+      if (!error.message.includes('duplicate column')) {
+        logger.warn('Could not add thresholds column:', error.message);
+      }
+    }
 
     logger.info('Database schema initialized');
   }
@@ -502,9 +515,9 @@ class DatabaseService {
   upsertMiner(miner: MinerRecord): void {
     const stmt = this.db.prepare(`
       INSERT INTO miners (
-        ip, name, model, alias, owner, status, credentials, 
+        ip, name, model, alias, owner, status, credentials, thresholds,
         use_https, static_power, api_port, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
       ON CONFLICT(ip) DO UPDATE SET 
         name = excluded.name,
         model = excluded.model,
@@ -512,6 +525,7 @@ class DatabaseService {
         owner = excluded.owner,
         status = excluded.status,
         credentials = excluded.credentials,
+        thresholds = excluded.thresholds,
         use_https = excluded.use_https,
         static_power = excluded.static_power,
         api_port = excluded.api_port,
@@ -527,6 +541,7 @@ class DatabaseService {
         miner.owner,
         miner.status || 'active',
         miner.credentials || null,
+        miner.thresholds || null,
         miner.use_https || 0,
         miner.static_power || null,
         miner.api_port || null
