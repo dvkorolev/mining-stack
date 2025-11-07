@@ -5,6 +5,7 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { logger } from '../utils/logger';
+import { getDatabase, MinerRecord } from '../services/database.service';
 
 const execAsync = promisify(exec);
 
@@ -57,7 +58,10 @@ export interface MinerConfig {
   pools?: PoolConfig[];  // Mining pool configuration
 }
 
-let miners: MinerConfig[] = [];
+// Cache for miners (loaded from database)
+let minersCache: MinerConfig[] = [];
+let cacheTimestamp: number = 0;
+const CACHE_TTL_MS = 5000; // 5 seconds cache
 
 /**
  * Get effective thresholds for a miner (global defaults + per-miner overrides)
@@ -93,72 +97,102 @@ export const getEffectiveThresholds = (miner: MinerConfig): Required<MinerThresh
 };
 
 /**
- * Load miners configuration from YAML file
+ * Convert database MinerRecord to MinerConfig
  */
-export const loadMinersConfig = (): MinerConfig[] => {
-  try {
-    // Import config here to avoid circular dependency
-    const { config: appConfig } = require('./config');
-    
-    // Look for config in configured path first, then fall back to local etc directory
-    const configPath = fs.existsSync(appConfig.paths.minerConfig)
-      ? appConfig.paths.minerConfig
-      : appConfig.paths.minerConfigFallback;
-    const fileContents = fs.readFileSync(configPath, 'utf8');
-    const config = yaml.load(fileContents) as { miners: MinerConfig[] };
-    
-    if (config && Array.isArray(config.miners)) {
-      const currentTime = new Date();
-      miners = config.miners.map((miner: any) => {
-        // Auto-generate name from IP if not provided
-        const name = miner.name || `miner-${miner.ip.replace(/\./g, '-')}`;
-        
-        // Migrate old nested credentials to flat fields (backward compatibility)
-        let username = miner.username;
-        let password = miner.password;
-        
-        if (!username && miner.credentials) {
-          username = miner.credentials.username;
-          password = miner.credentials.password;
-          logger.info(`Migrating credentials for ${name} to flat structure`);
-        }
-        
-        return {
-          ip: miner.ip,
-          name,
-          model: miner.model,
-          alias: miner.alias,
-          username,
-          password,
-          api_port: miner.api_port,
-          status: 'offline' as const,
-          lastSeen: currentTime,
-          thresholds: miner.thresholds,
-          pools: miner.pools
-        };
-      });
-      
-      logger.info(`Loaded configuration for ${miners.length} miners`);
-      return miners;
+const dbRecordToConfig = (record: MinerRecord): MinerConfig => {
+  let credentials: { username?: string; password?: string } | undefined;
+  
+  if (record.credentials) {
+    try {
+      credentials = JSON.parse(record.credentials);
+    } catch (error) {
+      logger.warn(`Failed to parse credentials for ${record.name}`);
     }
+  }
+  
+  return {
+    ip: record.ip,
+    name: record.name,
+    model: record.model,
+    alias: record.alias,
+    username: credentials?.username,
+    password: credentials?.password,
+    api_port: record.api_port,
+    status: 'offline' as const,
+    lastSeen: new Date(),
+    // Note: thresholds and pools are not stored in DB yet
+    // They can be added as JSON columns if needed
+  };
+};
+
+/**
+ * Load miners configuration from database
+ * @param owner Optional owner filter (Telegram chat ID). If not provided, loads all miners.
+ */
+export const loadMinersConfig = (owner?: string): MinerConfig[] => {
+  try {
+    const db = getDatabase();
+    const records = owner ? db.getMinersByOwner(owner) : db.getAllMiners();
     
-    throw new Error('Invalid miners configuration format');
+    const currentTime = new Date();
+    minersCache = records.map(record => ({
+      ...dbRecordToConfig(record),
+      status: 'offline' as const,
+      lastSeen: currentTime,
+    }));
+    
+    cacheTimestamp = Date.now();
+    logger.info(`Loaded configuration for ${minersCache.length} miners${owner ? ` (owner: ${owner.substring(0, 4)}***)` : ''}`);
+    return minersCache;
   } catch (error) {
-    logger.error('Failed to load miners configuration:', error);
+    logger.error('Failed to load miners configuration from database:', error);
     return [];
   }
 };
 
 /**
  * Get all configured miners
+ * @param owner Optional owner filter (Telegram chat ID)
+ * @param forceRefresh Force reload from database
  */
-export const getMiners = (): MinerConfig[] => [...miners];
+export const getMiners = (owner?: string, forceRefresh: boolean = false): MinerConfig[] => {
+  // Refresh cache if expired or forced
+  if (forceRefresh || Date.now() - cacheTimestamp > CACHE_TTL_MS) {
+    loadMinersConfig(owner);
+  }
+  
+  // If owner is specified and cache doesn't match, reload
+  if (owner && minersCache.length > 0) {
+    // Simple check: if we have a cache but need filtered results, reload
+    loadMinersConfig(owner);
+  }
+  
+  return [...minersCache];
+};
 
 /**
  * Get miner by ID (name or IP)
  */
 export const getMinerById = (id: string): MinerConfig | undefined => {
-  return miners.find(miner => miner.name === id || miner.ip === id);
+  // Try cache first
+  let miner = minersCache.find(m => m.name === id || m.ip === id);
+  
+  // If not in cache, try database
+  if (!miner) {
+    try {
+      const db = getDatabase();
+      const record = db.getMinerByName(id) || db.getMinerByIp(id);
+      if (record) {
+        miner = dbRecordToConfig(record);
+        // Update cache
+        minersCache.push(miner);
+      }
+    } catch (error) {
+      logger.error(`Failed to get miner ${id} from database:`, error);
+    }
+  }
+  
+  return miner;
 };
 
 /**
@@ -170,6 +204,15 @@ export const updateMinerStatus = (minerId: string, status: 'online' | 'offline' 
   
   miner.status = status;
   miner.lastSeen = new Date();
+  
+  // Update database status
+  try {
+    const db = getDatabase();
+    db.updateMinerStatus(miner.ip, status);
+  } catch (error) {
+    logger.error(`Failed to update miner status in database for ${minerId}:`, error);
+  }
+  
   return { ...miner };
 };
 
@@ -212,86 +255,75 @@ const regeneratePrometheusRules = async (): Promise<void> => {
 };
 
 /**
- * Save miners configuration to YAML file
+ * Save miners configuration to database (deprecated - use addMiner/updateMiner instead)
+ * Kept for backward compatibility
  */
 export const saveMinersConfig = (minersToSave: MinerConfig[]): void => {
-  try {
-    const { config: appConfig } = require('./config');
-    const configPath = appConfig.paths.minerConfig;
-    
-    // Ensure directory exists
-    const dir = path.dirname(configPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    
-    // Prepare data for YAML (remove runtime fields)
-    const minersData = minersToSave.map(m => {
-      const data: any = {
-        ip: m.ip,
-        name: m.name,
-        model: m.model,
-      };
-      
-      // Add optional fields only if present (aligned with Python collectors)
-      if (m.alias) data.alias = m.alias;
-      if (m.username) data.username = m.username;
-      if (m.password) data.password = m.password;
-      if (m.api_port) data.api_port = m.api_port;
-      if (m.algorithm) data.algorithm = m.algorithm;
-      if (m.thresholds) data.thresholds = m.thresholds;
-      if (m.pools) data.pools = m.pools;
-      
-      return data;
-    });
-    
-    const data = { miners: minersData };
-    const yamlStr = yaml.dump(data, {
-      indent: 2,
-      lineWidth: -1,
-      noRefs: true,
-    });
-    
-    fs.writeFileSync(configPath, yamlStr, 'utf8');
-    logger.info(`Saved ${minersToSave.length} miners to ${configPath}`);
-    
-    // Regenerate Prometheus rules after save (async, don't wait)
-    regeneratePrometheusRules().catch(err => {
-      logger.warn('Failed to auto-regenerate Prometheus rules:', err);
-    });
-  } catch (error) {
-    logger.error('Failed to save miners configuration:', error);
-    throw error;
-  }
+  logger.warn('saveMinersConfig is deprecated. Use addMiner/updateMiner for individual operations.');
+  // This function is kept for backward compatibility but does nothing
+  // Individual miners should be added/updated using addMiner/updateMiner
 };
 
 /**
  * Add new miner
+ * @param minerData Miner configuration data
+ * @param owner Owner's Telegram chat ID (required for multi-user support)
  */
-export const addMiner = (minerData: Omit<MinerConfig, 'status' | 'lastSeen'>): MinerConfig => {
+export const addMiner = (minerData: Omit<MinerConfig, 'status' | 'lastSeen'>, owner: string): MinerConfig => {
   try {
     // Validate required fields
     if (!minerData.ip || !minerData.model) {
       throw new Error('IP and model are required');
     }
     
+    if (!owner) {
+      throw new Error('Owner (Telegram chat ID) is required');
+    }
+    
+    const db = getDatabase();
+    
     // Check if miner with same IP already exists
-    const existing = miners.find(m => m.ip === minerData.ip);
+    const existing = db.getMinerByIp(minerData.ip);
     if (existing) {
       throw new Error(`Miner with IP ${minerData.ip} already exists`);
     }
     
+    const name = minerData.name || `miner-${minerData.ip.replace(/\./g, '-')}`;
+    
+    // Prepare credentials JSON
+    const credentials = (minerData.username || minerData.password) 
+      ? JSON.stringify({ username: minerData.username, password: minerData.password })
+      : undefined;
+    
+    const minerRecord: MinerRecord = {
+      ip: minerData.ip,
+      name,
+      model: minerData.model,
+      alias: minerData.alias,
+      owner,
+      status: 'active',
+      credentials,
+      api_port: minerData.api_port,
+    };
+    
+    db.upsertMiner(minerRecord);
+    
     const newMiner: MinerConfig = {
       ...minerData,
-      name: minerData.name || `miner-${minerData.ip.replace(/\./g, '-')}`,
+      name,
       status: 'offline',
       lastSeen: new Date(),
     };
     
-    miners.push(newMiner);
-    saveMinersConfig(miners);
+    // Update cache
+    minersCache.push(newMiner);
     
-    logger.info(`Added new miner: ${newMiner.name} (${newMiner.ip})`);
+    // Regenerate Prometheus rules after add (async, don't wait)
+    regeneratePrometheusRules().catch(err => {
+      logger.warn('Failed to auto-regenerate Prometheus rules:', err);
+    });
+    
+    logger.info(`Added new miner: ${newMiner.name} (${newMiner.ip}) for owner ${owner.substring(0, 4)}***`);
     return newMiner;
   } catch (error) {
     logger.error('Failed to add miner:', error);
@@ -304,30 +336,62 @@ export const addMiner = (minerData: Omit<MinerConfig, 'status' | 'lastSeen'>): M
  */
 export const updateMiner = (minerId: string, updates: Partial<MinerConfig>): MinerConfig | null => {
   try {
-    const index = miners.findIndex(m => m.name === minerId || m.ip === minerId);
-    if (index === -1) {
+    const db = getDatabase();
+    const existing = db.getMinerByName(minerId) || db.getMinerByIp(minerId);
+    
+    if (!existing) {
       logger.warn(`Miner ${minerId} not found for update`);
       return null;
     }
     
     // Don't allow changing IP to one that already exists
-    if (updates.ip && updates.ip !== miners[index].ip) {
-      const existing = miners.find(m => m.ip === updates.ip);
-      if (existing) {
+    if (updates.ip && updates.ip !== existing.ip) {
+      const ipExists = db.getMinerByIp(updates.ip);
+      if (ipExists) {
         throw new Error(`Miner with IP ${updates.ip} already exists`);
       }
     }
     
-    miners[index] = { 
-      ...miners[index], 
-      ...updates,
-      lastSeen: new Date(),
+    // Prepare updated credentials if username/password changed
+    let credentials = existing.credentials;
+    if (updates.username !== undefined || updates.password !== undefined) {
+      const currentCreds = credentials ? JSON.parse(credentials) : {};
+      credentials = JSON.stringify({
+        username: updates.username ?? currentCreds.username,
+        password: updates.password ?? currentCreds.password,
+      });
+    }
+    
+    const updatedRecord: MinerRecord = {
+      ip: updates.ip ?? existing.ip,
+      name: updates.name ?? existing.name,
+      model: updates.model ?? existing.model,
+      alias: updates.alias ?? existing.alias,
+      owner: existing.owner, // Owner cannot be changed
+      status: existing.status,
+      credentials,
+      api_port: updates.api_port ?? existing.api_port,
     };
     
-    saveMinersConfig(miners);
+    db.upsertMiner(updatedRecord);
     
-    logger.info(`Updated miner: ${miners[index].name} (${miners[index].ip})`);
-    return miners[index];
+    // Update cache
+    const cacheIndex = minersCache.findIndex(m => m.name === minerId || m.ip === minerId);
+    if (cacheIndex !== -1) {
+      minersCache[cacheIndex] = {
+        ...minersCache[cacheIndex],
+        ...updates,
+        lastSeen: new Date(),
+      };
+    }
+    
+    // Regenerate Prometheus rules after update (async, don't wait)
+    regeneratePrometheusRules().catch(err => {
+      logger.warn('Failed to auto-regenerate Prometheus rules:', err);
+    });
+    
+    logger.info(`Updated miner: ${updatedRecord.name} (${updatedRecord.ip})`);
+    return dbRecordToConfig(updatedRecord);
   } catch (error) {
     logger.error('Failed to update miner:', error);
     throw error;
@@ -339,18 +403,32 @@ export const updateMiner = (minerId: string, updates: Partial<MinerConfig>): Min
  */
 export const deleteMiner = (minerId: string): boolean => {
   try {
-    const index = miners.findIndex(m => m.name === minerId || m.ip === minerId);
-    if (index === -1) {
+    const db = getDatabase();
+    const existing = db.getMinerByName(minerId) || db.getMinerByIp(minerId);
+    
+    if (!existing) {
       logger.warn(`Miner ${minerId} not found for deletion`);
       return false;
     }
     
-    const deletedMiner = miners[index];
-    miners.splice(index, 1);
-    saveMinersConfig(miners);
+    const success = db.deleteMiner(existing.ip);
     
-    logger.info(`Deleted miner: ${deletedMiner.name} (${deletedMiner.ip})`);
-    return true;
+    if (success) {
+      // Update cache
+      const cacheIndex = minersCache.findIndex(m => m.name === minerId || m.ip === minerId);
+      if (cacheIndex !== -1) {
+        minersCache.splice(cacheIndex, 1);
+      }
+      
+      // Regenerate Prometheus rules after delete (async, don't wait)
+      regeneratePrometheusRules().catch(err => {
+        logger.warn('Failed to auto-regenerate Prometheus rules:', err);
+      });
+      
+      logger.info(`Deleted miner: ${existing.name} (${existing.ip})`);
+    }
+    
+    return success;
   } catch (error) {
     logger.error('Failed to delete miner:', error);
     throw error;

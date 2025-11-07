@@ -140,7 +140,10 @@ router.post('/mining/database/backup', async (req, res, next) => {
 // Get all miners configuration
 router.get('/mining/miners', async (req, res, next) => {
   try {
-    const miners = getMiners();
+    // If system user (python-scheduler), return all miners
+    // If regular user, return only their miners
+    const owner = req.user?.isSystem ? undefined : req.user?.chatId;
+    const miners = getMiners(owner, true);
     res.json({ miners });
   } catch (error) {
     next(error);
@@ -156,7 +159,13 @@ router.post('/mining/miners', async (req, res, next) => {
       return res.status(400).json({ error: 'IP and model are required' });
     }
     
-    const newMiner = addMiner({ name, ip, model, alias, username, password, api_port });
+    // Get owner from authenticated user context
+    const owner = req.user?.chatId || '';
+    if (!owner || owner === 'system') {
+      return res.status(400).json({ error: 'Owner (Telegram chat ID) is required. System users cannot add miners.' });
+    }
+    
+    const newMiner = addMiner({ name, ip, model, alias, username, password, api_port }, owner);
     res.json({ success: true, miner: newMiner });
   } catch (error) {
     next(error);

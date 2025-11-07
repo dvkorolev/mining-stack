@@ -1120,7 +1120,8 @@ const sendFarmStatus = async (chatId: number, isRefresh: boolean = false, messag
 const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 'online' | 'offline' | 'error' = 'all', isRefresh: boolean = false, messageId?: number): Promise<void> => {
   try {
     logger.info('Telegram: Sending miners list', { service: 'telegram', chatId, page, filter });
-    const allMiners = getMiners();
+    // Get miners for this user only (owner-based filtering)
+    const allMiners = getMiners(chatId.toString(), true);
     const stats = getMiningStats();
 
     if (allMiners.length === 0) {
@@ -1274,7 +1275,7 @@ const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 
 const searchMiners = async (chatId: number, keyword: string): Promise<void> => {
   try {
     logger.info('Telegram: Searching miners', { service: 'telegram', chatId, keyword });
-    const allMiners = getMiners();
+    const allMiners = getMiners(chatId.toString(), true);
     const stats = getMiningStats();
 
     if (allMiners.length === 0) {
