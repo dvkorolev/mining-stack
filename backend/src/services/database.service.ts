@@ -595,6 +595,15 @@ class DatabaseService {
   }
 
   /**
+   * Get a single miner by alias
+   */
+  getMinerByAlias(alias: string): MinerRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM miners WHERE alias = ?');
+    const result = stmt.get(alias) as MinerRecord | undefined;
+    return result || null;
+  }
+
+  /**
    * Delete a miner by IP
    */
   deleteMiner(ip: string): boolean {

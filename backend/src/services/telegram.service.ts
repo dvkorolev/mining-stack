@@ -923,7 +923,7 @@ ${isAuthorized(msg.chat.id) ? '✅ You are authorized to use this bot' : '⚠️
     try {
       const { getDatabase } = require('./database.service');
       const db = getDatabase();
-      const miner = db.getMinerByName(minerName) || db.getMinerByIp(minerName);
+      const miner = db.getMinerByName(minerName) || db.getMinerByIp(minerName) || db.getMinerByAlias(minerName);
       
       if (!miner) {
         await bot?.sendMessage(msg.chat.id, `❌ Miner "${minerName}" not found`);

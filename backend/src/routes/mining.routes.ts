@@ -220,7 +220,7 @@ router.post('/mining/miners/:minerId/transfer', requireAdmin, async (req, res, n
     }
     
     const db = getDatabase();
-    const miner = db.getMinerByName(minerId) || db.getMinerByIp(minerId);
+    const miner = db.getMinerByName(minerId) || db.getMinerByIp(minerId) || db.getMinerByAlias(minerId);
     
     if (!miner) {
       return res.status(404).json({ error: `Miner ${minerId} not found` });
