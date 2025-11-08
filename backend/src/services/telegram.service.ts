@@ -2084,14 +2084,51 @@ const formatUptime = (seconds: number): string => {
 
 /**
  * Send login verification message to user
+ * Works independently of bot initialization state
  */
 export const sendLoginVerification = async (chatId: string): Promise<boolean> => {
-  if (!bot || !isEnabled) {
-    logger.warn('Telegram: Cannot send verification - bot not initialized', { service: 'telegram' });
-    return false;
-  }
-  
   try {
+    // If bot is already initialized, use it
+    if (bot && isEnabled) {
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '✅ Confirm Login', callback_data: `login_confirm_${chatId}` },
+            { text: '❌ Cancel', callback_data: `login_cancel_${chatId}` },
+          ],
+        ],
+      };
+      
+      await bot.sendMessage(
+        parseInt(chatId),
+        `🔐 *Login Verification*\n\n` +
+        `Someone is trying to log in to the Mining Dashboard with your Chat ID.\n\n` +
+        `If this is you, click "Confirm Login" below.\n` +
+        `If not, click "Cancel" and ignore this message.\n\n` +
+        `⏱️ This verification will expire in 5 minutes.`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        }
+      );
+      
+      logger.info(`Login verification sent to Chat ID: ${chatId}`, { service: 'telegram' });
+      return true;
+    }
+    
+    // If bot not initialized, try to get token from database/config
+    const { getDatabase } = require('./database.service');
+    const db = getDatabase();
+    const settings = db.getSettings();
+    
+    if (!settings?.telegram_bot_token) {
+      logger.warn('Telegram: Cannot send verification - no bot token configured', { service: 'telegram' });
+      return false;
+    }
+    
+    // Create a temporary bot instance just for this message
+    const tempBot = new TelegramBot(settings.telegram_bot_token, { polling: false });
+    
     const keyboard = {
       inline_keyboard: [
         [
@@ -2101,7 +2138,7 @@ export const sendLoginVerification = async (chatId: string): Promise<boolean> =>
       ],
     };
     
-    await bot.sendMessage(
+    await tempBot.sendMessage(
       parseInt(chatId),
       `🔐 *Login Verification*\n\n` +
       `Someone is trying to log in to the Mining Dashboard with your Chat ID.\n\n` +
@@ -2114,7 +2151,7 @@ export const sendLoginVerification = async (chatId: string): Promise<boolean> =>
       }
     );
     
-    logger.info(`Login verification sent to Chat ID: ${chatId}`, { service: 'telegram' });
+    logger.info(`Login verification sent to Chat ID: ${chatId} (temp bot)`, { service: 'telegram' });
     return true;
   } catch (error: any) {
     logger.error(`Failed to send login verification to ${chatId}:`, error);
