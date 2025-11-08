@@ -9,6 +9,7 @@ import {
   updatePool,
   deletePool,
   triggerPoolCollection,
+  checkPoolUsage,
   PoolConfig,
   PoolsConfiguration,
   FileLockTimeout,
@@ -219,6 +220,29 @@ router.put('/:url', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/pools/:url/usage
+ * Check if a pool is in use by miners
+ */
+router.get('/:url/usage', (req: Request, res: Response) => {
+  try {
+    const url = decodeURIComponent(req.params.url);
+    const usage = checkPoolUsage(url);
+
+    res.json({
+      success: true,
+      ...usage,
+    });
+  } catch (error) {
+    logger.error('Error checking pool usage:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check pool usage',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
  * DELETE /api/pools/:url
  * Delete a pool (URL is encoded)
  */
@@ -243,6 +267,13 @@ router.delete('/:url', async (req: Request, res: Response) => {
     // Handle lock errors with appropriate status codes
     if (error instanceof FileLockTimeout || error instanceof FileLockError) {
       handleLockError(error, res);
+    } else if (error instanceof Error && error.message.includes('currently in use')) {
+      // Pool is in use - return 409 Conflict
+      res.status(409).json({
+        success: false,
+        message: error.message,
+        error: error.message,
+      });
     } else {
       res.status(400).json({
         success: false,

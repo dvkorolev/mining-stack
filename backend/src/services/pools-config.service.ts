@@ -4,6 +4,7 @@ import yaml from 'js-yaml';
 import path from 'path';
 import { logger } from '../utils/logger';
 import { withConfigLock, FileLockTimeout, FileLockError } from '../utils/fileLock';
+import { getMiners } from '../config/miners.config';
 
 // Re-export lock errors for use in routes
 export { FileLockTimeout, FileLockError };
@@ -233,6 +234,28 @@ export const updatePool = async (oldUrl: string, updatedPool: PoolConfig): Promi
 };
 
 /**
+ * Check if a pool is in use by any miners
+ */
+export const checkPoolUsage = (poolUrl: string): { inUse: boolean; minerCount: number; minerNames: string[] } => {
+  try {
+    const miners = getMiners(undefined, true); // Get all miners
+    const minersUsingPool = miners.filter(miner => 
+      miner.pools && miner.pools.some(pool => pool.url === poolUrl)
+    );
+
+    return {
+      inUse: minersUsingPool.length > 0,
+      minerCount: minersUsingPool.length,
+      minerNames: minersUsingPool.map(m => m.name),
+    };
+  } catch (error) {
+    logger.error('Error checking pool usage:', error);
+    // If we can't check, assume it's not in use to avoid blocking deletion
+    return { inUse: false, minerCount: 0, minerNames: [] };
+  }
+};
+
+/**
  * Delete a pool from the configuration
  */
 export const deletePool = async (url: string): Promise<PoolsConfiguration> => {
@@ -241,6 +264,14 @@ export const deletePool = async (url: string): Promise<PoolsConfiguration> => {
   const index = config.pools.findIndex(p => p.url === url);
   if (index === -1) {
     throw new Error(`Pool with URL ${url} not found`);
+  }
+
+  // Check if pool is in use by any miners
+  const usage = checkPoolUsage(url);
+  if (usage.inUse) {
+    throw new Error(
+      `Cannot delete pool: It is currently in use by ${usage.minerCount} miner(s): ${usage.minerNames.join(', ')}`
+    );
   }
 
   config.pools.splice(index, 1);
