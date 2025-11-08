@@ -14,12 +14,15 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import EditIcon from '@mui/icons-material/Edit';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 
 interface Miner {
   minerId: string;
   name: string;
   ip: string;
   model: string;
+  alias?: string;
+  owner?: string;
   status: 'online' | 'offline' | 'error';
   statusMessage?: string;
   currentHashrate?: number;
@@ -37,9 +40,10 @@ interface MinerCardListProps {
   miners: Miner[];
   onReboot: (minerId: string, minerName: string) => void;
   onEdit: (miner: Miner) => void;
+  onTransfer?: (miner: Miner) => void;
 }
 
-const MinerCardList: React.FC<MinerCardListProps> = ({ miners, onReboot, onEdit }) => {
+const MinerCardList: React.FC<MinerCardListProps> = ({ miners, onReboot, onEdit, onTransfer }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'online':
@@ -130,6 +134,16 @@ const MinerCardList: React.FC<MinerCardListProps> = ({ miners, onReboot, onEdit 
               >
                 <EditIcon fontSize="small" />
               </IconButton>
+              {onTransfer && (
+                <IconButton
+                  size="small"
+                  color="info"
+                  onClick={() => onTransfer(miner)}
+                  sx={{ p: 1 }}
+                >
+                  <SwapHorizIcon fontSize="small" />
+                </IconButton>
+              )}
             </Box>
 
             {/* Expandable Details */}
@@ -164,6 +178,16 @@ const MinerCardList: React.FC<MinerCardListProps> = ({ miners, onReboot, onEdit 
                       {miner.ip}
                     </Typography>
                   </Box>
+                  {miner.owner && (
+                    <Box display="flex" justifyContent="space-between" mb={0.5}>
+                      <Typography variant="caption" color="textSecondary">
+                        Owner:
+                      </Typography>
+                      <Typography variant="caption">
+                        {miner.owner.substring(0, 4)}***
+                      </Typography>
+                    </Box>
+                  )}
                   {miner.shares && (
                     <>
                       <Box display="flex" justifyContent="space-between" mb={0.5}>

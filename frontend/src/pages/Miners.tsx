@@ -97,7 +97,7 @@ const Miners: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingMiner, setEditingMiner] = useState<Miner | null>(null);
   const [selectedMiners, setSelectedMiners] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<'name' | 'status' | 'hashrate' | 'temperature' | 'errors'>('name');
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'hashrate' | 'temperature' | 'errors' | 'ip' | 'model'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [minerToTransfer, setMinerToTransfer] = useState<Miner | null>(null);
@@ -376,6 +376,23 @@ const Miners: React.FC = () => {
         aValue = a.errorCount || 0;
         bValue = b.errorCount || 0;
         break;
+      case 'ip':
+        // Sort IPs numerically by converting to number array
+        const aIP = a.ip.split('.').map(Number);
+        const bIP = b.ip.split('.').map(Number);
+        for (let i = 0; i < 4; i++) {
+          if (aIP[i] !== bIP[i]) {
+            aValue = aIP[i];
+            bValue = bIP[i];
+            break;
+          }
+        }
+        if (aValue === undefined) return 0;
+        break;
+      case 'model':
+        aValue = a.model.toLowerCase();
+        bValue = b.model.toLowerCase();
+        break;
       default:
         return 0;
     }
@@ -428,6 +445,10 @@ const Miners: React.FC = () => {
           miners={miners as any[]}
           onReboot={handleRebootMiner}
           onEdit={(miner) => handleOpenDialog(miner as any)}
+          onTransfer={(miner) => {
+            setMinerToTransfer(miner as any);
+            setTransferDialogOpen(true);
+          }}
         />
       ) : miners.length > 50 ? (
         /* Desktop View: Virtualized Table for large lists (50+ miners) */
@@ -473,9 +494,28 @@ const Miners: React.FC = () => {
                     )}
                   </Box>
                 </TableCell>
-                <TableCell>IP Address</TableCell>
-                <TableCell>Model</TableCell>
-                <TableCell>Alias</TableCell>
+                <TableCell 
+                  onClick={() => handleSort('ip')}
+                  sx={{ cursor: 'pointer', userSelect: 'none' }}
+                >
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    IP Address
+                    {sortBy === 'ip' && (
+                      sortOrder === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />
+                    )}
+                  </Box>
+                </TableCell>
+                <TableCell 
+                  onClick={() => handleSort('model')}
+                  sx={{ cursor: 'pointer', userSelect: 'none' }}
+                >
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    Model
+                    {sortBy === 'model' && (
+                      sortOrder === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />
+                    )}
+                  </Box>
+                </TableCell>
                 <TableCell>Owner</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -483,7 +523,7 @@ const Miners: React.FC = () => {
             <TableBody>
               {sortedMiners.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center">
+                  <TableCell colSpan={7} align="center">
                     <Typography color="textSecondary" sx={{ py: 4 }}>
                       No miners configured. Click "Add Miner" or "Auto-Discover" to get started.
                     </Typography>
@@ -552,8 +592,12 @@ const Miners: React.FC = () => {
                     </TableCell>
                     <TableCell>{miner.ip}</TableCell>
                     <TableCell>{miner.model}</TableCell>
-                    <TableCell>{(miner as any).alias || '-'}</TableCell>
-                    <TableCell>{(miner as any).owner || '-'}</TableCell>
+                    <TableCell>
+                      {(miner as any).owner ? 
+                        `${(miner as any).owner.substring(0, 4)}***` : 
+                        '-'
+                      }
+                    </TableCell>
                     <TableCell align="right">
                       <Tooltip title="Reboot miner">
                         <IconButton
