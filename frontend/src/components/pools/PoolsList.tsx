@@ -16,6 +16,9 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import { CircularProgress } from '@mui/material';
 import { PoolConfig } from '../../services/poolsApi';
 
 interface PoolsListProps {
@@ -23,9 +26,10 @@ interface PoolsListProps {
   onEdit: (pool: PoolConfig) => void;
   onDelete: (url: string, name: string) => void;
   onTest: (url: string, name: string) => void;
+  testingStatus: Record<string, 'testing' | 'success' | 'error' | 'idle'>;
 }
 
-const PoolsList: React.FC<PoolsListProps> = ({ pools, onEdit, onDelete, onTest }) => {
+const PoolsList: React.FC<PoolsListProps> = ({ pools, onEdit, onDelete, onTest, testingStatus }) => {
   const getAlgorithmColor = (algorithm: string) => {
     switch (algorithm) {
       case 'sha256':
@@ -106,10 +110,22 @@ const PoolsList: React.FC<PoolsListProps> = ({ pools, onEdit, onDelete, onTest }
                 <Tooltip title="Test Connection">
                   <IconButton
                     size="small"
-                    color="primary"
+                    color={
+                      testingStatus[pool.url] === 'success' ? 'success' :
+                      testingStatus[pool.url] === 'error' ? 'error' : 'primary'
+                    }
                     onClick={() => onTest(pool.url, pool.name)}
+                    disabled={testingStatus[pool.url] === 'testing'}
                   >
-                    <PlayArrowIcon />
+                    {testingStatus[pool.url] === 'testing' ? (
+                      <CircularProgress size={20} />
+                    ) : testingStatus[pool.url] === 'success' ? (
+                      <CheckCircleIcon />
+                    ) : testingStatus[pool.url] === 'error' ? (
+                      <ErrorIcon />
+                    ) : (
+                      <PlayArrowIcon />
+                    )}
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Edit">

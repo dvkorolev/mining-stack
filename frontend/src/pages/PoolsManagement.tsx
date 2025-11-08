@@ -10,10 +10,10 @@ import {
   CircularProgress,
   Tabs,
   Tab,
-  Snackbar,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import { useNotification } from '../context/NotificationContext';
 import PoolsList from '../components/pools/PoolsList';
 import PoolForm from '../components/pools/PoolForm';
 import PoolConfigPanel from '../components/pools/PoolConfigPanel';
@@ -51,21 +51,14 @@ function TabPanel(props: TabPanelProps) {
 }
 
 const PoolsManagement: React.FC = () => {
+  const { showSuccess, showError, showInfo } = useNotification();
   const [config, setConfig] = useState<PoolsConfiguration | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState(0);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingPool, setEditingPool] = useState<PoolConfig | null>(null);
-  const [snackbar, setSnackbar] = useState<{
-    open: boolean;
-    message: string;
-    severity: 'success' | 'error' | 'info';
-  }>({
-    open: false,
-    message: '',
-    severity: 'info',
-  });
+  const [testingPools, setTestingPools] = useState<Record<string, 'testing' | 'success' | 'error' | 'idle'>>({}); // Track testing status per pool
 
   // Load pools configuration
   const loadConfig = async () => {
@@ -89,23 +82,15 @@ const PoolsManagement: React.FC = () => {
     setTabValue(newValue);
   };
 
-  const showSnackbar = (message: string, severity: 'success' | 'error' | 'info' = 'success') => {
-    setSnackbar({ open: true, message, severity });
-  };
-
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
-  };
-
   // Add pool
   const handleAddPool = async (pool: PoolConfig) => {
     try {
       await addPool(pool);
       await loadConfig();
       setShowAddForm(false);
-      showSnackbar(`Pool "${pool.name}" added successfully`);
+      showSuccess(`Pool "${pool.name}" added successfully`);
     } catch (err) {
-      showSnackbar(err instanceof Error ? err.message : 'Failed to add pool', 'error');
+      showError(err instanceof Error ? err.message : 'Failed to add pool');
     }
   };
 
@@ -115,9 +100,9 @@ const PoolsManagement: React.FC = () => {
       await updatePool(oldUrl, updatedPool);
       await loadConfig();
       setEditingPool(null);
-      showSnackbar(`Pool "${updatedPool.name}" updated successfully`);
+      showSuccess(`Pool "${updatedPool.name}" updated successfully`);
     } catch (err) {
-      showSnackbar(err instanceof Error ? err.message : 'Failed to update pool', 'error');
+      showError(err instanceof Error ? err.message : 'Failed to update pool');
     }
   };
 
@@ -130,31 +115,46 @@ const PoolsManagement: React.FC = () => {
     try {
       await deletePool(url);
       await loadConfig();
-      showSnackbar(`Pool "${name}" deleted successfully`);
+      showSuccess(`Pool "${name}" deleted successfully`);
     } catch (err) {
-      showSnackbar(err instanceof Error ? err.message : 'Failed to delete pool', 'error');
+      showError(err instanceof Error ? err.message : 'Failed to delete pool');
     }
   };
 
   // Test pool connection
   const handleTestPool = async (url: string, name: string) => {
     try {
-      showSnackbar(`Testing connection to ${name}...`, 'info');
+      // Set testing status
+      setTestingPools(prev => ({ ...prev, [url]: 'testing' }));
+      showInfo(`Testing connection to ${name}...`);
+      
       const result = await testPool(url);
       
       if (result.success) {
-        showSnackbar(
-          `${name} is reachable (${result.duration_ms}ms)`,
-          'success'
-        );
+        setTestingPools(prev => ({ ...prev, [url]: 'success' }));
+        showSuccess(`✅ ${name} is reachable (${result.duration_ms}ms)`);
+        
+        // Reset status after 3 seconds
+        setTimeout(() => {
+          setTestingPools(prev => ({ ...prev, [url]: 'idle' }));
+        }, 3000);
       } else {
-        showSnackbar(
-          `${name} is not reachable: ${result.error || result.message}`,
-          'error'
-        );
+        setTestingPools(prev => ({ ...prev, [url]: 'error' }));
+        showError(`❌ ${name} is not reachable: ${result.error || result.message}`);
+        
+        // Reset status after 3 seconds
+        setTimeout(() => {
+          setTestingPools(prev => ({ ...prev, [url]: 'idle' }));
+        }, 3000);
       }
     } catch (err) {
-      showSnackbar(err instanceof Error ? err.message : 'Failed to test pool', 'error');
+      setTestingPools(prev => ({ ...prev, [url]: 'error' }));
+      showError(err instanceof Error ? err.message : 'Failed to test pool');
+      
+      // Reset status after 3 seconds
+      setTimeout(() => {
+        setTestingPools(prev => ({ ...prev, [url]: 'idle' }));
+      }, 3000);
     }
   };
 
@@ -163,25 +163,25 @@ const PoolsManagement: React.FC = () => {
     try {
       await updatePoolsConfig(newConfig);
       await loadConfig();
-      showSnackbar('Configuration updated successfully');
+      showSuccess('Configuration updated successfully');
     } catch (err) {
-      showSnackbar(err instanceof Error ? err.message : 'Failed to update configuration', 'error');
+      showError(err instanceof Error ? err.message : 'Failed to update configuration');
     }
   };
 
   // Trigger pool collection
   const handleTriggerCollection = async () => {
     try {
-      showSnackbar('Triggering pool collection...', 'info');
+      showInfo('Triggering pool collection...');
       const result = await triggerPoolCollection();
       
       if (result.success) {
-        showSnackbar('Pool collection triggered successfully');
+        showSuccess('Pool collection triggered successfully');
       } else {
-        showSnackbar(result.message, 'error');
+        showError(result.message);
       }
     } catch (err) {
-      showSnackbar(err instanceof Error ? err.message : 'Failed to trigger collection', 'error');
+      showError(err instanceof Error ? err.message : 'Failed to trigger collection');
     }
   };
 
@@ -259,6 +259,7 @@ const PoolsManagement: React.FC = () => {
               onEdit={(pool) => setEditingPool(pool)}
               onDelete={handleDeletePool}
               onTest={handleTestPool}
+              testingStatus={testingPools}
             />
           )}
         </TabPanel>
@@ -295,17 +296,6 @@ const PoolsManagement: React.FC = () => {
         />
       )}
 
-      {/* Snackbar for notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }}>
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
     </Container>
   );
 };
