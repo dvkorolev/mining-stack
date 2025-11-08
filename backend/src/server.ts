@@ -9,6 +9,7 @@ import miningRoutes from './routes/mining.routes';
 import poolsRoutes from './routes/pools.routes';
 import logsRoutes from './routes/logs.routes';
 import telegramRoutes from './routes/telegram.routes';
+import authRoutes from './routes/auth.routes';
 import { setupWebSocket } from './services/websocket.service';
 import { startMining } from './services/mining.service';
 import { errorHandler } from './middleware/error.middleware';
@@ -56,6 +57,7 @@ app.use('/api', apiLimiter);
 app.use('/api', optionalAuth);
 
 // API Routes
+app.use('/api', authRoutes); // Auth routes (no authentication required)
 app.use('/api', miningRoutes);
 app.use('/api/pools', poolsRoutes);
 app.use('/api/logs', logsRoutes);

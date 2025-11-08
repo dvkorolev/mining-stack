@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -8,15 +8,51 @@ import {
   Button,
   Typography,
   Alert,
+  CircularProgress,
+  LinearProgress,
 } from '@mui/material';
 import LoginIcon from '@mui/icons-material/Login';
+import TelegramIcon from '@mui/icons-material/Telegram';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const [chatId, setChatId] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
 
-  const handleLogin = () => {
+  // Poll for verification status
+  useEffect(() => {
+    if (!verifying || !chatId) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/auth/verify-status/${chatId}`);
+        const data = await response.json();
+
+        if (data.verified) {
+          // Verification successful!
+          clearInterval(pollInterval);
+          localStorage.setItem('userChatId', chatId.trim());
+          navigate('/');
+        } else if (data.expired) {
+          // Verification expired
+          clearInterval(pollInterval);
+          setError('Verification expired. Please try again.');
+          setVerifying(false);
+          setVerificationSent(false);
+        }
+      } catch (err) {
+        console.error('Error checking verification status:', err);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    // Cleanup on unmount
+    return () => clearInterval(pollInterval);
+  }, [verifying, chatId, navigate]);
+
+  const handleLogin = async () => {
     if (!chatId.trim()) {
       setError('Please enter your Telegram Chat ID');
       return;
@@ -28,11 +64,32 @@ const Login: React.FC = () => {
       return;
     }
 
-    // Store in localStorage
-    localStorage.setItem('userChatId', chatId.trim());
-    
-    // Redirect to dashboard
-    navigate('/');
+    setLoading(true);
+    setError('');
+
+    try {
+      // Request verification
+      const response = await fetch('/api/auth/verify-request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ chatId: chatId.trim() }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setVerificationSent(true);
+        setVerifying(true);
+      } else {
+        setError(data.error || 'Failed to send verification message');
+      }
+    } catch (err) {
+      setError('Failed to connect to server');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -67,6 +124,18 @@ const Login: React.FC = () => {
             </Alert>
           )}
 
+          {verificationSent && (
+            <Alert severity="info" sx={{ mb: 2 }} icon={<TelegramIcon />}>
+              <Typography variant="body2" fontWeight="bold" gutterBottom>
+                Verification sent to Telegram!
+              </Typography>
+              <Typography variant="caption">
+                Check your Telegram and click "Confirm Login"
+              </Typography>
+              {verifying && <LinearProgress sx={{ mt: 1 }} />}
+            </Alert>
+          )}
+
           <TextField
             fullWidth
             label="Telegram Chat ID"
@@ -80,6 +149,7 @@ const Login: React.FC = () => {
             helperText="Get your Chat ID from @userinfobot on Telegram"
             sx={{ mb: 3 }}
             autoFocus
+            disabled={verifying}
           />
 
           <Button
@@ -87,9 +157,10 @@ const Login: React.FC = () => {
             variant="contained"
             size="large"
             onClick={handleLogin}
-            disabled={!chatId.trim()}
+            disabled={!chatId.trim() || loading || verifying}
+            startIcon={loading ? <CircularProgress size={20} /> : <LoginIcon />}
           >
-            Login
+            {verifying ? 'Waiting for confirmation...' : 'Login'}
           </Button>
 
           <Box mt={3}>

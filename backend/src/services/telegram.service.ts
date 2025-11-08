@@ -965,10 +965,55 @@ const setupCallbackHandlers = (): void => {
   if (!bot) return;
 
   bot.on('callback_query', async (query) => {
-    if (!query.message || !isAuthorized(query.message.chat.id)) return;
-
     const data = query.data;
     if (!data) return;
+    
+    // Handle login verification (no auth required)
+    if (data.startsWith('login_confirm_') || data.startsWith('login_cancel_')) {
+      const chatId = query.message?.chat.id.toString();
+      if (!chatId) return;
+      
+      if (data.startsWith('login_confirm_')) {
+        // Import the confirmation function
+        const { confirmLoginVerification } = require('../routes/auth.routes');
+        const success = confirmLoginVerification(chatId);
+        
+        if (success) {
+          await bot?.editMessageText(
+            '✅ *Login Confirmed!*\n\nYou can now access the Mining Dashboard.',
+            {
+              chat_id: query.message?.chat.id,
+              message_id: query.message?.message_id,
+              parse_mode: 'Markdown',
+            }
+          );
+        } else {
+          await bot?.editMessageText(
+            '❌ *Verification Expired*\n\nPlease try logging in again.',
+            {
+              chat_id: query.message?.chat.id,
+              message_id: query.message?.message_id,
+              parse_mode: 'Markdown',
+            }
+          );
+        }
+      } else {
+        await bot?.editMessageText(
+          '❌ *Login Cancelled*\n\nThe login attempt has been cancelled.',
+          {
+            chat_id: query.message?.chat.id,
+            message_id: query.message?.message_id,
+            parse_mode: 'Markdown',
+          }
+        );
+      }
+      
+      await bot?.answerCallbackQuery(query.id);
+      return;
+    }
+    
+    // Regular handlers require authorization
+    if (!query.message || !isAuthorized(query.message.chat.id)) return;
 
     const messageId = query.message.message_id;
     const chatId = query.message.chat.id;
@@ -2035,4 +2080,52 @@ const formatUptime = (seconds: number): string => {
   if (minutes > 0) parts.push(`${minutes}m`);
   
   return parts.join(' ') || '<1m';
+};
+
+/**
+ * Send login verification message to user
+ */
+export const sendLoginVerification = async (chatId: string): Promise<boolean> => {
+  if (!bot || !isEnabled) {
+    logger.warn('Telegram: Cannot send verification - bot not initialized', { service: 'telegram' });
+    return false;
+  }
+  
+  try {
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '✅ Confirm Login', callback_data: `login_confirm_${chatId}` },
+          { text: '❌ Cancel', callback_data: `login_cancel_${chatId}` },
+        ],
+      ],
+    };
+    
+    await bot.sendMessage(
+      parseInt(chatId),
+      `🔐 *Login Verification*\n\n` +
+      `Someone is trying to log in to the Mining Dashboard with your Chat ID.\n\n` +
+      `If this is you, click "Confirm Login" below.\n` +
+      `If not, click "Cancel" and ignore this message.\n\n` +
+      `⏱️ This verification will expire in 5 minutes.`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      }
+    );
+    
+    logger.info(`Login verification sent to Chat ID: ${chatId}`, { service: 'telegram' });
+    return true;
+  } catch (error: any) {
+    logger.error(`Failed to send login verification to ${chatId}:`, error);
+    return false;
+  }
+};
+
+/**
+ * Check login verification status (placeholder - actual check is in auth.routes.ts)
+ */
+export const checkLoginVerification = async (chatId: string): Promise<boolean> => {
+  // This is handled by the auth routes, but we export it for consistency
+  return false;
 };
