@@ -54,7 +54,9 @@ const TransferOwnershipDialog: React.FC<TransferOwnershipDialogProps> = ({
         return;
       }
 
-      const response = await fetch(`/api/mining/miners/${miner.name}/transfer`, {
+      // Use IP for transfer to avoid URL encoding issues with Cyrillic names/aliases
+      const minerIdentifier = miner.ip || miner.name;
+      const response = await fetch(`/api/mining/miners/${encodeURIComponent(minerIdentifier)}/transfer`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -72,6 +74,7 @@ const TransferOwnershipDialog: React.FC<TransferOwnershipDialogProps> = ({
         setError(data.error || data.message || 'Failed to transfer ownership');
       }
     } catch (err) {
+      console.error('Transfer error:', err);
       setError('Error connecting to server');
     } finally {
       setLoading(false);
