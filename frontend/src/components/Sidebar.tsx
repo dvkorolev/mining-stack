@@ -8,6 +8,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import PoolIcon from '@mui/icons-material/Pool';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 240;
 
@@ -24,15 +25,16 @@ const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClo
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { isAdmin } = useAuth();
 
   const menuItems = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-    { text: 'Miners', icon: <PeopleIcon />, path: '/miners' },
-    { text: 'Pools', icon: <PoolIcon />, path: '/pools' },
-    { text: 'Analytics', icon: <BarChartIcon />, path: '/analytics' },
-    { text: 'Alerts', icon: <NotificationsIcon />, path: '/alerts' },
-    { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
-  ];
+    { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', adminOnly: false },
+    { text: 'Miners', icon: <PeopleIcon />, path: '/miners', adminOnly: false },
+    { text: 'Pools', icon: <PoolIcon />, path: '/pools', adminOnly: true },
+    { text: 'Analytics', icon: <BarChartIcon />, path: '/analytics', adminOnly: false },
+    { text: 'Alerts', icon: <NotificationsIcon />, path: '/alerts', adminOnly: false },
+    { text: 'Settings', icon: <SettingsIcon />, path: '/settings', adminOnly: true },
+  ].filter(item => !item.adminOnly || isAdmin);
 
   const handleNavigate = (path: string) => {
     navigate(path);

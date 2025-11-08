@@ -13,6 +13,7 @@ import { AuthProvider } from './context/AuthContext';
 import { setupGlobalErrorHandlers } from './utils/logger';
 
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
 
 // Lazy load pages for code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -109,10 +110,10 @@ const App: React.FC = () => {
                       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                       <Route path="/miners" element={<ProtectedRoute><Miners /></ProtectedRoute>} />
-                      <Route path="/pools" element={<ProtectedRoute><PoolsManagement /></ProtectedRoute>} />
+                      <Route path="/pools" element={<ProtectedRoute><AdminRoute><PoolsManagement /></AdminRoute></ProtectedRoute>} />
                       <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
                       <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
-                      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                      <Route path="/settings" element={<ProtectedRoute><AdminRoute><Settings /></AdminRoute></ProtectedRoute>} />
                     </Routes>
                   </Suspense>
                 </Box>
