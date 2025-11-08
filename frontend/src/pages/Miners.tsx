@@ -21,6 +21,11 @@ import {
   Alert,
   CircularProgress,
   Tooltip,
+  InputAdornment,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -32,6 +37,9 @@ import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import SearchIcon from '@mui/icons-material/Search';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import ClearIcon from '@mui/icons-material/Clear';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectMiners, setMinerRebooting } from '../features/mining/miningSlice';
 import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
@@ -101,6 +109,9 @@ const Miners: React.FC = () => {
   const [selectedMiners, setSelectedMiners] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'name' | 'status' | 'hashrate' | 'temperature' | 'errors' | 'ip' | 'model'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline' | 'error'>('all');
+  const [modelFilter, setModelFilter] = useState<string>('all');
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [minerToTransfer, setMinerToTransfer] = useState<Miner | null>(null);
   const [formData, setFormData] = useState({
@@ -351,8 +362,30 @@ const Miners: React.FC = () => {
     }
   };
 
-  // Sort miners
-  const sortedMiners = [...miners].sort((a, b) => {
+  // Get unique models for filter dropdown
+  const uniqueModels = Array.from(new Set(miners.map(m => m.model))).sort();
+
+  // Filter miners by search query and filters
+  const filteredMiners = miners.filter(miner => {
+    // Search filter (name, IP, alias)
+    const searchLower = searchQuery.toLowerCase();
+    const minerAlias = (miner as any).alias; // Type assertion for alias field
+    const matchesSearch = !searchQuery || 
+      miner.name.toLowerCase().includes(searchLower) ||
+      miner.ip.includes(searchQuery) ||
+      (minerAlias && minerAlias.toLowerCase().includes(searchLower));
+
+    // Status filter
+    const matchesStatus = statusFilter === 'all' || miner.status === statusFilter;
+
+    // Model filter
+    const matchesModel = modelFilter === 'all' || miner.model === modelFilter;
+
+    return matchesSearch && matchesStatus && matchesModel;
+  });
+
+  // Sort filtered miners
+  const sortedMiners = [...filteredMiners].sort((a, b) => {
     let aValue: any;
     let bValue: any;
 
@@ -439,6 +472,86 @@ const Miners: React.FC = () => {
           {error}
         </Alert>
       )}
+
+      {/* Search and Filter Bar */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={5}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Search by name, IP, or alias..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+                endAdornment: searchQuery && (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearchQuery('')}>
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={statusFilter}
+                label="Status"
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+              >
+                <MenuItem value="all">All Status</MenuItem>
+                <MenuItem value="online">Online</MenuItem>
+                <MenuItem value="offline">Offline</MenuItem>
+                <MenuItem value="error">Error</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Model</InputLabel>
+              <Select
+                value={modelFilter}
+                label="Model"
+                onChange={(e) => setModelFilter(e.target.value)}
+              >
+                <MenuItem value="all">All Models</MenuItem>
+                {uniqueModels.map(model => (
+                  <MenuItem key={model} value={model}>{model}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={1}>
+            <Tooltip title="Clear all filters">
+              <IconButton 
+                onClick={() => {
+                  setSearchQuery('');
+                  setStatusFilter('all');
+                  setModelFilter('all');
+                }}
+                disabled={!searchQuery && statusFilter === 'all' && modelFilter === 'all'}
+              >
+                <FilterListIcon />
+              </IconButton>
+            </Tooltip>
+          </Grid>
+        </Grid>
+        {(searchQuery || statusFilter !== 'all' || modelFilter !== 'all') && (
+          <Box mt={1}>
+            <Typography variant="caption" color="textSecondary">
+              Showing {sortedMiners.length} of {miners.length} miners
+            </Typography>
+          </Box>
+        )}
+      </Paper>
 
 
       {/* Mobile View: Card List */}
