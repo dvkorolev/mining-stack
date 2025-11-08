@@ -16,6 +16,12 @@ import { getMiningStats, getMinerStats } from './mining.service';
 import { getMiners, getMinerById } from '../config/miners.config';
 import { rebootMiner, getMinerPools } from './miner-control.service';
 
+const ADMIN_TELEGRAM_CHAT_ID = process.env.ADMIN_TELEGRAM_CHAT_ID || '';
+
+const isAdmin = (chatId: string): boolean => {
+  return chatId === ADMIN_TELEGRAM_CHAT_ID;
+};
+
 let bot: TelegramBot | null = null;
 let isEnabled = false;
 let authorizedChatIds: Set<string> = new Set();
@@ -1171,15 +1177,16 @@ This will:
     }
   });
 };
-
 /**
  * Send farm status overview
  */
 const sendFarmStatus = async (chatId: number, isRefresh: boolean = false, messageId?: number): Promise<void> => {
   try {
-    logger.info('Telegram: Sending farm status', { service: 'telegram', chatId });
-    const stats = getMiningStats();
+    // Pass owner to getMiningStats to respect user roles
+    const owner = isAdmin(chatId.toString()) ? undefined : chatId.toString();
+    const stats = getMiningStats(owner);
     
+    logger.info('Telegram: Sending farm status', { service: 'telegram', chatId });
     const statusMessage = `
 📊 *Farm Status*
 
@@ -1218,9 +1225,12 @@ const sendFarmStatus = async (chatId: number, isRefresh: boolean = false, messag
 const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 'online' | 'offline' | 'error' = 'all', isRefresh: boolean = false, messageId?: number): Promise<void> => {
   try {
     logger.info('Telegram: Sending miners list', { service: 'telegram', chatId, page, filter });
+    // Pass owner to getMiningStats to respect user roles
+    const owner = isAdmin(chatId.toString()) ? undefined : chatId.toString();
+    const stats = getMiningStats(owner);
+    
     // Get miners for this user only (owner-based filtering)
     const allMiners = getMiners(chatId.toString(), true);
-    const stats = getMiningStats();
 
     if (allMiners.length === 0) {
       await bot?.sendMessage(chatId, '⚠️ No miners configured');
@@ -1373,8 +1383,11 @@ const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 
 const searchMiners = async (chatId: number, keyword: string): Promise<void> => {
   try {
     logger.info('Telegram: Searching miners', { service: 'telegram', chatId, keyword });
+    // Pass owner to getMiningStats to respect user roles
+    const owner = isAdmin(chatId.toString()) ? undefined : chatId.toString();
+    const stats = getMiningStats(owner);
+    
     const allMiners = getMiners(chatId.toString(), true);
-    const stats = getMiningStats();
 
     if (allMiners.length === 0) {
       await bot?.sendMessage(chatId, '⚠️ No miners configured');
