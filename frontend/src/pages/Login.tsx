@@ -24,6 +24,12 @@ const Login: React.FC = () => {
   const [verifying, setVerifying] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
 
+  const handleCancelVerification = () => {
+    setVerifying(false);
+    setVerificationSent(false);
+    setError('');
+  };
+
   // Poll for verification status
   useEffect(() => {
     if (!verifying || !chatId) return;
@@ -161,9 +167,22 @@ const Login: React.FC = () => {
             onClick={handleLogin}
             disabled={!chatId.trim() || loading || verifying}
             startIcon={loading ? <CircularProgress size={20} /> : <LoginIcon />}
+            sx={{ mb: verifying ? 2 : 0 }}
           >
             {verifying ? 'Waiting for confirmation...' : 'Login'}
           </Button>
+
+          {verifying && (
+            <Button
+              fullWidth
+              variant="outlined"
+              size="large"
+              onClick={handleCancelVerification}
+              color="error"
+            >
+              Cancel
+            </Button>
+          )}
 
           <Box mt={3}>
             <Typography variant="caption" color="textSecondary" display="block" textAlign="center">
