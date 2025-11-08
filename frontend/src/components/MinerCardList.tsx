@@ -41,9 +41,10 @@ interface MinerCardListProps {
   onReboot: (minerId: string, minerName: string) => void;
   onEdit: (miner: Miner) => void;
   onTransfer?: (miner: Miner) => void;
+  isAdmin?: boolean;
 }
 
-const MinerCardList: React.FC<MinerCardListProps> = ({ miners, onReboot, onEdit, onTransfer }) => {
+const MinerCardList: React.FC<MinerCardListProps> = ({ miners, onReboot, onEdit, onTransfer, isAdmin = false }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'online':
@@ -178,10 +179,10 @@ const MinerCardList: React.FC<MinerCardListProps> = ({ miners, onReboot, onEdit,
                       {miner.ip}
                     </Typography>
                   </Box>
-                  {miner.owner && (
+                  {isAdmin && miner.owner && (
                     <Box display="flex" justifyContent="space-between" mb={0.5}>
                       <Typography variant="caption" color="textSecondary">
-                        Owner:
+                        Owner (Chat ID):
                       </Typography>
                       <Typography variant="caption">
                         {miner.owner.substring(0, 4)}***

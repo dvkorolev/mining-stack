@@ -92,6 +92,7 @@ const Miners: React.FC = () => {
   const dispatch = useDispatch();
   const { showSuccess, showError, showWarning } = useNotification();
   const isMobile = useIsMobile();
+  const isAdmin = !!localStorage.getItem('adminChatId');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
@@ -340,7 +341,7 @@ const Miners: React.FC = () => {
   };
 
   // Handle sorting
-  const handleSort = (column: 'name' | 'status' | 'hashrate' | 'temperature' | 'errors') => {
+  const handleSort = (column: 'name' | 'status' | 'hashrate' | 'temperature' | 'errors' | 'ip' | 'model') => {
     if (sortBy === column) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
@@ -449,6 +450,7 @@ const Miners: React.FC = () => {
             setMinerToTransfer(miner as any);
             setTransferDialogOpen(true);
           }}
+          isAdmin={isAdmin}
         />
       ) : miners.length > 50 ? (
         /* Desktop View: Virtualized Table for large lists (50+ miners) */
@@ -516,14 +518,14 @@ const Miners: React.FC = () => {
                     )}
                   </Box>
                 </TableCell>
-                <TableCell>Owner</TableCell>
+                {isAdmin && <TableCell>Owner (Chat ID)</TableCell>}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {sortedMiners.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center">
+                  <TableCell colSpan={isAdmin ? 7 : 6} align="center">
                     <Typography color="textSecondary" sx={{ py: 4 }}>
                       No miners configured. Click "Add Miner" or "Auto-Discover" to get started.
                     </Typography>
@@ -592,12 +594,14 @@ const Miners: React.FC = () => {
                     </TableCell>
                     <TableCell>{miner.ip}</TableCell>
                     <TableCell>{miner.model}</TableCell>
-                    <TableCell>
-                      {(miner as any).owner ? 
-                        `${(miner as any).owner.substring(0, 4)}***` : 
-                        '-'
-                      }
-                    </TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        {(miner as any).owner ? 
+                          `${(miner as any).owner.substring(0, 4)}***` : 
+                          '-'
+                        }
+                      </TableCell>
+                    )}
                     <TableCell align="right">
                       <Tooltip title="Reboot miner">
                         <IconButton
