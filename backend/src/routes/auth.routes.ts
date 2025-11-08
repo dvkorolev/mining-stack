@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { logger } from '../utils/logger';
 import { sendLoginVerification, checkLoginVerification } from '../services/telegram.service';
+import { optionalAuth } from '../middleware/auth.middleware';
 
 const router = Router();
 
@@ -101,5 +102,22 @@ export const confirmLoginVerification = (chatId: string): boolean => {
   
   return true;
 };
+
+// Get current user info (requires authentication)
+router.get('/auth/me', optionalAuth, (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      message: 'No authentication provided'
+    });
+  }
+  
+  res.json({
+    chatId: req.user.chatId,
+    role: req.user.role,
+    isSystem: req.user.isSystem,
+    isAdmin: req.user.role === 'admin',
+  });
+});
 
 export default router;
