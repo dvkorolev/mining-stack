@@ -9,6 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { Provider } from 'react-redux';
 import { store } from './store';
 import { NotificationProvider } from './context/NotificationContext';
+import { AuthProvider } from './context/AuthContext';
 import { setupGlobalErrorHandlers } from './utils/logger';
 
 import ProtectedRoute from './components/ProtectedRoute';
@@ -78,9 +79,10 @@ const App: React.FC = () => {
     <Provider store={store}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <NotificationProvider>
-          <ErrorBoundary>
-            <Router>
+        <AuthProvider>
+          <NotificationProvider>
+            <ErrorBoundary>
+              <Router>
               <Box sx={{ display: 'flex' }}>
                 <Navbar open={drawerOpen} toggleDrawer={toggleDrawer} />
                 <Sidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
@@ -118,6 +120,7 @@ const App: React.FC = () => {
             </Router>
           </ErrorBoundary>
         </NotificationProvider>
+      </AuthProvider>
       </ThemeProvider>
     </Provider>
   );

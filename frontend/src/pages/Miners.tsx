@@ -36,6 +36,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { selectMiners, setMinerRebooting } from '../features/mining/miningSlice';
 import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import MinerCardList from '../components/MinerCardList';
 import VirtualizedMinerTable from '../components/VirtualizedMinerTable';
@@ -91,8 +92,8 @@ const Miners: React.FC = () => {
   
   const dispatch = useDispatch();
   const { showSuccess, showError, showWarning } = useNotification();
+  const { isAdmin } = useAuth();
   const isMobile = useIsMobile();
-  const isAdmin = !!localStorage.getItem('adminChatId');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);

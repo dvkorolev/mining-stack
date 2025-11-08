@@ -13,9 +13,11 @@ import {
 } from '@mui/material';
 import LoginIcon from '@mui/icons-material/Login';
 import TelegramIcon from '@mui/icons-material/Telegram';
+import { useAuth } from '../context/AuthContext';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [chatId, setChatId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,7 +36,7 @@ const Login: React.FC = () => {
         if (data.verified) {
           // Verification successful!
           clearInterval(pollInterval);
-          localStorage.setItem('userChatId', chatId.trim());
+          login(chatId.trim()); // Use AuthContext login
           navigate('/');
         } else if (data.expired) {
           // Verification expired

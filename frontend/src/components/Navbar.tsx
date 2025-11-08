@@ -1,10 +1,12 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { AppBar, Toolbar, Typography, IconButton, Badge, Tooltip, Box } from '@mui/material';
+import { AppBar, Toolbar, Typography, IconButton, Badge, Tooltip, Box, Chip } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import LogoutIcon from '@mui/icons-material/Logout';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { styled } from '@mui/material/styles';
+import { useAuth } from '../context/AuthContext';
 
 const StyledAppBar = styled(AppBar, {
   shouldForwardProp: (prop) => prop !== 'open',
@@ -29,16 +31,15 @@ interface NavbarProps {
 const Navbar: React.FC<NavbarProps> = ({ open, toggleDrawer }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, isAdmin, logout } = useAuth();
   const isLoginPage = location.pathname === '/login';
   
   const handleLogout = () => {
-    localStorage.removeItem('userChatId');
+    logout();
     navigate('/login');
   };
   
-  const userChatId = localStorage.getItem('userChatId');
-  const adminChatId = localStorage.getItem('adminChatId');
-  const chatId = userChatId || adminChatId;
+  const chatId = user?.chatId;
   
   return (
     <StyledAppBar position="absolute" open={open}>
@@ -68,6 +69,15 @@ const Navbar: React.FC<NavbarProps> = ({ open, toggleDrawer }) => {
         </Typography>
         {!isLoginPage && chatId && (
           <Box display="flex" alignItems="center" gap={1}>
+            {isAdmin && (
+              <Chip
+                icon={<AdminPanelSettingsIcon />}
+                label="Admin"
+                color="primary"
+                size="small"
+                sx={{ mr: 1 }}
+              />
+            )}
             <Typography variant="caption" color="textSecondary">
               ID: {chatId.substring(0, 4)}***
             </Typography>
