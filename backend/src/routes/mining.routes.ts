@@ -39,10 +39,12 @@ import {
 
 const router = Router();
 
-// Get current mining stats (cached for 5 seconds)
+// Get current mining stats (cached for 5 seconds, filtered by owner if not admin)
 router.get('/mining/stats', cacheMiddleware(5), async (req, res, next) => {
   try {
-    const stats = getMiningStats();
+    // Get owner from auth context (set by optionalAuth middleware)
+    const owner = req.user?.chatId;
+    const stats = getMiningStats(owner);
     res.json(stats);
   } catch (error) {
     next(error);

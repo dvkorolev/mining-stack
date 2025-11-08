@@ -44,6 +44,8 @@ export interface MinerStats {
   name: string;
   model: string;
   ip: string;
+  alias?: string;
+  owner?: string; // Telegram Chat ID for access control
   status: 'online' | 'offline' | 'error';
   statusMessage?: string; // Human-readable status message
   lastSeen: Date;
@@ -360,6 +362,8 @@ const getRealMinerStats = async (
     name: miner.alias || miner.name || miner.ip,
     model: miner.model,
     ip: miner.ip,
+    alias: miner.alias,
+    owner: miner.owner,
     status,
     statusMessage,
     lastSeen: new Date(),
@@ -491,6 +495,8 @@ const simulateMinerStats = (miner: any): MinerStats => {
     name: miner.alias || miner.name || miner.ip,
     model: miner.model,
     ip: miner.ip,
+    alias: miner.alias,
+    owner: miner.owner,
     status,
     statusMessage,
     lastSeen,
@@ -661,9 +667,48 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
   }
 };
 
-// Get current mining stats
-const getMiningStats = (): MiningStats => {
-  return miningStats;
+// Get current mining stats (optionally filtered by owner)
+const getMiningStats = (owner?: string): MiningStats => {
+  // If no owner specified, return global stats
+  if (!owner) {
+    return miningStats;
+  }
+  
+  // Filter miners by owner and recalculate stats
+  const ownerMiners = miningStats.miners.filter(m => m.owner === owner);
+  
+  if (ownerMiners.length === 0) {
+    return {
+      ...miningStats,
+      totalHashrate: 0,
+      activeMiners: 0,
+      totalMiners: 0,
+      miners: [],
+    };
+  }
+  
+  const activeMiners = ownerMiners.filter(m => m.status === 'online').length;
+  const totalHashrate = ownerMiners
+    .filter(m => m.status === 'online')
+    .reduce((sum, m) => sum + (m.currentHashrate || 0), 0);
+  
+  const avgTemperature = ownerMiners
+    .filter(m => m.hardware?.temperature)
+    .reduce((sum, m) => sum + (m.hardware?.temperature || 0), 0) / 
+    (ownerMiners.filter(m => m.hardware?.temperature).length || 1);
+    
+  const avgPower = ownerMiners
+    .filter(m => m.hardware?.powerUsage)
+    .reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0) /
+    (ownerMiners.filter(m => m.hardware?.powerUsage).length || 1);
+  
+  return {
+    ...miningStats,
+    totalHashrate,
+    activeMiners,
+    totalMiners: ownerMiners.length,
+    miners: ownerMiners,
+  };
 };
 
 // Start the mining process
