@@ -18,6 +18,10 @@ const Analytics = lazy(() => import('./pages/Analytics'));
 const Alerts = lazy(() => import('./pages/Alerts'));
 const Settings = lazy(() => import('./pages/Settings'));
 const PoolsManagement = lazy(() => import('./pages/PoolsManagement'));
+const Login = lazy(() => import('./pages/Login'));
+
+// Import ProtectedRoute
+import ProtectedRoute from './components/ProtectedRoute';
 
 const theme = createTheme({
   palette: {
@@ -100,13 +104,14 @@ const App: React.FC = () => {
                     </Box>
                   }>
                     <Routes>
-                      <Route path="/" element={<Dashboard />} />
-                      <Route path="/dashboard" element={<Dashboard />} />
-                      <Route path="/miners" element={<Miners />} />
-                      <Route path="/pools" element={<PoolsManagement />} />
-                      <Route path="/analytics" element={<Analytics />} />
-                      <Route path="/alerts" element={<Alerts />} />
-                      <Route path="/settings" element={<Settings />} />
+                      <Route path="/login" element={<Login />} />
+                      <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                      <Route path="/miners" element={<ProtectedRoute><Miners /></ProtectedRoute>} />
+                      <Route path="/pools" element={<ProtectedRoute><PoolsManagement /></ProtectedRoute>} />
+                      <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+                      <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
+                      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                     </Routes>
                   </Suspense>
                 </Box>

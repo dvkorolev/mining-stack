@@ -9,6 +9,22 @@ const api = axios.create({
   },
 });
 
+// Add request interceptor to inject Telegram Chat ID header
+api.interceptors.request.use((config) => {
+  // Try to get user Chat ID first, fallback to admin Chat ID
+  const userChatId = localStorage.getItem('userChatId');
+  const adminChatId = localStorage.getItem('adminChatId');
+  const chatId = userChatId || adminChatId;
+  
+  if (chatId) {
+    config.headers['X-Telegram-Chat-ID'] = chatId;
+  }
+  
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
 export interface MinerError {
   code: string;
   message: string;
