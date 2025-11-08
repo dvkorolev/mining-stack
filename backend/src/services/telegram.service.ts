@@ -1229,8 +1229,8 @@ const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 
     const owner = isAdmin(chatId.toString()) ? undefined : chatId.toString();
     const stats = getMiningStats(owner);
     
-    // Get miners for this user only (owner-based filtering)
-    const allMiners = getMiners(chatId.toString(), true);
+    // Get miners - admin sees all, users see only their own
+    const allMiners = getMiners(owner, true);
 
     if (allMiners.length === 0) {
       await bot?.sendMessage(chatId, '⚠️ No miners configured');
@@ -1387,7 +1387,8 @@ const searchMiners = async (chatId: number, keyword: string): Promise<void> => {
     const owner = isAdmin(chatId.toString()) ? undefined : chatId.toString();
     const stats = getMiningStats(owner);
     
-    const allMiners = getMiners(chatId.toString(), true);
+    // Get miners - admin sees all, users see only their own
+    const allMiners = getMiners(owner, true);
 
     if (allMiners.length === 0) {
       await bot?.sendMessage(chatId, '⚠️ No miners configured');
