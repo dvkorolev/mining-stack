@@ -50,15 +50,36 @@ async def collect_whatsminer_cgminer(miner_config: Dict) -> Optional[Dict]:
         mhs_av = summary_data.get('MHS av', 0)
         hashrate_ths = mhs_av / 1_000_000.0 if mhs_av else 0.0
         
-        # Get temperature (Whatsminer provides it in summary)
-        # Try multiple field names as different firmware versions use different keys
-        max_temp = (summary_data.get('Chip Temp Max') or 
-                   summary_data.get('Temperature') or 
-                   summary_data.get('Temp') or 
-                   summary_data.get('temp_max') or 0)
+        # Get temperature - CRITICAL FIX: Use DEVS command first (most reliable)
+        # This is the same logic from the Nov 3rd fix that works in gap-filling
+        max_temp = 0
+        board_temps = []
         
+        # PRIMARY: Get from DEVS command (per-board temperatures - most reliable)
+        devs = await _cgminer_command(ip, "devs", port)
+        if devs and 'DEVS' in devs:
+            for dev in devs['DEVS']:
+                # Whatsminer uses 'Temperature' field in DEVS
+                if 'Temperature' in dev and dev['Temperature']:
+                    temp = float(dev['Temperature'])
+                    if temp > 0 and temp < 200:  # Sanity check
+                        board_temps.append(temp)
+            
+            if board_temps:
+                max_temp = max(board_temps)
+                logger.debug(f"Whatsminer {ip}: Got temperature from DEVS: {max_temp}°C (boards: {board_temps})")
+        
+        # FALLBACK 1: Try summary fields (less reliable)
         if not max_temp or max_temp == 0:
-            # Fallback: try to get from stats command
+            max_temp = (summary_data.get('Chip Temp Max') or 
+                       summary_data.get('Temperature') or 
+                       summary_data.get('Temp') or 
+                       summary_data.get('temp_max') or 0)
+            if max_temp > 0:
+                logger.debug(f"Whatsminer {ip}: Got temperature from summary: {max_temp}°C")
+        
+        # FALLBACK 2: Try stats command (chip temps - least reliable)
+        if not max_temp or max_temp == 0:
             stats = await _cgminer_command(ip, "stats", port)
             temps = []
             if stats and 'STATS' in stats:
@@ -73,7 +94,7 @@ async def collect_whatsminer_cgminer(miner_config: Dict) -> Optional[Dict]:
             if max_temp > 0:
                 logger.debug(f"Whatsminer {ip}: Got temperature from stats: {max_temp}°C")
             else:
-                logger.warning(f"Whatsminer {ip}: Could not find temperature in summary or stats")
+                logger.warning(f"Whatsminer {ip}: Could not find temperature in DEVS, summary, or stats")
         
         # Get pool data
         pools_data = await _cgminer_command(ip, "pools", port)
