@@ -11,6 +11,8 @@ import { store } from './store';
 import { NotificationProvider } from './context/NotificationContext';
 import { setupGlobalErrorHandlers } from './utils/logger';
 
+import ProtectedRoute from './components/ProtectedRoute';
+
 // Lazy load pages for code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Miners = lazy(() => import('./pages/Miners'));
@@ -19,9 +21,6 @@ const Alerts = lazy(() => import('./pages/Alerts'));
 const Settings = lazy(() => import('./pages/Settings'));
 const PoolsManagement = lazy(() => import('./pages/PoolsManagement'));
 const Login = lazy(() => import('./pages/Login'));
-
-// Import ProtectedRoute
-import ProtectedRoute from './components/ProtectedRoute';
 
 const theme = createTheme({
   palette: {
