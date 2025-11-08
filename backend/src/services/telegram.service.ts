@@ -2119,15 +2119,15 @@ export const sendLoginVerification = async (chatId: string): Promise<boolean> =>
     // If bot not initialized, try to get token from database/config
     const { getDatabase } = require('./database.service');
     const db = getDatabase();
-    const settings = db.getSettings();
+    const botToken = db.getSetting('telegram_bot_token');
     
-    if (!settings?.telegram_bot_token) {
+    if (!botToken) {
       logger.warn('Telegram: Cannot send verification - no bot token configured', { service: 'telegram' });
       return false;
     }
     
     // Create a temporary bot instance just for this message
-    const tempBot = new TelegramBot(settings.telegram_bot_token, { polling: false });
+    const tempBot = new TelegramBot(botToken, { polling: false });
     
     const keyboard = {
       inline_keyboard: [
