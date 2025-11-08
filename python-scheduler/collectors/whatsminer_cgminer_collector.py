@@ -51,18 +51,29 @@ async def collect_whatsminer_cgminer(miner_config: Dict) -> Optional[Dict]:
         hashrate_ths = mhs_av / 1_000_000.0 if mhs_av else 0.0
         
         # Get temperature (Whatsminer provides it in summary)
-        max_temp = summary_data.get('Chip Temp Max', 0)
-        if not max_temp:
+        # Try multiple field names as different firmware versions use different keys
+        max_temp = (summary_data.get('Chip Temp Max') or 
+                   summary_data.get('Temperature') or 
+                   summary_data.get('Temp') or 
+                   summary_data.get('temp_max') or 0)
+        
+        if not max_temp or max_temp == 0:
             # Fallback: try to get from stats command
             stats = await _cgminer_command(ip, "stats", port)
             temps = []
             if stats and 'STATS' in stats:
                 for stat in stats['STATS']:
-                    # Whatsminer reports chip temps
+                    # Whatsminer reports chip temps with various key names
                     for key, value in stat.items():
-                        if 'Chip Temp' in key and isinstance(value, (int, float)):
-                            temps.append(float(value))
+                        if ('temp' in key.lower() or 'Temp' in key or 'TEMP' in key) and isinstance(value, (int, float)):
+                            if value > 0 and value < 200:  # Sanity check
+                                temps.append(float(value))
             max_temp = max(temps) if temps else 0.0
+            
+            if max_temp > 0:
+                logger.debug(f"Whatsminer {ip}: Got temperature from stats: {max_temp}°C")
+            else:
+                logger.warning(f"Whatsminer {ip}: Could not find temperature in summary or stats")
         
         # Get pool data
         pools_data = await _cgminer_command(ip, "pools", port)
