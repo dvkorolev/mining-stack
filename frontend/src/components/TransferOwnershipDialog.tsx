@@ -68,8 +68,16 @@ const TransferOwnershipDialog: React.FC<TransferOwnershipDialogProps> = ({
       const data = await response.json();
 
       if (response.ok) {
-        onTransferSuccess();
+        // Close dialog first to prevent error display
         handleClose();
+        // Call success callback outside try-catch to avoid catching its errors
+        setTimeout(() => {
+          try {
+            onTransferSuccess();
+          } catch (callbackErr) {
+            console.error('Success callback error:', callbackErr);
+          }
+        }, 0);
       } else {
         setError(data.error || data.message || 'Failed to transfer ownership');
       }
