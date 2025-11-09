@@ -46,13 +46,31 @@ export const removePoolFromMiner = async (minerIp: string, poolId: number): Prom
 };
 
 /**
- * Update all pool assignments for a miner in database
+ * Bulk update miner pool assignments
  */
 export const updateMinerPoolAssignments = async (
   minerIp: string,
   pools: PoolAssignmentRequest[]
-): Promise<void> => {
-  await axios.put(`${API_BASE_URL}/mining/miners/${minerIp}/pool-assignments`, { pools });
+): Promise<{ success: boolean; message: string }> => {
+  const response = await axios.put(`${API_BASE_URL}/mining/miners/${minerIp}/pool-assignments`, { pools });
+  return response.data;
+};
+
+/**
+ * Sync hardware pools to database
+ */
+export const syncHardwarePoolsToDatabase = async (
+  minerIp: string
+): Promise<{
+  success: boolean;
+  message: string;
+  synced: number;
+  skipped: number;
+  total: number;
+  errors?: string[];
+}> => {
+  const response = await axios.post(`${API_BASE_URL}/mining/miners/${minerIp}/pool-assignments/sync`);
+  return response.data;
 };
 
 /**

@@ -425,6 +425,78 @@ router.put('/mining/miners/:minerIp/pool-assignments', async (req, res, next) =>
   }
 });
 
+// Sync hardware pools to database
+router.post('/mining/miners/:minerIp/pool-assignments/sync', async (req, res, next) => {
+  try {
+    const { minerIp } = req.params;
+    
+    // Get pools from hardware
+    const hardwarePools = await getMinerPools(minerIp);
+    
+    if (!hardwarePools.success || !hardwarePools.pools || hardwarePools.pools.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No pools found on miner hardware',
+      });
+    }
+    
+    const db = getDatabase();
+    
+    // Get all pools from database to match URLs
+    const allPools = db.getAllPools();
+    
+    // Remove existing assignments
+    db.removeAllPoolsFromMiner(minerIp);
+    
+    let synced = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    
+    // Sync each hardware pool
+    for (let i = 0; i < hardwarePools.pools.length; i++) {
+      const hwPool = hardwarePools.pools[i];
+      try {
+        // Extract pool URL (remove stratum+tcp:// prefix if present)
+        const poolUrl = hwPool.url.replace(/^stratum\+tcp:\/\//, '');
+        
+        // Find matching pool in database by URL
+        const dbPool = allPools.find(p => p.url === poolUrl || p.url.includes(poolUrl));
+        
+        if (dbPool) {
+          // Assign pool to miner with priority based on pool index (0=Pool 1, 1=Pool 2, etc.)
+          db.assignPoolToMiner(
+            minerIp,
+            dbPool.id,
+            i, // Use index as priority
+            (hwPool as any).user || '',
+            (hwPool as any).password || 'x'
+          );
+          synced++;
+        } else {
+          skipped++;
+          errors.push(`Pool ${poolUrl} not found in database - please add it to Pools Management first`);
+        }
+      } catch (err) {
+        skipped++;
+        errors.push(`Failed to sync pool ${hwPool.url}: ${err}`);
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Synced ${synced} pools from hardware to database`,
+      miner_ip: minerIp,
+      synced,
+      skipped,
+      total: hardwarePools.pools.length,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (error) {
+    logger.error('Error syncing hardware pools:', error);
+    next(error);
+  }
+});
+
 // Update miner pool configuration
 router.put('/mining/miners/:minerId/pools', async (req, res, next) => {
   try {

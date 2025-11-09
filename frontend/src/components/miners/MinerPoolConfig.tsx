@@ -29,12 +29,14 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
+import SyncIcon from '@mui/icons-material/Sync';
 import { useNotification } from '../../context/NotificationContext';
 import {
   getMinerPoolAssignments,
   assignPoolToMiner,
   removePoolFromMiner,
   updateMinerPoolAssignments,
+  syncHardwarePoolsToDatabase,
   MinerPoolAssignment,
   PoolAssignmentRequest,
 } from '../../services/minerPoolsApi';
@@ -112,6 +114,30 @@ const MinerPoolConfig: React.FC<MinerPoolConfigProps> = ({ minerIp, minerName })
     }
   };
 
+  // Sync hardware pools to database
+  const handleSyncFromHardware = async () => {
+    try {
+      setLoading(true);
+      const result = await syncHardwarePoolsToDatabase(minerIp);
+      
+      if (result.success) {
+        if (result.synced > 0) {
+          showSuccess(`Synced ${result.synced} of ${result.total} pools from hardware`);
+        }
+        if (result.errors && result.errors.length > 0) {
+          result.errors.forEach(err => showError(err));
+        }
+        loadData();
+      } else {
+        showError(result.message || 'Failed to sync pools');
+      }
+    } catch (error) {
+      showError('Failed to sync pools from hardware');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Get priority badge color
   const getPriorityColor = (priority: number): 'primary' | 'secondary' | 'default' => {
     if (priority === 0) return 'primary';
@@ -132,20 +158,30 @@ const MinerPoolConfig: React.FC<MinerPoolConfigProps> = ({ minerIp, minerName })
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6">Pool Configuration</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setShowAddDialog(true)}
-          disabled={availablePools.length === 0}
-        >
-          Assign Pool
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<SyncIcon />}
+            onClick={handleSyncFromHardware}
+            disabled={loading}
+          >
+            Sync from Hardware
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setShowAddDialog(true)}
+            disabled={availablePools.length === 0}
+          >
+            Assign Pool
+          </Button>
+        </Box>
       </Box>
 
       {/* Info Alert */}
       {assignments.length === 0 && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          No pools assigned to this miner. Click "Assign Pool" to add one.
+          No pools assigned to this miner. Click "Sync from Hardware" to import current pools, or "Assign Pool" to add manually.
         </Alert>
       )}
 
