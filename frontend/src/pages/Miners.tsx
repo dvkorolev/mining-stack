@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -109,7 +109,7 @@ const Miners: React.FC = () => {
   const [selectedMiners, setSelectedMiners] = useState<string[]>([]);
   
   // Load sort preferences from localStorage
-  const [sortBy, setSortBy] = useState<'name' | 'status' | 'hashrate' | 'temperature' | 'errors' | 'ip' | 'model'>(() => {
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'hashrate' | 'temperature' | 'errors' | 'ip' | 'model' | 'owner'>(() => {
     const saved = localStorage.getItem('minersSortBy');
     return (saved as any) || 'name';
   });
@@ -371,7 +371,7 @@ const Miners: React.FC = () => {
   };
 
   // Handle sorting
-  const handleSort = (column: 'name' | 'status' | 'hashrate' | 'temperature' | 'errors' | 'ip' | 'model') => {
+  const handleSort = (column: 'name' | 'status' | 'hashrate' | 'temperature' | 'errors' | 'ip' | 'model' | 'owner') => {
     if (sortBy === column) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
@@ -380,30 +380,35 @@ const Miners: React.FC = () => {
     }
   };
 
-  // Get unique models for filter dropdown
-  const uniqueModels = Array.from(new Set(miners.map(m => m.model))).sort();
+  // Get unique models for filter dropdown (memoized)
+  const uniqueModels = useMemo(() => 
+    Array.from(new Set(miners.map(m => m.model))).sort(),
+    [miners]
+  );
 
-  // Filter miners by search query and filters
-  const filteredMiners = miners.filter(miner => {
-    // Search filter (name, IP, alias)
-    const searchLower = searchQuery.toLowerCase();
-    const minerAlias = (miner as any).alias; // Type assertion for alias field
-    const matchesSearch = !searchQuery || 
-      miner.name.toLowerCase().includes(searchLower) ||
-      miner.ip.includes(searchQuery) ||
-      (minerAlias && minerAlias.toLowerCase().includes(searchLower));
+  // Filter and sort miners (memoized to prevent unnecessary re-renders)
+  const sortedMiners = useMemo(() => {
+    // Filter miners by search query and filters
+    const filteredMiners = miners.filter(miner => {
+      // Search filter (name, IP, alias)
+      const searchLower = searchQuery.toLowerCase();
+      const minerAlias = (miner as any).alias; // Type assertion for alias field
+      const matchesSearch = !searchQuery || 
+        miner.name.toLowerCase().includes(searchLower) ||
+        miner.ip.includes(searchQuery) ||
+        (minerAlias && minerAlias.toLowerCase().includes(searchLower));
 
-    // Status filter
-    const matchesStatus = statusFilter === 'all' || miner.status === statusFilter;
+      // Status filter
+      const matchesStatus = statusFilter === 'all' || miner.status === statusFilter;
 
-    // Model filter
-    const matchesModel = modelFilter === 'all' || miner.model === modelFilter;
+      // Model filter
+      const matchesModel = modelFilter === 'all' || miner.model === modelFilter;
 
-    return matchesSearch && matchesStatus && matchesModel;
-  });
+      return matchesSearch && matchesStatus && matchesModel;
+    });
 
-  // Sort filtered miners
-  const sortedMiners = [...filteredMiners].sort((a, b) => {
+    // Sort filtered miners
+    return [...filteredMiners].sort((a, b) => {
     let aValue: any;
     let bValue: any;
 
@@ -446,6 +451,10 @@ const Miners: React.FC = () => {
         aValue = a.model.toLowerCase();
         bValue = b.model.toLowerCase();
         break;
+      case 'owner':
+        aValue = ((a as any).owner || '').toLowerCase();
+        bValue = ((b as any).owner || '').toLowerCase();
+        break;
       default:
         return 0;
     }
@@ -453,7 +462,8 @@ const Miners: React.FC = () => {
     if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
     return 0;
-  });
+    });
+  }, [miners, searchQuery, statusFilter, modelFilter, sortBy, sortOrder]);
 
   if (loading && miners.length === 0) {
     return (
@@ -650,7 +660,21 @@ const Miners: React.FC = () => {
                     )}
                   </Box>
                 </TableCell>
-                {isAdmin && <TableCell>Owner (Chat ID)</TableCell>}
+                {isAdmin && (
+                  <TableCell 
+                    sx={{ cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => handleSort('owner')}
+                  >
+                    <Box display="flex" alignItems="center">
+                      Owner (Chat ID)
+                      {sortBy === 'owner' && (
+                        <Box component="span" sx={{ ml: 0.5 }}>
+                          {sortOrder === 'asc' ? '↑' : '↓'}
+                        </Box>
+                      )}
+                    </Box>
+                  </TableCell>
+                )}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -879,9 +903,14 @@ const Miners: React.FC = () => {
           setMinerToTransfer(null);
         }}
         miner={minerToTransfer}
-        onTransferSuccess={() => {
+        onTransferSuccess={async () => {
           showSuccess('Ownership transferred successfully');
-          dispatch(fetchMiningStats() as any);
+          // Immediate refresh
+          await dispatch(fetchMiningStats() as any);
+          // Force another refresh after 2 seconds to ensure backend has updated
+          setTimeout(() => {
+            dispatch(fetchMiningStats() as any);
+          }, 2000);
         }}
       />
 
