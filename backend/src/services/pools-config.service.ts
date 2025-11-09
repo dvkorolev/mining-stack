@@ -1,10 +1,7 @@
 // backend/src/services/pools-config.service.ts
-import fs from 'fs';
-import yaml from 'js-yaml';
-import path from 'path';
 import { logger } from '../utils/logger';
-import { withConfigLock, FileLockTimeout, FileLockError } from '../utils/fileLock';
-import { getMiners } from '../config/miners.config';
+import { FileLockTimeout, FileLockError } from '../utils/fileLock';
+import { getDatabase } from './database.service';
 
 // Re-export lock errors for use in routes
 export { FileLockTimeout, FileLockError };
@@ -26,27 +23,31 @@ export interface PoolsConfiguration {
   };
 }
 
-const POOLS_CONFIG_PATH = process.env.POOLS_CONFIG_PATH || '/app/etc/pools.yaml';
-
 /**
- * Load pools configuration from YAML file
+ * Load pools configuration from database
  */
 export const loadPoolsConfig = (): PoolsConfiguration => {
   try {
-    if (!fs.existsSync(POOLS_CONFIG_PATH)) {
-      logger.warn(`Pools config not found at ${POOLS_CONFIG_PATH}, returning defaults`);
-      return getDefaultPoolsConfig();
-    }
+    const db = getDatabase();
+    const pools = db.getAllPools();
+    const configData = db.getAllPoolConfig();
 
-    const fileContents = fs.readFileSync(POOLS_CONFIG_PATH, 'utf8');
-    const config = yaml.load(fileContents) as PoolsConfiguration;
+    const config: PoolsConfiguration = {
+      pools: pools.map(p => ({
+        url: p.url,
+        name: p.name,
+        algorithm: p.algorithm as 'sha256' | 'scrypt' | 'multi',
+        priority: p.priority as 'high' | 'medium' | 'low',
+      })),
+      config: {
+        test_interval: parseInt(configData.test_interval || '5', 10),
+        enable_ping: configData.enable_ping === 'true',
+        connection_timeout: parseInt(configData.connection_timeout || '5', 10),
+        dns_timeout: parseInt(configData.dns_timeout || '3', 10),
+      },
+    };
 
-    // Validate structure
-    if (!config.pools || !Array.isArray(config.pools)) {
-      throw new Error('Invalid pools configuration: pools array is missing');
-    }
-
-    logger.info(`Loaded ${config.pools.length} pools from configuration`);
+    logger.info(`Loaded ${pools.length} pools from database`);
     return config;
   } catch (error) {
     logger.error('Failed to load pools configuration:', error);
@@ -55,41 +56,23 @@ export const loadPoolsConfig = (): PoolsConfiguration => {
 };
 
 /**
- * Save pools configuration to YAML file with file locking
+ * Save pools configuration to database
  */
 export const savePoolsConfig = async (config: PoolsConfiguration): Promise<void> => {
   try {
-    // Validate configuration
+    // Validate before saving
     validatePoolsConfig(config);
 
-    // Ensure directory exists
-    const dir = path.dirname(POOLS_CONFIG_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    const db = getDatabase();
 
-    // Acquire lock and write file
-    await withConfigLock(POOLS_CONFIG_PATH, () => {
-      // Convert to YAML
-      const yamlStr = yaml.dump(config, {
-        indent: 2,
-        lineWidth: 120,
-        noRefs: true,
-      });
+    // Save monitoring config
+    db.setPoolConfig('test_interval', config.config.test_interval.toString());
+    db.setPoolConfig('enable_ping', config.config.enable_ping.toString());
+    db.setPoolConfig('connection_timeout', config.config.connection_timeout.toString());
+    db.setPoolConfig('dns_timeout', config.config.dns_timeout.toString());
 
-      // Write to file
-      fs.writeFileSync(POOLS_CONFIG_PATH, yamlStr, 'utf8');
-    });
-
-    logger.info(`Saved pools configuration with ${config.pools.length} pools`);
+    logger.info('Pools configuration saved to database');
   } catch (error) {
-    if (error instanceof FileLockTimeout) {
-      logger.error('Failed to acquire lock on pools config:', error);
-      throw new Error('Configuration file is locked by another process. Please try again.');
-    } else if (error instanceof FileLockError) {
-      logger.error('File lock error:', error);
-      throw new Error('Failed to lock configuration file. Please try again.');
-    }
     logger.error('Failed to save pools configuration:', error);
     throw error;
   }
@@ -179,39 +162,39 @@ export const getDefaultPoolsConfig = (): PoolsConfiguration => {
  * Add a pool to the configuration
  */
 export const addPool = async (pool: PoolConfig): Promise<PoolsConfiguration> => {
-  const config = loadPoolsConfig();
+  const db = getDatabase();
 
   // Check for duplicate URL
-  if (config.pools.some(p => p.url === pool.url)) {
+  const existing = db.getPoolByUrl(pool.url);
+  if (existing) {
     throw new Error(`Pool with URL ${pool.url} already exists`);
   }
 
-  config.pools.push(pool);
-  await savePoolsConfig(config);
-
-  return config;
+  db.insertPool(pool);
+  return loadPoolsConfig();
 };
 
 /**
  * Update a pool in the configuration
  */
 export const updatePool = async (oldUrl: string, updatedPool: PoolConfig): Promise<PoolsConfiguration> => {
-  const config = loadPoolsConfig();
+  const db = getDatabase();
 
-  const index = config.pools.findIndex(p => p.url === oldUrl);
-  if (index === -1) {
+  const existing = db.getPoolByUrl(oldUrl);
+  if (!existing) {
     throw new Error(`Pool with URL ${oldUrl} not found`);
   }
 
   // If URL changed, check for duplicates
-  if (oldUrl !== updatedPool.url && config.pools.some(p => p.url === updatedPool.url)) {
-    throw new Error(`Pool with URL ${updatedPool.url} already exists`);
+  if (oldUrl !== updatedPool.url) {
+    const duplicate = db.getPoolByUrl(updatedPool.url);
+    if (duplicate) {
+      throw new Error(`Pool with URL ${updatedPool.url} already exists`);
+    }
   }
 
-  config.pools[index] = updatedPool;
-  await savePoolsConfig(config);
-
-  return config;
+  db.updatePool(oldUrl, updatedPool);
+  return loadPoolsConfig();
 };
 
 /**
@@ -219,10 +202,14 @@ export const updatePool = async (oldUrl: string, updatedPool: PoolConfig): Promi
  */
 export const checkPoolUsage = (poolUrl: string): { inUse: boolean; minerCount: number; minerNames: string[] } => {
   try {
-    const miners = getMiners(undefined, true); // Get all miners
-    const minersUsingPool = miners.filter(miner => 
-      miner.pools && miner.pools.some(pool => pool.url === poolUrl)
-    );
+    const db = getDatabase();
+    const pool = db.getPoolByUrl(poolUrl);
+    
+    if (!pool) {
+      return { inUse: false, minerCount: 0, minerNames: [] };
+    }
+
+    const minersUsingPool = db.getMinersUsingPool(pool.id);
 
     return {
       inUse: minersUsingPool.length > 0,
@@ -240,10 +227,10 @@ export const checkPoolUsage = (poolUrl: string): { inUse: boolean; minerCount: n
  * Delete a pool from the configuration
  */
 export const deletePool = async (url: string): Promise<PoolsConfiguration> => {
-  const config = loadPoolsConfig();
+  const db = getDatabase();
 
-  const index = config.pools.findIndex(p => p.url === url);
-  if (index === -1) {
+  const existing = db.getPoolByUrl(url);
+  if (!existing) {
     throw new Error(`Pool with URL ${url} not found`);
   }
 
@@ -255,10 +242,8 @@ export const deletePool = async (url: string): Promise<PoolsConfiguration> => {
     );
   }
 
-  config.pools.splice(index, 1);
-  await savePoolsConfig(config);
-
-  return config;
+  db.deletePool(url);
+  return loadPoolsConfig();
 };
 
 /**
