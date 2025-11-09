@@ -13,7 +13,15 @@ import {
   updateMinerConfig,
   updateMetricsFromScheduler 
 } from '../services/mining.service';
-import { getMiners, addMiner, updateMiner, deleteMiner } from '../config/miners.config';
+import { 
+  getMiners, 
+  addMiner, 
+  updateMiner, 
+  deleteMiner,
+  importMinersFromYAML,
+  exportMinersToYAML,
+  backupMinersToYAML,
+} from '../config/miners.config';
 import { requireAdmin } from '../middleware/auth.middleware';
 import { getDatabase } from '../services/database.service';
 import { 
@@ -496,6 +504,73 @@ router.post('/internal/metrics', async (req, res, next) => {
     });
   } catch (error) {
     logger.error('Error processing metrics push:', error);
+    next(error);
+  }
+});
+
+// ==================== YAML IMPORT/EXPORT ENDPOINTS ====================
+
+/**
+ * POST /api/mining/import-yaml
+ * Import miners from YAML file to database
+ * Admin only - requires authentication
+ */
+router.post('/mining/import-yaml', requireAdmin, async (req, res, next) => {
+  try {
+    logger.info('Starting miners YAML import...');
+    const result = importMinersFromYAML();
+
+    res.json({
+      success: true,
+      message: `Import complete: ${result.imported} imported, ${result.skipped} skipped`,
+      ...result,
+    });
+  } catch (error) {
+    logger.error('Error importing miners from YAML:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/mining/export-yaml
+ * Export current miners configuration as YAML
+ * Admin only - returns YAML file
+ * Optional query param: owner=chatId to export only specific user's miners
+ */
+router.get('/mining/export-yaml', requireAdmin, (req, res, next) => {
+  try {
+    const owner = req.query.owner as string | undefined;
+    const yamlStr = exportMinersToYAML(owner);
+
+    const filename = owner 
+      ? `miners-${owner.substring(0, 8)}-config.yaml`
+      : 'miners-config.yaml';
+
+    res.setHeader('Content-Type', 'application/x-yaml');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(yamlStr);
+  } catch (error) {
+    logger.error('Error exporting miners to YAML:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/mining/backup-yaml
+ * Backup current miners configuration to YAML file on server
+ * Admin only - saves to configured path
+ */
+router.post('/mining/backup-yaml', requireAdmin, (req, res, next) => {
+  try {
+    const owner = req.body.owner as string | undefined;
+    backupMinersToYAML(undefined, owner);
+
+    res.json({
+      success: true,
+      message: 'Miners configuration backed up to YAML file',
+    });
+  } catch (error) {
+    logger.error('Error backing up miners to YAML:', error);
     next(error);
   }
 });

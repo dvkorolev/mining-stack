@@ -45,6 +45,7 @@ export interface MinerConfig {
   name: string;  // Required - will be auto-generated from IP if not provided
   model: string;
   alias?: string;
+  owner?: string;  // Owner's Telegram chat ID
   // Flat authentication fields (aligned with Python collectors)
   username?: string;  // For CGI fallback (default: 'root')
   password?: string;  // For CGI fallback (default: 'root')
@@ -110,18 +111,28 @@ const dbRecordToConfig = (record: MinerRecord): MinerConfig => {
     }
   }
   
+  let thresholds: MinerThresholds | undefined;
+  if (record.thresholds) {
+    try {
+      thresholds = JSON.parse(record.thresholds);
+    } catch (error) {
+      logger.warn(`Failed to parse thresholds for ${record.name}`);
+    }
+  }
+
   return {
     ip: record.ip,
     name: record.name,
     model: record.model,
     alias: record.alias,
+    owner: record.owner,
     username: credentials?.username,
     password: credentials?.password,
     api_port: record.api_port,
     status: 'offline' as const,
     lastSeen: new Date(),
-    // Note: thresholds and pools are not stored in DB yet
-    // They can be added as JSON columns if needed
+    thresholds,
+    // Note: pools are loaded separately via getMinerPools()
   };
 };
 
@@ -437,3 +448,208 @@ export const deleteMiner = (minerId: string): boolean => {
 
 // Load miners configuration on startup
 loadMinersConfig();
+
+// ==================== YAML IMPORT/EXPORT ====================
+
+const MINERS_CONFIG_PATH = process.env.MINERS_CONFIG_PATH || '/app/etc/miners.yaml';
+
+export interface MinersYAMLConfig {
+  miners: MinerConfig[];
+}
+
+/**
+ * Import miners from YAML file to database (one-time migration or restore)
+ * This is called on startup if the database is empty and YAML file exists
+ */
+export const importMinersFromYAML = (): { imported: number; skipped: number; errors: string[] } => {
+  const result = { imported: 0, skipped: 0, errors: [] as string[] };
+
+  try {
+    if (!fs.existsSync(MINERS_CONFIG_PATH)) {
+      logger.info(`No YAML file found at ${MINERS_CONFIG_PATH}, skipping import`);
+      return result;
+    }
+
+    const fileContents = fs.readFileSync(MINERS_CONFIG_PATH, 'utf8');
+    const yamlConfig = yaml.load(fileContents) as MinersYAMLConfig;
+
+    if (!yamlConfig.miners || !Array.isArray(yamlConfig.miners)) {
+      logger.warn('Invalid YAML structure: miners array is missing');
+      return result;
+    }
+
+    const db = getDatabase();
+
+    // Import miners
+    for (const miner of yamlConfig.miners) {
+      try {
+        // Check if miner already exists
+        const existing = db.getMinerByIp(miner.ip);
+        if (existing) {
+          logger.info(`Miner ${miner.name} (${miner.ip}) already exists, skipping`);
+          result.skipped++;
+          continue;
+        }
+
+        // Prepare miner record for database
+        const minerRecord: MinerRecord = {
+          ip: miner.ip,
+          name: miner.name,
+          model: miner.model,
+          alias: miner.alias,
+          owner: miner.owner || 'imported', // Default owner if not specified
+          status: 'active',
+          credentials: miner.username || miner.password 
+            ? JSON.stringify({ username: miner.username, password: miner.password })
+            : undefined,
+          thresholds: miner.thresholds ? JSON.stringify(miner.thresholds) : undefined,
+          use_https: 0,
+          static_power: miner.thresholds?.power?.expected,
+          api_port: miner.api_port,
+        };
+
+        // Insert miner
+        db.upsertMiner(minerRecord);
+        result.imported++;
+        logger.info(`Imported miner: ${miner.name} (${miner.ip})`);
+
+        // Import pool assignments if present
+        if (miner.pools && miner.pools.length > 0) {
+          for (let i = 0; i < miner.pools.length; i++) {
+            const pool = miner.pools[i];
+            try {
+              // Find pool by URL in database
+              const dbPool = db.getPoolByUrl(pool.url);
+              if (dbPool) {
+                db.assignPoolToMiner(miner.ip, dbPool.id, i, pool.user, pool.password);
+                logger.info(`Assigned pool ${dbPool.name} to miner ${miner.name}`);
+              } else {
+                logger.warn(`Pool ${pool.url} not found in database, skipping assignment for ${miner.name}`);
+              }
+            } catch (poolError) {
+              logger.error(`Failed to assign pool to miner ${miner.name}:`, poolError);
+            }
+          }
+        }
+      } catch (error) {
+        const errorMsg = `Failed to import miner ${miner.name}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        logger.error(errorMsg);
+        result.errors.push(errorMsg);
+      }
+    }
+
+    logger.info(`YAML import complete: ${result.imported} imported, ${result.skipped} skipped, ${result.errors.length} errors`);
+    
+    // Reload cache after import
+    loadMinersConfig();
+    
+    return result;
+  } catch (error) {
+    logger.error('Failed to import miners from YAML:', error);
+    result.errors.push(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return result;
+  }
+};
+
+/**
+ * Export current miners configuration to YAML format
+ * Returns YAML string that can be saved to file or sent to client
+ */
+export const exportMinersToYAML = (owner?: string): string => {
+  try {
+    const miners = getMiners(owner, true); // Force refresh from database
+    const db = getDatabase();
+
+    // Enrich miners with pool assignments
+    const enrichedMiners = miners.map(miner => {
+      const pools = db.getMinerPools(miner.ip);
+      return {
+        ip: miner.ip,
+        name: miner.name,
+        model: miner.model,
+        alias: miner.alias,
+        owner: miner.owner,
+        username: miner.username,
+        password: miner.password,
+        api_port: miner.api_port,
+        algorithm: miner.algorithm,
+        thresholds: miner.thresholds,
+        pools: pools.map(p => ({
+          url: p.pool_url,
+          user: p.pool_user,
+          password: p.pool_password || undefined,
+        })),
+      };
+    });
+
+    const yamlConfig: MinersYAMLConfig = {
+      miners: enrichedMiners,
+    };
+    
+    const yamlStr = yaml.dump(yamlConfig, {
+      indent: 2,
+      lineWidth: -1,
+      noRefs: true,
+      sortKeys: false,
+    });
+
+    logger.info(`Exported ${miners.length} miners to YAML format`);
+    return yamlStr;
+  } catch (error) {
+    logger.error('Failed to export miners to YAML:', error);
+    throw error;
+  }
+};
+
+/**
+ * Save current miners configuration to YAML file
+ * This creates a backup of the current database state
+ */
+export const backupMinersToYAML = (backupPath?: string, owner?: string): void => {
+  try {
+    const yamlStr = exportMinersToYAML(owner);
+    const filePath = backupPath || MINERS_CONFIG_PATH;
+
+    // Ensure directory exists
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    fs.writeFileSync(filePath, yamlStr, 'utf8');
+    logger.info(`Miners configuration backed up to ${filePath}`);
+  } catch (error) {
+    logger.error('Failed to backup miners to YAML:', error);
+    throw error;
+  }
+};
+
+/**
+ * Initialize miners from YAML on first startup
+ * Called during application initialization
+ */
+export const initializeMinersFromYAML = (): void => {
+  try {
+    const db = getDatabase();
+    const existingMiners = db.getAllMiners();
+
+    // Only import if database is empty
+    if (existingMiners.length === 0) {
+      logger.info('Database is empty, attempting to import miners from YAML...');
+      const result = importMinersFromYAML();
+      
+      if (result.imported > 0) {
+        logger.info(`Successfully initialized ${result.imported} miners from YAML`);
+      } else if (result.errors.length > 0) {
+        logger.warn(`YAML import completed with errors: ${result.errors.join(', ')}`);
+      } else {
+        logger.info('No miners imported from YAML (file not found or empty)');
+      }
+    } else {
+      logger.info(`Database already contains ${existingMiners.length} miners, skipping YAML import`);
+    }
+  } catch (error) {
+    logger.error('Failed to initialize miners from YAML:', error);
+    // Don't throw - allow application to start even if YAML import fails
+  }
+};

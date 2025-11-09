@@ -193,6 +193,14 @@ server.listen(PORT, async () => {
     logger.error('Failed to initialize pools from YAML:', error);
   }
 
+  // Initialize miners from YAML if database is empty
+  try {
+    const { initializeMinersFromYAML } = require('./config/miners.config');
+    initializeMinersFromYAML();
+  } catch (error) {
+    logger.error('Failed to initialize miners from YAML:', error);
+  }
+
   // Auto-start mining simulation
   try {
     await startMining();
