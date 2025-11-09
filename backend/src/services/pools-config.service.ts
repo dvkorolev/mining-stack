@@ -165,26 +165,7 @@ export const validatePoolsConfig = (config: PoolsConfiguration): void => {
  */
 export const getDefaultPoolsConfig = (): PoolsConfiguration => {
   return {
-    pools: [
-      {
-        url: 'stratum.slushpool.com:3333',
-        name: 'SlushPool',
-        algorithm: 'sha256',
-        priority: 'high',
-      },
-      {
-        url: 'stratum.f2pool.com:3333',
-        name: 'F2Pool',
-        algorithm: 'sha256',
-        priority: 'high',
-      },
-      {
-        url: 'stratum.antpool.com:3333',
-        name: 'Antpool',
-        algorithm: 'sha256',
-        priority: 'medium',
-      },
-    ],
+    pools: [], // Start with empty pools - user should add their own
     config: {
       test_interval: 5,
       enable_ping: false,
