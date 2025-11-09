@@ -1865,7 +1865,7 @@ const updateConsolidatedAlertMessage = async (): Promise<void> => {
     if (criticalAlerts.length > 0) {
       message += `🚨 *CRITICAL (${criticalAlerts.length})*\n`;
       criticalAlerts.slice(0, 5).forEach((alert: any) => {
-        const timeAgo = getTimeAgo(alert.timestamp);
+        const timeAgo = getTimeAgo(alert.firedAt || alert.timestamp);
         message += `  • ${alert.miner || 'Farm'}: ${alert.summary} _(${timeAgo})_\n`;
       });
       if (criticalAlerts.length > 5) {
@@ -1877,7 +1877,7 @@ const updateConsolidatedAlertMessage = async (): Promise<void> => {
     if (warningAlerts.length > 0) {
       message += `⚠️  *WARNING (${warningAlerts.length})*\n`;
       warningAlerts.slice(0, 5).forEach((alert: any) => {
-        const timeAgo = getTimeAgo(alert.timestamp);
+        const timeAgo = getTimeAgo(alert.firedAt || alert.timestamp);
         message += `  • ${alert.miner || 'Farm'}: ${alert.summary} _(${timeAgo})_\n`;
       });
       if (warningAlerts.length > 5) {
@@ -1889,7 +1889,7 @@ const updateConsolidatedAlertMessage = async (): Promise<void> => {
     if (infoAlerts.length > 0 && infoAlerts.length <= 3) {
       message += `ℹ️  *INFO (${infoAlerts.length})*\n`;
       infoAlerts.forEach((alert: any) => {
-        const timeAgo = getTimeAgo(alert.timestamp);
+        const timeAgo = getTimeAgo(alert.firedAt || alert.timestamp);
         message += `  • ${alert.miner || 'Farm'}: ${alert.summary} _(${timeAgo})_\n`;
       });
     }
@@ -1983,8 +1983,16 @@ const updateConsolidatedAlertMessage = async (): Promise<void> => {
 /**
  * Get human-readable time ago string
  */
-const getTimeAgo = (timestamp: number): string => {
+const getTimeAgo = (timestamp: number | undefined): string => {
+  // Handle undefined or invalid timestamps
+  if (!timestamp || isNaN(timestamp) || timestamp <= 0) {
+    return 'unknown';
+  }
+
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  
+  // Handle negative values (future timestamps)
+  if (seconds < 0) return 'just now';
   
   if (seconds < 60) return 'just now';
   if (seconds < 120) return '1m ago';
