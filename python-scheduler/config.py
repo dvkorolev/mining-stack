@@ -102,10 +102,52 @@ def load_pools_config() -> List[Dict]:
     if pools_config_cache and (current_time - last_pools_load) < CONFIG_CACHE_TTL:
         return pools_config_cache
     
+    # Try database API first if enabled
+    if USE_DATABASE_CONFIG and SYSTEM_API_KEY:
+        try:
+            response = requests.get(
+                f"{BACKEND_URL}/api/pools/config",
+                headers={'X-API-Key': SYSTEM_API_KEY},
+                timeout=5
+            )
+            if response.status_code == 200:
+                data = response.json()
+                pools = data.get('pools', [])
+                
+                # Parse pool URLs to extract hostname and port
+                parsed_pools = []
+                for pool in pools:
+                    url = pool.get('url', '')
+                    if ':' in url:
+                        hostname, port_str = url.rsplit(':', 1)
+                        try:
+                            port = int(port_str)
+                            parsed_pools.append({
+                                'hostname': hostname,
+                                'port': port,
+                                'name': pool.get('name', hostname),
+                                'algorithm': pool.get('algorithm', 'unknown'),
+                                'priority': pool.get('priority', 'medium')
+                            })
+                        except ValueError:
+                            pass  # Skip invalid ports
+                
+                pools_config_cache = parsed_pools
+                last_pools_load = current_time
+                print(f"Loaded {len(parsed_pools)} pools from database API")
+                return pools_config_cache
+            else:
+                print(f"Warning: Failed to load pools from database API: {response.status_code}")
+        except Exception as e:
+            print(f"Warning: Failed to load pools from database API: {e}")
+            print("Falling back to YAML configuration...")
+    
+    # Fallback to YAML file
     config_path = Path(POOLS_CONFIG)
     
     # If pools config doesn't exist, return empty list
     if not config_path.exists():
+        print(f"Warning: Pools config file not found: {config_path}")
         pools_config_cache = []
         last_pools_load = current_time
         return pools_config_cache
@@ -138,6 +180,7 @@ def load_pools_config() -> List[Dict]:
         last_pools_load = current_time
         return pools_config_cache
     except Exception as e:
+        print(f"Error loading pools from YAML: {e}")
         # Return empty list on error
         pools_config_cache = []
         last_pools_load = current_time
