@@ -465,8 +465,9 @@ const simulateMinerStats = (miner: any): MinerStats => {
   const acceptedShares = baseAccepted + Math.floor(Math.random() * 1000);
   const rejectedShares = baseRejected + Math.floor(Math.random() * 50);
   
-  // Use time-windowed rejection rate calculation
-  const rejectionRate = calculateRejectionRate(minerId, acceptedShares, rejectedShares);
+  // Calculate rejection rate from lifetime totals (aligned with Grafana)
+  const total = acceptedShares + rejectedShares;
+  const rejectionRate = total > 0 ? (rejectedShares / total) * 100 : 0;
   
   // Generate errors if status is error
   const errors: MinerError[] = [];
@@ -988,8 +989,9 @@ const updateMetricsFromScheduler = async (
       const accepted = m.pool_accepted || 0;
       const rejected = m.pool_rejected || 0;
       
-      // Use time-windowed rejection rate calculation
-      const rejectionRate = calculateRejectionRate(m.name || m.ip, accepted, rejected);
+      // Calculate rejection rate from lifetime totals (aligned with Grafana)
+      const total = accepted + rejected;
+      const rejectionRate = total > 0 ? (rejected / total) * 100 : 0;
       
       return {
         minerId: m.name || m.ip,
