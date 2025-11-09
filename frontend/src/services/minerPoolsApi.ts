@@ -1,7 +1,5 @@
 // frontend/src/services/minerPoolsApi.ts
-import axios from 'axios';
-
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+import api from './api';
 
 export interface MinerPoolAssignment {
   pool_id: number;
@@ -24,7 +22,7 @@ export interface PoolAssignmentRequest {
  * Get pool assignments for a miner from database
  */
 export const getMinerPoolAssignments = async (minerIp: string): Promise<MinerPoolAssignment[]> => {
-  const response = await axios.get(`${API_BASE_URL}/mining/miners/${minerIp}/pool-assignments`);
+  const response = await api.get(`/mining/miners/${minerIp}/pool-assignments`);
   return response.data.pools || [];
 };
 
@@ -35,14 +33,14 @@ export const assignPoolToMiner = async (
   minerIp: string,
   assignment: PoolAssignmentRequest
 ): Promise<void> => {
-  await axios.post(`${API_BASE_URL}/mining/miners/${minerIp}/pool-assignments`, assignment);
+  await api.post(`/mining/miners/${minerIp}/pool-assignments`, assignment);
 };
 
 /**
  * Remove a pool assignment from a miner in database
  */
 export const removePoolFromMiner = async (minerIp: string, poolId: number): Promise<void> => {
-  await axios.delete(`${API_BASE_URL}/mining/miners/${minerIp}/pool-assignments/${poolId}`);
+  await api.delete(`/mining/miners/${minerIp}/pool-assignments/${poolId}`);
 };
 
 /**
@@ -52,7 +50,7 @@ export const updateMinerPoolAssignments = async (
   minerIp: string,
   pools: PoolAssignmentRequest[]
 ): Promise<{ success: boolean; message: string }> => {
-  const response = await axios.put(`${API_BASE_URL}/mining/miners/${minerIp}/pool-assignments`, { pools });
+  const response = await api.put(`/mining/miners/${minerIp}/pool-assignments`, { pools });
   return response.data;
 };
 
@@ -69,7 +67,7 @@ export const syncHardwarePoolsToDatabase = async (
   total: number;
   errors?: string[];
 }> => {
-  const response = await axios.post(`${API_BASE_URL}/mining/miners/${minerIp}/pool-assignments/sync`);
+  const response = await api.post(`/mining/miners/${minerIp}/pool-assignments/sync`);
   return response.data;
 };
 
@@ -77,7 +75,7 @@ export const syncHardwarePoolsToDatabase = async (
  * Get pool configuration from miner hardware (actual running config)
  */
 export const getMinerHardwarePools = async (minerId: string): Promise<any> => {
-  const response = await axios.get(`${API_BASE_URL}/mining/miners/${minerId}/pools`);
+  const response = await api.get(`/mining/miners/${minerId}/pools`);
   return response.data;
 };
 
@@ -85,6 +83,6 @@ export const getMinerHardwarePools = async (minerId: string): Promise<any> => {
  * Update pool configuration on miner hardware
  */
 export const updateMinerHardwarePools = async (minerId: string, pools: any[]): Promise<any> => {
-  const response = await axios.put(`${API_BASE_URL}/mining/miners/${minerId}/pools`, { pools });
+  const response = await api.put(`/mining/miners/${minerId}/pools`, { pools });
   return response.data;
 };
