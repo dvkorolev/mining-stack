@@ -10,6 +10,9 @@ import {
   deletePool,
   triggerPoolCollection,
   checkPoolUsage,
+  importPoolsFromYAML,
+  exportPoolsToYAML,
+  backupPoolsToYAML,
   PoolConfig,
   PoolsConfiguration,
   FileLockTimeout,
@@ -371,6 +374,78 @@ router.post('/collect', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to trigger pool collection',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// ==================== YAML IMPORT/EXPORT ENDPOINTS ====================
+
+/**
+ * POST /api/pools/import-yaml
+ * Import pools from YAML file to database
+ * Admin only - requires authentication
+ */
+router.post('/import-yaml', async (req: Request, res: Response) => {
+  try {
+    logger.info('Starting YAML import...');
+    const result = importPoolsFromYAML();
+
+    res.json({
+      success: true,
+      message: `Import complete: ${result.imported} imported, ${result.skipped} skipped`,
+      ...result,
+    });
+  } catch (error) {
+    logger.error('Error importing from YAML:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to import from YAML',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * GET /api/pools/export-yaml
+ * Export current pools configuration as YAML
+ * Admin only - returns YAML file
+ */
+router.get('/export-yaml', (req: Request, res: Response) => {
+  try {
+    const yamlStr = exportPoolsToYAML();
+
+    res.setHeader('Content-Type', 'application/x-yaml');
+    res.setHeader('Content-Disposition', 'attachment; filename="pools-config.yaml"');
+    res.send(yamlStr);
+  } catch (error) {
+    logger.error('Error exporting to YAML:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export to YAML',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * POST /api/pools/backup-yaml
+ * Backup current pools configuration to YAML file on server
+ * Admin only - saves to configured path
+ */
+router.post('/backup-yaml', (req: Request, res: Response) => {
+  try {
+    backupPoolsToYAML();
+
+    res.json({
+      success: true,
+      message: 'Pools configuration backed up to YAML file',
+    });
+  } catch (error) {
+    logger.error('Error backing up to YAML:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to backup to YAML',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }

@@ -1,4 +1,7 @@
 // backend/src/services/pools-config.service.ts
+import fs from 'fs';
+import yaml from 'js-yaml';
+import path from 'path';
 import { logger } from '../utils/logger';
 import { FileLockTimeout, FileLockError } from '../utils/fileLock';
 import { getDatabase } from './database.service';
@@ -265,5 +268,152 @@ export const triggerPoolCollection = async (): Promise<{ success: boolean; messa
   } catch (error) {
     logger.error('Failed to trigger pool collection:', error);
     return { success: false, message: `Failed to trigger pool collection: ${error}` };
+  }
+};
+
+// ==================== YAML IMPORT/EXPORT ====================
+
+const POOLS_CONFIG_PATH = process.env.POOLS_CONFIG_PATH || '/app/etc/pools.yaml';
+
+/**
+ * Import pools from YAML file to database (one-time migration or restore)
+ * This is called on startup if the database is empty and YAML file exists
+ */
+export const importPoolsFromYAML = (): { imported: number; skipped: number; errors: string[] } => {
+  const result = { imported: 0, skipped: 0, errors: [] as string[] };
+
+  try {
+    if (!fs.existsSync(POOLS_CONFIG_PATH)) {
+      logger.info(`No YAML file found at ${POOLS_CONFIG_PATH}, skipping import`);
+      return result;
+    }
+
+    const fileContents = fs.readFileSync(POOLS_CONFIG_PATH, 'utf8');
+    const yamlConfig = yaml.load(fileContents) as PoolsConfiguration;
+
+    if (!yamlConfig.pools || !Array.isArray(yamlConfig.pools)) {
+      logger.warn('Invalid YAML structure: pools array is missing');
+      return result;
+    }
+
+    const db = getDatabase();
+
+    // Import pools
+    for (const pool of yamlConfig.pools) {
+      try {
+        // Check if pool already exists
+        const existing = db.getPoolByUrl(pool.url);
+        if (existing) {
+          logger.info(`Pool ${pool.name} already exists, skipping`);
+          result.skipped++;
+          continue;
+        }
+
+        // Insert pool
+        db.insertPool(pool);
+        result.imported++;
+        logger.info(`Imported pool: ${pool.name} (${pool.url})`);
+      } catch (error) {
+        const errorMsg = `Failed to import pool ${pool.name}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        logger.error(errorMsg);
+        result.errors.push(errorMsg);
+      }
+    }
+
+    // Import monitoring config
+    if (yamlConfig.config) {
+      try {
+        db.setPoolConfig('test_interval', yamlConfig.config.test_interval.toString());
+        db.setPoolConfig('enable_ping', yamlConfig.config.enable_ping.toString());
+        db.setPoolConfig('connection_timeout', yamlConfig.config.connection_timeout.toString());
+        db.setPoolConfig('dns_timeout', yamlConfig.config.dns_timeout.toString());
+        logger.info('Imported pool monitoring configuration');
+      } catch (error) {
+        logger.error('Failed to import pool config:', error);
+      }
+    }
+
+    logger.info(`YAML import complete: ${result.imported} imported, ${result.skipped} skipped, ${result.errors.length} errors`);
+    return result;
+  } catch (error) {
+    logger.error('Failed to import pools from YAML:', error);
+    result.errors.push(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return result;
+  }
+};
+
+/**
+ * Export current pools configuration to YAML format
+ * Returns YAML string that can be saved to file or sent to client
+ */
+export const exportPoolsToYAML = (): string => {
+  try {
+    const config = loadPoolsConfig();
+    
+    const yamlStr = yaml.dump(config, {
+      indent: 2,
+      lineWidth: -1,
+      noRefs: true,
+      sortKeys: false,
+    });
+
+    logger.info('Exported pools configuration to YAML format');
+    return yamlStr;
+  } catch (error) {
+    logger.error('Failed to export pools to YAML:', error);
+    throw error;
+  }
+};
+
+/**
+ * Save current pools configuration to YAML file
+ * This creates a backup of the current database state
+ */
+export const backupPoolsToYAML = (backupPath?: string): void => {
+  try {
+    const yamlStr = exportPoolsToYAML();
+    const filePath = backupPath || POOLS_CONFIG_PATH;
+
+    // Ensure directory exists
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    fs.writeFileSync(filePath, yamlStr, 'utf8');
+    logger.info(`Pools configuration backed up to ${filePath}`);
+  } catch (error) {
+    logger.error('Failed to backup pools to YAML:', error);
+    throw error;
+  }
+};
+
+/**
+ * Initialize pools from YAML on first startup
+ * Called during application initialization
+ */
+export const initializePoolsFromYAML = (): void => {
+  try {
+    const db = getDatabase();
+    const existingPools = db.getAllPools();
+
+    // Only import if database is empty
+    if (existingPools.length === 0) {
+      logger.info('Database is empty, attempting to import from YAML...');
+      const result = importPoolsFromYAML();
+      
+      if (result.imported > 0) {
+        logger.info(`Successfully initialized ${result.imported} pools from YAML`);
+      } else if (result.errors.length > 0) {
+        logger.warn(`YAML import completed with errors: ${result.errors.join(', ')}`);
+      } else {
+        logger.info('No pools imported from YAML (file not found or empty)');
+      }
+    } else {
+      logger.info(`Database already contains ${existingPools.length} pools, skipping YAML import`);
+    }
+  } catch (error) {
+    logger.error('Failed to initialize pools from YAML:', error);
+    // Don't throw - allow application to start even if YAML import fails
   }
 };

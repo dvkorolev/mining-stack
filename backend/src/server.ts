@@ -185,6 +185,14 @@ server.listen(PORT, async () => {
   logger.info(`Server is running on port ${PORT}`);
   console.log(`Server is running on http://localhost:${PORT}`);
   
+  // Initialize pools from YAML if database is empty
+  try {
+    const { initializePoolsFromYAML } = require('./services/pools-config.service');
+    initializePoolsFromYAML();
+  } catch (error) {
+    logger.error('Failed to initialize pools from YAML:', error);
+  }
+
   // Auto-start mining simulation
   try {
     await startMining();
