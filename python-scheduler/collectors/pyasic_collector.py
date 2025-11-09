@@ -120,6 +120,7 @@ def _check_data_gaps(pyasic_data: Dict, model: str) -> Dict[str, bool]:
     if not temperature or temperature == 0:
         if hashrate > 0:
             gaps['temperature'] = True
+            logger.debug(f"Temperature gap detected for {model}: temp={temperature}, hashrate={hashrate}")
     
     return gaps
 
@@ -180,7 +181,9 @@ def _merge_data(pyasic_data: Dict, cgminer_data: Dict, gaps: Dict[str, bool], cg
         merged['temperature'] = cgminer_data['temperature']
         merged['cgminer_board_temps'] = cgminer_board_temps
         miner_gaps_filled_total.labels(type='temperature').inc()
-        logger.debug(f"Filled temperature gap: {cgminer_data['temperature']}°C from cgminer")
+        logger.info(f"✓ Filled temperature gap: {cgminer_data['temperature']}°C from cgminer")
+    elif gaps.get('temperature'):
+        logger.warning(f"⚠️  Temperature gap detected but cgminer returned 0 or None")
     
     return merged
 
@@ -429,13 +432,19 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             success_count += 1
             
             hashrate_val = _safe_float(data.get('hashrate', 0))
+            temp_val = _safe_float(data.get('temperature', 0))
+            
+            # Log temperature for debugging
+            if temp_val == 0 and hashrate_val > 0:
+                logger.warning(f"⚠️  {miner['name']}: Temperature is 0 despite hashrate {hashrate_val:.2f} TH/s (method={method}, has_gaps={has_gaps})")
+            
             miner_data = {
                 'ip': miner['ip'],
                 'name': miner['name'],
                 'model': miner['model'],
                 'hashrate': hashrate_val,
                 'power': _safe_float(data.get('power', 0)),
-                'temp_max': _safe_float(data.get('temperature', 0)),
+                'temp_max': temp_val,
                 'is_mining': 1 if data.get('is_mining', True) else 0,
                 'uptime': _safe_float(data.get('uptime', 0)),
                 'efficiency': _safe_float(data.get('efficiency', 0)),
