@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -107,8 +107,17 @@ const Miners: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingMiner, setEditingMiner] = useState<Miner | null>(null);
   const [selectedMiners, setSelectedMiners] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<'name' | 'status' | 'hashrate' | 'temperature' | 'errors' | 'ip' | 'model'>('name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  
+  // Load sort preferences from localStorage
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'hashrate' | 'temperature' | 'errors' | 'ip' | 'model'>(() => {
+    const saved = localStorage.getItem('minersSortBy');
+    return (saved as any) || 'name';
+  });
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => {
+    const saved = localStorage.getItem('minersSortOrder');
+    return (saved as any) || 'asc';
+  });
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline' | 'error'>('all');
   const [modelFilter, setModelFilter] = useState<string>('all');
@@ -134,6 +143,15 @@ const Miners: React.FC = () => {
   });
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedMinerForDetails, setSelectedMinerForDetails] = useState<Miner | null>(null);
+
+  // Save sort preferences to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem('minersSortBy', sortBy);
+  }, [sortBy]);
+
+  useEffect(() => {
+    localStorage.setItem('minersSortOrder', sortOrder);
+  }, [sortOrder]);
 
   // Load miners data (only for manual refresh)
   const loadMiners = async () => {
