@@ -399,8 +399,11 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
         cgminer_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for i, cgminer_result in enumerate(cgminer_results):
+            gap_info = miners_with_gaps[i]
+            if isinstance(cgminer_result, Exception):
+                logger.warning(f"CGMiner gap-filling failed for {gap_info['miner']['name']}: {cgminer_result}")
+                continue
             if cgminer_result:
-                gap_info = miners_with_gaps[i]
                 board_temps_raw = cgminer_result.pop('_board_temps_raw', [])
                 merged = _merge_data(
                     gap_info['pyasic_data'],
@@ -410,6 +413,9 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 )
                 pyasic_results[gap_info['index']]['data'] = merged
                 pyasic_results[gap_info['index']]['method'] = 'merged'
+                logger.debug(f"Gap-filling completed for {gap_info['miner']['name']}: temp={merged.get('temperature', 0)}°C")
+            else:
+                logger.warning(f"CGMiner returned None for {gap_info['miner']['name']}")
     
     success_count = 0
     miners_data = []

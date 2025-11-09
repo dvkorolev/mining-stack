@@ -957,6 +957,11 @@ const updateMetricsFromScheduler = async (
     
     // Convert scheduler format to our MinerStats format
     const minerStats: MinerStats[] = miners.map(m => {
+      // Log temperature values for debugging
+      if (m.hashrate > 0 && (!m.temp_max || m.temp_max === 0)) {
+        logger.warn(`⚠️  Received temp_max=0 for ${m.name} (${m.ip}) despite hashrate=${m.hashrate}`);
+      }
+      
       // Determine status from scheduler data using new scrape_status field
       // Status codes: 2=success, 1=partial, 0=timeout, -1=refused, -2=error
       let status: 'online' | 'offline' | 'error' = 'offline';
