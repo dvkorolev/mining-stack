@@ -155,7 +155,8 @@ async def _cgminer_command(ip: str, command: str, port: int = 4028) -> Optional[
             decoder = json.JSONDecoder()
             obj, _ = decoder.raw_decode(response_str)
             return obj
-    except Exception:
+    except Exception as e:
+        logger.debug(f"_cgminer_command failed for {ip}:{port} cmd={command}: {type(e).__name__}: {e}")
         return None
 
 
