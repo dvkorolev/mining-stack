@@ -360,6 +360,10 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
     miners_with_gaps = []
     for i, result in enumerate(pyasic_results):
         if result and result.get('has_gaps'):
+            gaps = result['gaps']
+            miner_name = miners[i]['name']
+            gap_types = [k for k, v in gaps.items() if v]
+            logger.info(f"📊 {miner_name} has gaps: {', '.join(gap_types)}")
             miners_with_gaps.append({
                 'index': i,
                 'miner': miners[i],
