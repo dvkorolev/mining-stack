@@ -10,6 +10,7 @@ import { getDatabase } from './database.service';
 export { FileLockTimeout, FileLockError };
 
 export interface PoolConfig {
+  id?: number;  // Pool ID from database
   url: string;
   name: string;
   algorithm: 'sha256' | 'scrypt' | 'multi';
@@ -37,6 +38,7 @@ export const loadPoolsConfig = (): PoolsConfiguration => {
 
     const config: PoolsConfiguration = {
       pools: pools.map(p => ({
+        id: p.id,
         url: p.url,
         name: p.name,
         algorithm: p.algorithm as 'sha256' | 'scrypt' | 'multi',

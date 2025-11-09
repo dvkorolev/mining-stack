@@ -21,10 +21,13 @@ import {
   Divider,
   IconButton,
   Tooltip,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { Line } from 'react-chartjs-2';
+import MinerPoolConfig from './miners/MinerPoolConfig';
 
 interface MinerError {
   code: string;
@@ -74,6 +77,7 @@ const MinerDetailsModal: React.FC<MinerDetailsModalProps> = ({
   onClose,
   onReboot,
 }) => {
+  const [tabValue, setTabValue] = useState(0);
   const [historyData, setHistoryData] = useState<{
     timestamps: string[];
     hashrate: number[];
@@ -248,7 +252,18 @@ const MinerDetailsModal: React.FC<MinerDetailsModalProps> = ({
         </Typography>
       </DialogTitle>
 
+      {/* Tabs */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
+          <Tab label="Overview" />
+          <Tab label="Charts" />
+          <Tab label="Pool Configuration" />
+        </Tabs>
+      </Box>
+
       <DialogContent dividers>
+        {/* Tab Panel 0: Overview */}
+        {tabValue === 0 && (
         <Grid container spacing={3}>
           {/* Key Stats Cards */}
           <Grid item xs={12} md={3}>
@@ -300,27 +315,6 @@ const MinerDetailsModal: React.FC<MinerDetailsModalProps> = ({
             </Card>
           </Grid>
 
-          {/* Live Charts */}
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="h6" gutterBottom>
-                Hashrate (Last Hour)
-              </Typography>
-              <Box sx={{ height: 200 }}>
-                <Line data={hashrateChartData} options={chartOptions} />
-              </Box>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="h6" gutterBottom>
-                Temperature (Last Hour)
-              </Typography>
-              <Box sx={{ height: 200 }}>
-                <Line data={temperatureChartData} options={chartOptions} />
-              </Box>
-            </Paper>
-          </Grid>
 
           {/* Share Statistics */}
           {miner.shares && (
@@ -400,6 +394,38 @@ const MinerDetailsModal: React.FC<MinerDetailsModalProps> = ({
             </Grid>
           )}
         </Grid>
+        )}
+
+        {/* Tab Panel 1: Charts */}
+        {tabValue === 1 && (
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6" gutterBottom>
+                Hashrate (Last Hour)
+              </Typography>
+              <Box sx={{ height: 300 }}>
+                <Line data={hashrateChartData} options={chartOptions} />
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6" gutterBottom>
+                Temperature (Last Hour)
+              </Typography>
+              <Box sx={{ height: 300 }}>
+                <Line data={temperatureChartData} options={chartOptions} />
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+        )}
+
+        {/* Tab Panel 2: Pool Configuration */}
+        {tabValue === 2 && (
+          <MinerPoolConfig minerIp={miner.ip} minerName={miner.name} />
+        )}
       </DialogContent>
 
       <DialogActions>

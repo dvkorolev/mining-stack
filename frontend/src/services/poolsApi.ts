@@ -2,6 +2,7 @@
 import api from './api';
 
 export interface PoolConfig {
+  id?: number;  // Pool ID from database
   url: string;
   name: string;
   algorithm: 'sha256' | 'scrypt' | 'multi';

@@ -313,13 +313,114 @@ router.post('/mining/miners/reboot-all', async (req, res, next) => {
   }
 });
 
-// Get miner pool configuration
+// Get miner pool configuration from hardware
 router.get('/mining/miners/:minerId/pools', async (req, res, next) => {
   try {
     const { minerId } = req.params;
     const result = await getMinerPools(minerId);
     res.json(result);
   } catch (error) {
+    next(error);
+  }
+});
+
+// Get miner pool assignments from database
+router.get('/mining/miners/:minerIp/pool-assignments', async (req, res, next) => {
+  try {
+    const { minerIp } = req.params;
+    const db = getDatabase();
+    const assignments = db.getMinerPools(minerIp);
+    
+    res.json({
+      success: true,
+      miner_ip: minerIp,
+      pools: assignments,
+    });
+  } catch (error) {
+    logger.error('Error getting miner pool assignments:', error);
+    next(error);
+  }
+});
+
+// Assign pool to miner in database
+router.post('/mining/miners/:minerIp/pool-assignments', async (req, res, next) => {
+  try {
+    const { minerIp } = req.params;
+    const { pool_id, priority, user, password } = req.body;
+    
+    if (!pool_id) {
+      return res.status(400).json({ error: 'pool_id is required' });
+    }
+    
+    const db = getDatabase();
+    db.assignPoolToMiner(minerIp, pool_id, priority || 0, user, password);
+    
+    res.json({
+      success: true,
+      message: 'Pool assigned to miner',
+      miner_ip: minerIp,
+      pool_id,
+    });
+  } catch (error) {
+    logger.error('Error assigning pool to miner:', error);
+    next(error);
+  }
+});
+
+// Remove pool assignment from miner in database
+router.delete('/mining/miners/:minerIp/pool-assignments/:poolId', async (req, res, next) => {
+  try {
+    const { minerIp, poolId } = req.params;
+    
+    const db = getDatabase();
+    db.removePoolFromMiner(minerIp, parseInt(poolId));
+    
+    res.json({
+      success: true,
+      message: 'Pool assignment removed',
+      miner_ip: minerIp,
+      pool_id: poolId,
+    });
+  } catch (error) {
+    logger.error('Error removing pool assignment:', error);
+    next(error);
+  }
+});
+
+// Update all pool assignments for a miner in database
+router.put('/mining/miners/:minerIp/pool-assignments', async (req, res, next) => {
+  try {
+    const { minerIp } = req.params;
+    const { pools } = req.body;
+    
+    if (!pools || !Array.isArray(pools)) {
+      return res.status(400).json({ error: 'pools array is required' });
+    }
+    
+    const db = getDatabase();
+    
+    // Remove all existing assignments
+    db.removeAllPoolsFromMiner(minerIp);
+    
+    // Add new assignments
+    for (const pool of pools) {
+      db.assignPoolToMiner(
+        minerIp,
+        pool.pool_id,
+        pool.priority || 0,
+        pool.user,
+        pool.password
+      );
+    }
+    
+    res.json({
+      success: true,
+      message: 'Pool assignments updated',
+      miner_ip: minerIp,
+      pools_assigned: pools.length,
+    });
+  } catch (error) {
+    logger.error('Error updating pool assignments:', error);
     next(error);
   }
 });
