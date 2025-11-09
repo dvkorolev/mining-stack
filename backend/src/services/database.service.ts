@@ -810,6 +810,7 @@ class DatabaseService {
     pool_password: string | null;
     name: string;
     algorithm: string;
+    created_at: number;
   }> {
     const stmt = this.db.prepare(`
       SELECT 
@@ -818,6 +819,7 @@ class DatabaseService {
         mp.pool_url,
         mp.pool_user,
         mp.pool_password,
+        mp.created_at,
         p.name,
         p.algorithm
       FROM miner_pools mp
@@ -833,6 +835,7 @@ class DatabaseService {
       pool_password: string | null;
       name: string;
       algorithm: string;
+      created_at: number;
     }>;
   }
 

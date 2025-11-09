@@ -3,12 +3,13 @@ import api from './api';
 
 export interface MinerPoolAssignment {
   pool_id: number;
-  pool_name: string;
+  name: string;
   pool_url: string;
   pool_priority: number;
   pool_user?: string;
   pool_password?: string;
-  assigned_at: string;
+  created_at?: number;
+  algorithm?: string;
 }
 
 export interface PoolAssignmentRequest {

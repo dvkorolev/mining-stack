@@ -213,7 +213,7 @@ const MinerPoolConfig: React.FC<MinerPoolConfigProps> = ({ minerIp, minerName })
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight="medium">
-                        {assignment.pool_name}
+                        {assignment.name}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -228,14 +228,17 @@ const MinerPoolConfig: React.FC<MinerPoolConfigProps> = ({ minerIp, minerName })
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">
-                        {new Date(assignment.assigned_at).toLocaleDateString()}
+                        {assignment.created_at 
+                          ? new Date(assignment.created_at * 1000).toLocaleDateString()
+                          : '-'
+                        }
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
                       <IconButton
                         size="small"
                         color="error"
-                        onClick={() => handleRemovePool(assignment.pool_id, assignment.pool_name)}
+                        onClick={() => handleRemovePool(assignment.pool_id, assignment.name)}
                       >
                         <DeleteIcon />
                       </IconButton>
