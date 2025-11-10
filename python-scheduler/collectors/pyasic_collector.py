@@ -447,6 +447,9 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             hashrate_val = _safe_float(data.get('hashrate', 0))
             temp_val = _safe_float(data.get('temperature', 0))
             
+            # Detect SCRYPT algorithm
+            is_scrypt = _is_scrypt_miner(miner.get('algorithm'))
+            
             # Log temperature for debugging
             if temp_val == 0 and hashrate_val > 0:
                 logger.warning(f"⚠️  {miner['name']}: Temperature is 0 despite hashrate {hashrate_val:.2f} TH/s (method={method}, has_gaps={has_gaps})")
@@ -468,6 +471,10 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 'pool_accepted': 0,
                 'pool_rejected': 0,
             }
+            
+            # Add hashrate_mhs for SCRYPT miners (for backend algorithm detection)
+            if is_scrypt:
+                miner_data['hashrate_mhs'] = hashrate_val  # Raw MH/s value
             
             pools = data.get('pools', [])
             pool_urls = []
