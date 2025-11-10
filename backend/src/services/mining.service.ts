@@ -334,8 +334,9 @@ const getRealMinerStats = async (
         severity: error.severity,
         details: error.details,
       });
-    } else if (currentHashrate < 10 && currentHashrate > 0) {
-      // Very low hashrate might indicate an issue
+    } else if (currentHashrate < 10 && currentHashrate > 0 && algorithm === 'sha256') {
+      // Very low hashrate might indicate an issue (only for SHA-256)
+      // SCRYPT miners have much lower TH/s values (0.025 TH/s = 25 GH/s)
       status = 'error';
       const error: MinerError = {
         ...ERROR_CODES.LOW_HASHRATE,
