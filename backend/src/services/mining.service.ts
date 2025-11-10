@@ -895,6 +895,7 @@ const getMinerStats = (minerId: string) => {
     name: miner.alias || miner.name || miner.ip,
     model: miner.model,
     ip: miner.ip,
+    algorithm: undefined, // Will be detected when metrics arrive
     status: miner.status || 'offline',
     lastSeen: miner.lastSeen || new Date(0),
     currentHashrate: 0,
