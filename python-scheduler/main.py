@@ -182,8 +182,8 @@ async def collect_pool_network_metrics(miners: List[Dict]) -> Dict[str, Any]:
             miner_pools = []
             if 'POOLS' in response:
                 for pool in response['POOLS']:
-                    url = pool.get('URL', '')
-                    if url:
+                    url = pool.get('URL') or ''
+                    if url and isinstance(url, str):
                         url = re.sub(r'^(stratum\+tcp|stratum\+ssl|stratum)://', '', url)
                         if ':' in url:
                             hostname, port_str = url.rsplit(':', 1)
@@ -343,12 +343,18 @@ async def collect_all_metrics():
             profile_library = get_library()
             
             for i, miner in enumerate(miners):
+                # Ensure miner has valid required fields
+                if not miner.get('ip') or not miner.get('name'):
+                    logger.warning(f"Skipping miner with missing IP or name: {miner}")
+                    continue
+                    
                 miner_data = miners_data[i]
                 scrape_status = miner_data.get('scrape_status', -2)
                 hashrate = miner_data.get('hashrate', 0)
                 
                 # Get profile for intelligent data quality checks
-                profile = profile_library.get_profile(miner['model'], miner.get('algorithm'))
+                miner_model = miner.get('model') or 'Unknown'
+                profile = profile_library.get_profile(miner_model, miner.get('algorithm'))
                 
                 # Intelligent data quality checks
                 needs_fallback = False
@@ -573,6 +579,9 @@ async def collect_all_metrics():
             return service_state.get_last_collection()
             
         except Exception as e:
+            import traceback
+            tb_str = traceback.format_exc()
+            logger.error(f"Collection failed with traceback:\n{tb_str}")
             log_event(logger, 'error', 'Collection failed',
                      error_type=type(e).__name__,
                      error_message=str(e))
