@@ -49,6 +49,7 @@ from collectors.antminer_cgi_collector import collect_antminer_cgi
 from collectors.whatsminer_cgi_collector import collect_whatsminer_cgi
 from collectors.whatsminer_cgminer_collector import collect_whatsminer_cgminer
 from collectors.dg1_tcp_collector import collect_dg1_tcp
+from collectors.dg1_http_collector import collect_dg1_http
 from health_check import HealthCheck
 from logging_config import setup_logging, log_event
 
@@ -426,10 +427,10 @@ async def collect_all_metrics():
                                 if fallback_data:
                                     break
                             elif driver_type == 'dg1_tcp':
-                                logger.info(f"  Trying DG1 TCP fallback for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
+                                logger.info(f"  Trying DG1 HTTP fallback for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
                                 fallback_attempts += 1
-                                fallback_data = await collect_dg1_tcp(miner)
-                                fallback_method = 'dg1_tcp'
+                                fallback_data = await collect_dg1_http(miner)
+                                fallback_method = 'dg1_http'
                                 if fallback_data:
                                     break
                     else:
@@ -451,12 +452,12 @@ async def collect_all_metrics():
                             fallback_data = await collect_antminer_cgi(miner)
                             fallback_method = 'antminer_cgi'
                         
-                        # Try DG1 TCP driver for DG1 miners
+                        # Try DG1 HTTP driver for DG1 miners
                         elif 'dg1' in model_lower:
-                            logger.info(f"  Trying DG1 TCP fallback for {miner['name']} ({miner['ip']}) [legacy]")
+                            logger.info(f"  Trying DG1 HTTP fallback for {miner['name']} ({miner['ip']}) [legacy]")
                             fallback_attempts += 1
-                            fallback_data = await collect_dg1_tcp(miner)
-                            fallback_method = 'dg1_tcp'
+                            fallback_data = await collect_dg1_http(miner)
+                            fallback_method = 'dg1_http'
                     
                     # If fallback succeeded, merge and update metrics
                     if fallback_data:
