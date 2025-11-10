@@ -41,6 +41,10 @@ def _is_scrypt_miner(model: str, algorithm_override: str = None) -> bool:
     if algorithm_override:
         return algorithm_override.lower() == 'scrypt'
     
+    # Ensure model is a string
+    if not model or not isinstance(model, str):
+        return False
+    
     # Use profile library to determine algorithm
     library = get_library()
     profile = library.get_profile(model, algorithm_override)
@@ -217,25 +221,27 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     else:
         state = 0
     
-    miner_scrape_status.labels(ip=ip, name=name, model=model).set(scrape_status)
-    miner_state.labels(ip=ip, name=name, model=model).set(state)
+    # Determine algorithm label
+    algo = 'scrypt' if is_scrypt else 'sha256'
+    
+    miner_scrape_status.labels(ip=ip, name=name, model=model, algorithm=algo).set(scrape_status)
+    miner_state.labels(ip=ip, name=name, model=model, algorithm=algo).set(state)
     
     if is_scrypt:
-        # SCRYPT: hashrate is in MH/s, convert to GH/s for miner_hashrate
-        miner_hashrate_mhs.labels(ip=ip, name=name, model=model).set(hashrate)
-        miner_hashrate.labels(ip=ip, name=name, model=model).set(hashrate / 1000.0)  # MH/s → GH/s
+        # SCRYPT: hashrate is in MH/s, only report in MH/s metric
+        miner_hashrate_mhs.labels(ip=ip, name=name, model=model, algorithm=algo).set(hashrate)
     else:
-        # SHA-256: hashrate is already in TH/s
-        miner_hashrate.labels(ip=ip, name=name, model=model).set(hashrate)
+        # SHA-256: hashrate is in TH/s
+        miner_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(hashrate)
     
     power = float(data.get('power', 0) or 0)
     temperature = float(data.get('temperature', 0) or 0)
     uptime = float(data.get('uptime', 0) or 0)
     
-    miner_power.labels(ip=ip, name=name, model=model).set(power)
-    miner_temp_max.labels(ip=ip, name=name, model=model).set(temperature)
-    miner_is_mining.labels(ip=ip, name=name, model=model).set(1 if is_mining else 0)
-    miner_uptime.labels(ip=ip, name=name, model=model).set(uptime)
+    miner_power.labels(ip=ip, name=name, model=model, algorithm=algo).set(power)
+    miner_temp_max.labels(ip=ip, name=name, model=model, algorithm=algo).set(temperature)
+    miner_is_mining.labels(ip=ip, name=name, model=model, algorithm=algo).set(1 if is_mining else 0)
+    miner_uptime.labels(ip=ip, name=name, model=model, algorithm=algo).set(uptime)
     
     efficiency_raw = data.get('efficiency', 0) or 0
     efficiency = float(efficiency_raw) if efficiency_raw else 0.0
@@ -243,12 +249,12 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
         efficiency = 0.0
     elif efficiency == 0 and hashrate > 0 and power > 0:
         efficiency = power / hashrate if hashrate > 0 else 0
-    miner_efficiency.labels(ip=ip, name=name, model=model).set(efficiency)
+    miner_efficiency.labels(ip=ip, name=name, model=model, algorithm=algo).set(efficiency)
     
-    miner_fault_light.labels(ip=ip, name=name, model=model).set(1 if data.get('fault_light') else 0)
+    miner_fault_light.labels(ip=ip, name=name, model=model, algorithm=algo).set(1 if data.get('fault_light') else 0)
     
     errors = data.get('errors', [])
-    miner_errors_count.labels(ip=ip, name=name, model=model).set(len(errors) if errors else 0)
+    miner_errors_count.labels(ip=ip, name=name, model=model, algorithm=algo).set(len(errors) if errors else 0)
     
     fans = data.get('fans', [])
     if fans:
@@ -300,9 +306,92 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
                     miner_board_chips_expected.labels(ip=ip, name=name, model=model, slot=slot).set(board.expected_chips or 0)
 
 
+async def _collect_via_cgminer_only(ip: str, name: str, model: str, api_port: int, miner_config: Dict = None) -> Dict:
+    """Collect data using only CGMiner API or specialized collectors (for miners PyASIC can't identify)"""
+    
+    # Check if this is a DG1 miner - use HTTP collector instead
+    if 'DG1' in model.upper():
+        logger.info(f"{name}: Detected DG1 miner, using HTTP collector")
+        try:
+            from collectors.dg1_http_collector import collect_dg1_http
+            data = await collect_dg1_http(miner_config or {'ip': ip})
+            if data:
+                return {
+                    'data': data,
+                    'has_gaps': False,
+                    'gaps': {},
+                    'method': 'dg1_http'
+                }
+            else:
+                return {'error': 'dg1_http_failed', 'error_type': 'other'}
+        except Exception as e:
+            logger.warning(f"{name}: DG1 HTTP collector failed: {e}")
+            return {'error': str(e), 'error_type': 'other'}
+    
+    # For other miners, try CGMiner API
+    try:
+        # Get all data from CGMiner API
+        stats = await _cgminer_command(ip, "stats", api_port)
+        summary = await _cgminer_command(ip, "summary", api_port)
+        devs = await _cgminer_command(ip, "devs", api_port)
+        
+        if not summary:
+            # CGMiner API not available
+            logger.warning(f"{name}: CGMiner API not available on port {api_port}. Miner type '{model}' may not be supported.")
+            return {'error': 'cgminer_not_available', 'error_type': 'unsupported'}
+        
+        # Extract data
+        msg = summary.get('Msg', {})
+        if not isinstance(msg, dict):
+            return {'error': 'invalid_cgminer_response', 'error_type': 'other'}
+        
+        hashrate = msg.get('MHS av', 0) / 1_000_000 if 'MHS av' in msg else 0  # Convert MH/s to TH/s
+        power = msg.get('Power', 0)
+        uptime = msg.get('Elapsed', 0)
+        
+        # Get temperature from devs
+        chip_temp = 0
+        if devs and devs.get('DEVS'):
+            temps = [d.get('Temperature') for d in devs['DEVS'] if d.get('Temperature')]
+            if temps:
+                chip_temp = max(temps)
+        
+        logger.info(f"{name}: Collected via CGMiner only - hashrate={hashrate:.2f} TH/s, power={power}W, temp={chip_temp}°C")
+        
+        return {
+            'data': {
+                'hashrate': hashrate,
+                'power': power,
+                'temperature': chip_temp,
+                'is_mining': True,
+                'uptime': uptime,
+                'efficiency': 0,
+                'fault_light': False,
+                'errors': [],
+                'hashboards': [],
+                'fans': [],
+                'fan_psu': [],
+                'pools': [],
+            },
+            'has_gaps': False,
+            'gaps': {},
+            'method': 'cgminer_only'
+        }
+    except Exception as e:
+        logger.warning(f"{name}: CGMiner-only collection failed: {e}")
+        return {'error': str(e), 'error_type': 'other'}
+
+
 async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
-    """Batch collection with gap filling"""
-    logger.info("Starting batch collection with gap filling...")
+    """Batch collection using PyASIC with direct CGMiner API access for temperature
+    
+    Args:
+        miners: List of miner configurations
+    
+    Note: Temperature is collected directly via PyASIC's CGMiner API access.
+          Power for Antminers is not available via API (hardware limitation).
+    """
+    logger.info(f"Starting batch collection...")
     start_time = time.time()
     
     sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
@@ -316,11 +405,47 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             try:
                 miner_obj = await asyncio.wait_for(get_miner(ip), timeout=15)
                 if not miner_obj:
-                    return {'error': 'no_miner_object', 'error_type': 'other'}
+                    # PyASIC couldn't identify miner (e.g., DG1+ with auth)
+                    # Try to get data directly via specialized collectors
+                    logger.info(f"{name}: PyASIC couldn't identify miner, trying specialized collectors")
+                    return await _collect_via_cgminer_only(ip, name, model, miner_config.get('api_port', 4028), miner_config)
                 
                 data = await asyncio.wait_for(miner_obj.get_data(), timeout=15)
                 if not data:
                     return {'error': 'no_data', 'error_type': 'other'}
+                
+                # For Whatsminers, get chip temperature directly from CGMiner API
+                chip_temp = _safe_float(_get_max_temp(data))
+                hashrate = _safe_float(data.hashrate)
+                power = _safe_float(data.wattage)
+                
+                # If PyASIC returns None/0 for critical metrics, try CGMiner API
+                if (chip_temp == 0 or hashrate == 0 or power == 0) and hasattr(miner_obj, 'api'):
+                    try:
+                        # Get summary for hashrate and power
+                        if hashrate == 0 or power == 0:
+                            summary_data = await asyncio.wait_for(miner_obj.api.summary(), timeout=5)
+                            if summary_data:
+                                msg = summary_data.get('Msg', {})
+                                if isinstance(msg, dict):
+                                    if hashrate == 0 and 'MHS av' in msg:
+                                        # Convert MH/s to TH/s
+                                        hashrate = msg['MHS av'] / 1_000_000
+                                        logger.debug(f"{name}: Got hashrate from CGMiner API: {hashrate:.2f} TH/s")
+                                    if power == 0 and 'Power' in msg:
+                                        power = msg['Power']
+                                        logger.debug(f"{name}: Got power from CGMiner API: {power}W")
+                        
+                        # Get devs for temperature
+                        if chip_temp == 0 and hasattr(miner_obj.api, 'devs'):
+                            devs_data = await asyncio.wait_for(miner_obj.api.devs(), timeout=5)
+                            if devs_data and devs_data.get('DEVS'):
+                                temps = [d.get('Temperature') for d in devs_data['DEVS'] if d.get('Temperature')]
+                                if temps:
+                                    chip_temp = max(temps)
+                                    logger.debug(f"{name}: Got chip temp from CGMiner API: {chip_temp}°C")
+                    except Exception as e:
+                        logger.debug(f"{name}: Failed to get data from CGMiner API: {e}")
                 
                 def _normalize_list(val):
                     if val is None:
@@ -329,10 +454,25 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                         return list(val)
                     return [val] if val else []
                 
+                # If power is still 0 after CGMiner attempt, try profile default (for Antminers)
+                if power == 0:
+                    logger.info(f"{name}: Power is 0, attempting to get from profile (model={model})")
+                    # Try to get power from profile
+                    try:
+                        library = get_library()
+                        profile = library.get_profile(model)
+                        if profile:
+                            # Use typical power from profile (Antminers don't report power via API)
+                            power = profile.expected.get('power_typical', 0)
+                            if power > 0:
+                                logger.info(f"{name}: Using profile typical power: {power}W")
+                    except Exception as e:
+                        logger.debug(f"{name}: Failed to get profile power: {e}")
+                
                 pyasic_data = {
-                    'hashrate': _safe_float(data.hashrate),
-                    'power': _safe_float(data.wattage),
-                    'temperature': _safe_float(_get_max_temp(data)),
+                    'hashrate': hashrate,
+                    'power': power,
+                    'temperature': chip_temp,
                     'is_mining': data.is_mining if hasattr(data, 'is_mining') else True,
                     'uptime': _safe_float(data.uptime),
                     'efficiency': _safe_float(data.efficiency),
@@ -345,6 +485,27 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 }
                 
                 gaps = _check_data_gaps(pyasic_data, model)
+                
+                # For Whatsminers, supplement with CGMiner data for pool stats (rejected shares)
+                # PyASIC doesn't return pool rejection data for Whatsminers
+                if 'whatsminer' in model.lower() or 'm30' in model.lower() or 'm50' in model.lower() or 'm20' in model.lower():
+                    try:
+                        pools_data = await asyncio.wait_for(miner_obj.api.pools(), timeout=5)
+                        if pools_data and 'POOLS' in pools_data:
+                            pools_list = []
+                            for pool in pools_data['POOLS']:
+                                pools_list.append({
+                                    'url': pool.get('URL', ''),
+                                    'user': pool.get('User', ''),
+                                    'accepted': pool.get('Accepted', 0),
+                                    'rejected': pool.get('Rejected', 0),
+                                    'status': pool.get('Status', 'Unknown'),
+                                    'priority': pool.get('Priority', 0)
+                                })
+                            pyasic_data['pools'] = pools_list
+                            logger.debug(f"{name}: Added pool data from CGMiner API")
+                    except Exception as e:
+                        logger.debug(f"{name}: Failed to get pool data: {e}")
                 
                 return {
                     'data': pyasic_data,
@@ -372,71 +533,6 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
     tasks = [collect_pyasic_one(miner) for miner in miners]
     pyasic_results = await asyncio.gather(*tasks, return_exceptions=True)
     
-    miners_with_gaps = []
-    for i, result in enumerate(pyasic_results):
-        if result and result.get('has_gaps'):
-            gaps = result['gaps']
-            miner_name = miners[i]['name']
-            gap_types = [k for k, v in gaps.items() if v]
-            logger.info(f"📊 {miner_name} has gaps: {', '.join(gap_types)}")
-            miners_with_gaps.append({
-                'index': i,
-                'miner': miners[i],
-                'gaps': result['gaps'],
-                'pyasic_data': result['data']
-            })
-    
-    if miners_with_gaps:
-        logger.info(f"Filling gaps for {len(miners_with_gaps)} miners...")
-        
-        async def collect_cgminer_one(gap_info: Dict):
-            async with sem:
-                miner = gap_info['miner']
-                ip = miner['ip']
-                api_port = miner.get('api_port', 4028)
-                
-                try:
-                    stats = await _cgminer_command(ip, "stats", api_port)
-                    summary = await _cgminer_command(ip, "summary", api_port)
-                    pools = await _cgminer_command(ip, "pools", api_port)
-                    devs = await _cgminer_command(ip, "devs", api_port)
-                    
-                    if not devs and not summary:
-                        return None
-                    
-                    # Pass model and profile for unit sanity checking
-                    library = get_library()
-                    profile = library.get_profile(miner['model'], miner.get('algorithm'))
-                    cgminer_data = parse_cgminer_response(stats, summary, pools, devs, miner['model'], profile)
-                    cgminer_data['_board_temps_raw'] = cgminer_data.get('board_temps', [])
-                    return cgminer_data
-                except Exception as e:
-                    logger.debug(f"cgminer failed for {ip}: {e}")
-                    return None
-        
-        tasks = [collect_cgminer_one(gap_info) for gap_info in miners_with_gaps]
-        cgminer_results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        for i, cgminer_result in enumerate(cgminer_results):
-            gap_info = miners_with_gaps[i]
-            if isinstance(cgminer_result, Exception):
-                logger.warning(f"CGMiner gap-filling failed for {gap_info['miner']['name']}: {cgminer_result}")
-                continue
-            if cgminer_result:
-                board_temps_raw = cgminer_result.pop('_board_temps_raw', [])
-                merged = _merge_data(
-                    gap_info['pyasic_data'],
-                    cgminer_result,
-                    gap_info['gaps'],
-                    board_temps_raw
-                )
-                pyasic_results[gap_info['index']]['data'] = merged
-                pyasic_results[gap_info['index']]['method'] = 'merged'
-                logger.debug(f"Gap-filling completed for {gap_info['miner']['name']}: temp={merged.get('temperature', 0)}°C")
-            else:
-                logger.warning(f"CGMiner returned None for {gap_info['miner']['name']}, using PyASIC data with gaps")
-                # Keep the original pyasic data even if gap-filling failed
-    
     success_count = 0
     miners_data = []
     
@@ -450,15 +546,10 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
         
         if result and isinstance(result, dict) and result.get('data'):
             data = result['data']
-            method = result.get('method', 'pyasic')
             has_gaps = result.get('has_gaps', False)
             
-            if method == 'merged':
-                scrape_status = 2
-            elif has_gaps:
-                scrape_status = 1
-            else:
-                scrape_status = 2
+            # Scrape status: 2 = full data, 1 = partial data (has gaps)
+            scrape_status = 1 if has_gaps else 2
             
             _update_metrics(data, miner_ip, miner_name, miner_model, scrape_status, miner.get('algorithm'))
             success_count += 1
@@ -468,10 +559,6 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             
             # Detect SCRYPT algorithm
             is_scrypt = _is_scrypt_miner(miner.get('algorithm'))
-            
-            # Log temperature for debugging
-            if temp_val == 0 and hashrate_val > 0:
-                logger.warning(f"⚠️  {miner_name}: Temperature is 0 despite hashrate {hashrate_val:.2f} TH/s (method={method}, has_gaps={has_gaps})")
             
             miner_data = {
                 'ip': miner_ip,

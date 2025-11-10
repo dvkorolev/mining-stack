@@ -136,9 +136,14 @@ profiles:
         - "Antminer S19j Pro"
         - "Antminer S19 XP"
         - "Antminer S19k Pro"
+        - "S19 (Stock)"
+        - "S19 Pro (Stock)"
+        - "S19K Pro (Stock)"
+        - "S19j Pro (Stock)"
       patterns:
         - "^Antminer S19"
-        - "S19.*(Pro|XP|j Pro|k Pro)"
+        - "^S19"
+        - "S19.*(Pro|XP|j Pro|k Pro|K Pro)"
     
     drivers:
       - type: "pyasic"
@@ -178,7 +183,16 @@ profiles:
       hashrate_max: 140
       power_min: 3000
       power_max: 3500
+      power_typical: 3250  # Typical power consumption when not reported by API
       temp_max: 90
+    
+    # Model-specific power values (used when API doesn't report power)
+    model_power:
+      "S19": 3250
+      "S19 Pro": 3250
+      "S19K Pro": 3150
+      "S19j Pro": 3100
+      "S19 XP": 3010
 
   antminer_s17:
     name: "Antminer S17 Series"
@@ -296,6 +310,7 @@ profiles:
       hashrate_max: 90000    # 90 GH/s = 90,000 MH/s (DG1+ can do ~80 GH/s)
       power_min: 3200
       power_max: 3800
+      power_typical: 3400    # Typical power consumption for DG1+
       temp_max: 80
 
   antminer_l7:

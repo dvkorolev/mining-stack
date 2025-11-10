@@ -9,15 +9,15 @@ from prometheus_client import Gauge, Counter
 # ============================================================================
 
 # Miner General Metrics
-miner_hashrate = Gauge('miner_hashrate_ths', 'Miner hashrate in TH/s', ['ip', 'name', 'model'])
-miner_power = Gauge('miner_power_watts', 'Miner power consumption in watts', ['ip', 'name', 'model'])
-miner_temp_max = Gauge('miner_temp_max_c', 'Maximum temperature in Celsius', ['ip', 'name', 'model'])
-miner_is_mining = Gauge('miner_is_mining', 'Mining status (1=mining, 0=not mining)', ['ip', 'name', 'model'])
-miner_uptime = Gauge('miner_uptime_seconds', 'Miner uptime in seconds', ['ip', 'name', 'model'])
-miner_efficiency = Gauge('miner_efficiency_j_th', 'Miner efficiency in J/TH', ['ip', 'name', 'model'])
-miner_fault_light = Gauge('miner_fault_light_on', 'Fault light status (1=on, 0=off)', ['ip', 'name', 'model'])
-miner_errors_count = Gauge('miner_errors_count', 'Number of errors', ['ip', 'name', 'model'])
-miner_scrape_status = Gauge('miner_scrape_status', 'Scrape status (2=success, 1=partial, 0=timeout, -1=refused, -2=error)', ['ip', 'name', 'model'])
+miner_hashrate = Gauge('miner_hashrate_ths', 'Miner hashrate in TH/s (SHA-256 only)', ['ip', 'name', 'model', 'algorithm'])
+miner_power = Gauge('miner_power_watts', 'Miner power consumption in watts', ['ip', 'name', 'model', 'algorithm'])
+miner_temp_max = Gauge('miner_temp_max_c', 'Maximum temperature in Celsius', ['ip', 'name', 'model', 'algorithm'])
+miner_is_mining = Gauge('miner_is_mining', 'Mining status (1=mining, 0=not mining)', ['ip', 'name', 'model', 'algorithm'])
+miner_uptime = Gauge('miner_uptime_seconds', 'Miner uptime in seconds', ['ip', 'name', 'model', 'algorithm'])
+miner_efficiency = Gauge('miner_efficiency_j_th', 'Miner efficiency in J/TH', ['ip', 'name', 'model', 'algorithm'])
+miner_fault_light = Gauge('miner_fault_light_on', 'Fault light status (1=on, 0=off)', ['ip', 'name', 'model', 'algorithm'])
+miner_errors_count = Gauge('miner_errors_count', 'Number of errors', ['ip', 'name', 'model', 'algorithm'])
+miner_scrape_status = Gauge('miner_scrape_status', 'Scrape status (2=success, 1=partial, 0=timeout, -1=refused, -2=error)', ['ip', 'name', 'model', 'algorithm'])
 
 # Miner Board Metrics
 miner_board_hashrate = Gauge('miner_board_hashrate_ths', 'Board hashrate in TH/s', ['ip', 'name', 'model', 'slot'])
@@ -47,8 +47,8 @@ collection_success = Gauge('mining_collection_success', 'Collection success stat
 collection_timestamp = Gauge('mining_collection_timestamp_seconds', 'Last collection timestamp', ['collector'])
 
 # Miner State Metrics
-miner_state = Gauge('miner_state', 'Miner state (0=faulty, 1=idle, 2=mining)', ['ip', 'name', 'model'])
-miner_hashrate_mhs = Gauge('miner_hashrate_mhs', 'Miner hashrate in MH/s (SCRYPT)', ['ip', 'name', 'model'])
+miner_state = Gauge('miner_state', 'Miner state (0=faulty, 1=idle, 2=mining)', ['ip', 'name', 'model', 'algorithm'])
+miner_hashrate_mhs = Gauge('miner_hashrate_mhs', 'Miner hashrate in MH/s (SCRYPT only)', ['ip', 'name', 'model', 'algorithm'])
 
 # Gap-filling observability
 miner_gaps_filled_total = Counter('miner_gaps_filled_total', 'Count of gaps filled by CGMiner', ['type'])

@@ -35,21 +35,38 @@ groups:
           summary: "Miner {{ $labels.name }} stopped mining"
           description: "Miner {{ $labels.name }} is online but not mining for 5 minutes."
           
-      # Critical: Hashrate dropped significantly (50% below expected)
-      - alert: MinerHashrateCritical
+      # Critical: Hashrate dropped significantly (50% below expected) - SHA-256
+      - alert: MinerHashrateCriticalSHA256
         expr: |
           (
-            miner_hashrate_ths < (miner_expected_hashrate_ths * 0.5)
-            and miner_is_mining == 1
+            miner_hashrate_ths{algorithm="sha256"} < (miner_expected_hashrate_ths * 0.5)
+            and miner_is_mining{algorithm="sha256"} == 1
             and miner_expected_hashrate_ths > 0
           )
         for: 10m
         labels:
           severity: critical
           component: miner
+          algorithm: sha256
         annotations:
-          summary: "Miner {{ $labels.name }} hashrate critically low"
+          summary: "Miner {{ $labels.name }} (SHA-256) hashrate critically low"
           description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} TH/s (expected: {{ $labels.expected_hashrate }} TH/s, threshold: 50% below)"
+      
+      # Critical: Hashrate dropped significantly (50% below expected) - SCRYPT
+      - alert: MinerHashrateCriticalSCRYPT
+        expr: |
+          (
+            miner_hashrate_mhs{algorithm="scrypt"} < 10000
+            and miner_is_mining{algorithm="scrypt"} == 1
+          )
+        for: 10m
+        labels:
+          severity: critical
+          component: miner
+          algorithm: scrypt
+        annotations:
+          summary: "Miner {{ $labels.name }} (SCRYPT) hashrate critically low"
+          description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} MH/s (threshold: 10000 MH/s)"
 
   - name: mining_warning
     interval: 30s
@@ -65,22 +82,40 @@ groups:
           summary: "Miner {{ $labels.name }} temperature elevated"
           description: "Miner {{ $labels.name }} temperature is {{ $value }}°C (warning threshold: 75°C)"
           
-      # Warning: Hashrate below expected (20% below expected)
-      - alert: MinerHashrateWarning
+      # Warning: Hashrate below expected (20% below expected) - SHA-256
+      - alert: MinerHashrateWarningSHA256
         expr: |
           (
-            miner_hashrate_ths < (miner_expected_hashrate_ths * 0.8)
-            and miner_hashrate_ths >= (miner_expected_hashrate_ths * 0.5)
-            and miner_is_mining == 1
+            miner_hashrate_ths{algorithm="sha256"} < (miner_expected_hashrate_ths * 0.8)
+            and miner_hashrate_ths{algorithm="sha256"} >= (miner_expected_hashrate_ths * 0.5)
+            and miner_is_mining{algorithm="sha256"} == 1
             and miner_expected_hashrate_ths > 0
           )
         for: 10m
         labels:
           severity: warning
           component: miner
+          algorithm: sha256
         annotations:
-          summary: "Miner {{ $labels.name }} hashrate below expected"
+          summary: "Miner {{ $labels.name }} (SHA-256) hashrate below expected"
           description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} TH/s (expected: {{ $labels.expected_hashrate }} TH/s, threshold: 20% below)"
+      
+      # Warning: Hashrate below expected - SCRYPT
+      - alert: MinerHashrateWarningSCRYPT
+        expr: |
+          (
+            miner_hashrate_mhs{algorithm="scrypt"} < 20000
+            and miner_hashrate_mhs{algorithm="scrypt"} >= 10000
+            and miner_is_mining{algorithm="scrypt"} == 1
+          )
+        for: 10m
+        labels:
+          severity: warning
+          component: miner
+          algorithm: scrypt
+        annotations:
+          summary: "Miner {{ $labels.name }} (SCRYPT) hashrate below expected"
+          description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} MH/s (warning threshold: 20000 MH/s)"
           
       # Warning: Elevated rejection rate (2-5%)
       - alert: MinerRejectionRateWarning
@@ -196,20 +231,37 @@ groups:
           summary: "Multiple miners offline"
           description: "{{ $value }} miners are currently offline."
           
-      # Farm-wide: Total hashrate drop
-      - alert: FarmHashrateDrop
+      # Farm-wide: Total hashrate drop - SHA-256
+      - alert: FarmHashrateDropSHA256
         expr: |
           (
-            sum(miner_hashrate_ths) < 1500
-            and count(miner_is_mining == 1) > 10
+            sum(miner_hashrate_ths{algorithm="sha256"}) < 1500
+            and count(miner_is_mining{algorithm="sha256"} == 1) > 10
           )
         for: 10m
         labels:
           severity: critical
           component: farm
+          algorithm: sha256
         annotations:
-          summary: "Farm total hashrate critically low"
-          description: "Total farm hashrate is {{ $value }} TH/s (expected >1500 TH/s with 10+ miners)"
+          summary: "Farm SHA-256 hashrate critically low"
+          description: "Total SHA-256 farm hashrate is {{ $value }} TH/s (expected >1500 TH/s with 10+ miners)"
+      
+      # Farm-wide: Total hashrate drop - SCRYPT
+      - alert: FarmHashrateDropSCRYPT
+        expr: |
+          (
+            sum(miner_hashrate_mhs{algorithm="scrypt"}) < 10000
+            and count(miner_is_mining{algorithm="scrypt"} == 1) > 0
+          )
+        for: 10m
+        labels:
+          severity: critical
+          component: farm
+          algorithm: scrypt
+        annotations:
+          summary: "Farm SCRYPT hashrate critically low"
+          description: "Total SCRYPT farm hashrate is {{ $value }} MH/s (expected >10000 MH/s)"
           
       # Farm-wide: High average temperature
       - alert: FarmHighTemperature

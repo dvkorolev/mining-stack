@@ -51,7 +51,7 @@ async def collect_dg1_http(miner_config: Dict) -> Optional[Dict]:
                 logger.debug(f"DG1 HTTP {ip}: Could not fetch pools - {e}")
         
         # Parse the response
-        return _parse_dg1_response(stats_data, pools_data, ip)
+        return _parse_dg1_response(stats_data, pools_data, ip, miner_config)
         
     except asyncio.TimeoutError:
         logger.debug(f"DG1 HTTP {ip}: Timeout")
@@ -64,7 +64,7 @@ async def collect_dg1_http(miner_config: Dict) -> Optional[Dict]:
         return None
 
 
-def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str) -> Optional[Dict]:
+def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str, miner_config: Dict = None) -> Optional[Dict]:
     """
     Parse DG1 CGI response into normalized format.
     
@@ -154,13 +154,30 @@ def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str) -
                 except (ValueError, TypeError, KeyError):
                     continue
         
+        # Get power from profile (DG1 doesn't report power via API)
+        power = 0
+        try:
+            from asic_profile_loader import get_library
+            library = get_library()
+            model = miner_config.get('model', 'DG1+')
+            logger.info(f"DG1 HTTP {ip}: Looking up profile for model '{model}'")
+            profile = library.get_profile(model)
+            logger.info(f"DG1 HTTP {ip}: Profile found: {profile is not None}")
+            if profile:
+                power = profile.expected.get('power_typical', 0)
+                logger.info(f"DG1 HTTP {ip}: Profile power_typical: {power}W")
+                if power > 0:
+                    logger.info(f"DG1 HTTP {ip}: Using profile power: {power}W")
+        except Exception as e:
+            logger.warning(f"DG1 HTTP {ip}: Failed to get profile power: {e}")
+        
         # Build normalized response (DG1 is SCRYPT, so hashrate in MH/s)
         result = {
             'hashrate': hashrate_mhs,  # MH/s for SCRYPT
             'temperature': temperature,
             'fans': fans,
             'is_mining': hashrate_mhs > 0,
-            'power': 0,  # DG1 doesn't report power via API
+            'power': power,  # From profile
             'uptime': uptime,
             'efficiency': 0,
             'fault_light': False,
@@ -170,7 +187,7 @@ def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str) -
             'pools': pools
         }
         
-        logger.info(f"✓ DG1 HTTP {ip}: {hashrate_mhs:.2f} MH/s, {temperature:.1f}°C, {len(fans)} fans")
+        logger.info(f"✓ DG1 HTTP {ip}: {hashrate_mhs:.2f} MH/s, {temperature:.1f}°C, {power}W, {len(fans)} fans")
         return result
         
     except Exception as e:

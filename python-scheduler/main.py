@@ -616,7 +616,7 @@ async def lifespan(app_instance: FastAPI):
     logger.info(f"Miner collection interval: {COLLECTION_INTERVAL} minutes")
     logger.info(f"Pool test interval: {POOL_TEST_INTERVAL} minutes")
     logger.info(f"ICMP ping enabled: {ENABLE_ICMP_PING}")
-    logger.info(f"Architecture: APScheduler + ServiceState + Decoupled Pools")
+    logger.info(f"Architecture: APScheduler + Limited Parallel Gap-Fill")
     
     # Initialize and log profile library
     try:

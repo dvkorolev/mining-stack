@@ -195,17 +195,24 @@ class ASICProfileLibrary:
             logger.error(f"Failed to load ASIC profiles from {self.profiles_path}: {e}")
             raise
     
-    def get_profile(self, model: str, algorithm_override: str = None) -> Optional[ASICProfile]:
+    def get_profile(self, model: str, algorithm: str = None) -> Optional[ASICProfile]:
         """
-        Get profile for a miner model.
+        Get profile for a miner model using intelligent matching.
         
         Args:
-            model: Miner model string
-            algorithm_override: Explicit algorithm override from config
+            model: Miner model string (e.g., "M30S++", "S19 Pro")
+            algorithm: Optional algorithm override ('sha256' or 'scrypt')
         
         Returns:
-            ASICProfile or None
+            ASICProfile if found, None otherwise
         """
+        if not model or not isinstance(model, str):
+            return None
+        
+        # Ensure model is a string
+        model = str(model)
+        algorithm_override = algorithm
+        
         # Try exact match first
         if model in self.exact_matches:
             profile_id = self.exact_matches[model]
