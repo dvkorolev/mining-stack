@@ -53,13 +53,20 @@ async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
 
 /**
  * Get all miner hashrates from Prometheus
- * Uses max by (ip) to handle duplicate metrics from multiple collectors
+ * Handles both SHA-256 (TH/s) and SCRYPT (MH/s) miners
+ * Returns hashrates in TH/s for consistency (SCRYPT converted from MH/s)
  */
 export async function getMinerHashrates(): Promise<Map<string, number>> {
-  const results = await queryPrometheus('max by (ip) (miner_hashrate_ths)');
+  // Get SHA-256 hashrates (already in TH/s)
+  const sha256Results = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_ths{algorithm="sha256"})');
+  
+  // Get SCRYPT hashrates (in MH/s, need to convert to TH/s)
+  const scryptResults = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_mhs{algorithm="scrypt"})');
+  
   const hashrates = new Map<string, number>();
 
-  for (const result of results) {
+  // Process SHA-256 miners
+  for (const result of sha256Results) {
     const ip = result.metric.ip;
     const hashrate = parseFloat(result.value[1]);
     if (ip && !isNaN(hashrate)) {
@@ -67,7 +74,45 @@ export async function getMinerHashrates(): Promise<Map<string, number>> {
     }
   }
 
+  // Process SCRYPT miners (convert MH/s to TH/s)
+  for (const result of scryptResults) {
+    const ip = result.metric.ip;
+    const hashrateMhs = parseFloat(result.value[1]);
+    if (ip && !isNaN(hashrateMhs)) {
+      // Convert MH/s to TH/s for consistency (divide by 1,000,000)
+      hashrates.set(ip, hashrateMhs / 1000000);
+    }
+  }
+
   return hashrates;
+}
+
+/**
+ * Get miner algorithms from Prometheus
+ * Returns a map of IP -> algorithm ('sha256' or 'scrypt')
+ */
+export async function getMinerAlgorithms(): Promise<Map<string, 'sha256' | 'scrypt'>> {
+  // Query both metrics to get algorithm labels
+  const sha256Results = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_ths{algorithm="sha256"})');
+  const scryptResults = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_mhs{algorithm="scrypt"})');
+  
+  const algorithms = new Map<string, 'sha256' | 'scrypt'>();
+
+  for (const result of sha256Results) {
+    const ip = result.metric.ip;
+    if (ip) {
+      algorithms.set(ip, 'sha256');
+    }
+  }
+
+  for (const result of scryptResults) {
+    const ip = result.metric.ip;
+    if (ip) {
+      algorithms.set(ip, 'scrypt');
+    }
+  }
+
+  return algorithms;
 }
 
 /**
@@ -177,16 +222,17 @@ export async function getAllMinerMetrics() {
   try {
     logger.info('Fetching real miner metrics from Prometheus...');
 
-    const [hashrates, temperatures, power, status, uptime, fanSpeeds] = await Promise.all([
+    const [hashrates, temperatures, power, status, uptime, fanSpeeds, algorithms] = await Promise.all([
       getMinerHashrates(),
       getMinerTemperatures(),
       getMinerPower(),
       getMinerStatus(),
       getMinerUptime(),
       getMinerFanSpeeds(),
+      getMinerAlgorithms(),
     ]);
 
-    logger.info(`Retrieved metrics for ${hashrates.size} miners from Prometheus`);
+    logger.info(`Retrieved metrics for ${hashrates.size} miners from Prometheus (SHA-256: ${Array.from(algorithms.values()).filter(a => a === 'sha256').length}, SCRYPT: ${Array.from(algorithms.values()).filter(a => a === 'scrypt').length})`);
 
     return {
       hashrates,
@@ -195,6 +241,7 @@ export async function getAllMinerMetrics() {
       status,
       uptime,
       fanSpeeds,
+      algorithms,
     };
   } catch (error) {
     logger.error('Error fetching miner metrics from Prometheus:', error);

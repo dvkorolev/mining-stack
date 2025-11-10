@@ -23,10 +23,16 @@
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
       "type": "timeseries",
       "title": "Hashrate by Miner",
-      "targets": [{
-        "expr": "max by (ip, name) (miner_hashrate_ths)",
-        "legendFormat": "{{name}} ({{ip}})"
-      }],
+      "targets": [
+        {
+          "expr": "max by (ip, name, algorithm) (miner_hashrate_ths{algorithm=\"sha256\"})",
+          "legendFormat": "{{name}} ({{ip}}) SHA-256"
+        },
+        {
+          "expr": "max by (ip, name, algorithm) (miner_hashrate_mhs{algorithm=\"scrypt\"}) / 1000",
+          "legendFormat": "{{name}} ({{ip}}) SCRYPT (GH/s)"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -210,10 +216,16 @@
       "title": "Detailed Miner Statistics",
       "targets": [
         {
-          "expr": "max by (ip, name, model) (miner_hashrate_ths)",
+          "expr": "max by (ip, name, model, algorithm) (miner_hashrate_ths{algorithm=\"sha256\"})",
           "format": "table",
           "instant": true,
           "refId": "A"
+        },
+        {
+          "expr": "max by (ip, name, model, algorithm) (miner_hashrate_mhs{algorithm=\"scrypt\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "F"
         },
         {
           "expr": "max by (ip) (miner_power_watts)",

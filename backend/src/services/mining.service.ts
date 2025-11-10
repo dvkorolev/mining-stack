@@ -293,6 +293,7 @@ const getRealMinerStats = async (
     status: Map<string, boolean>;
     uptime: Map<string, number>;
     fanSpeeds: Map<string, number[]>;
+    algorithms: Map<string, 'sha256' | 'scrypt'>;
   }
 ): Promise<MinerStats> => {
   const minerId = miner.name || miner.ip;
@@ -306,6 +307,7 @@ const getRealMinerStats = async (
   const uptime = metrics.uptime.get(ip) ?? 0;
   const fans = metrics.fanSpeeds.get(ip) ?? [];
   const avgFanSpeed = fans.length > 0 ? fans.reduce((a, b) => a + b, 0) / fans.length : 0;
+  const algorithm = metrics.algorithms.get(ip) ?? 'sha256';
   
   // Determine status
   let status: 'online' | 'offline' | 'error' = isOnline ? 'online' : 'offline';
@@ -365,6 +367,7 @@ const getRealMinerStats = async (
     ip: miner.ip,
     alias: miner.alias,
     owner: miner.owner,
+    algorithm,
     status,
     statusMessage,
     lastSeen: new Date(),
