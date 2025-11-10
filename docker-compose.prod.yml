@@ -1,10 +1,12 @@
 # Production docker-compose for Raspberry Pi
-# Uses pre-built images from GitHub Container Registry
+# Pulls images from Mac registry at 100.121.189.88:5001
+# Usage: docker compose -f docker-compose.prod.yml up -d
+# With logging: docker compose -f docker-compose.prod.yml -f docker-compose.logging.yml up -d
 
 services:
   # Python Collector Service V3 - APScheduler + State Persistence
   python-scheduler:
-    image: ghcr.io/${GITHUB_REPOSITORY:-dvkorolev/mining-stack}/python-scheduler:${IMAGE_TAG:-latest}
+    image: 100.121.189.88:5001/python-scheduler:latest
     platform: linux/arm64
     ports:
       - "8000:8000"
@@ -39,7 +41,7 @@ services:
         max-file: "3"
 
   frontend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-dvkorolev/mining-stack}/frontend:${IMAGE_TAG:-latest}
+    image: 100.121.189.88:5001/frontend:latest
     platform: linux/arm64
     ports:
       - "3000:80"
@@ -65,7 +67,7 @@ services:
         max-file: "3"
 
   backend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-dvkorolev/mining-stack}/backend:${IMAGE_TAG:-latest}
+    image: 100.121.189.88:5001/backend:latest
     platform: linux/arm64
     ports:
       - "5000:5000"
@@ -140,8 +142,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  # Note: node-exporter removed in V2 - metrics served directly by python-scheduler
 
   blackbox-exporter:
     image: prom/blackbox-exporter:latest
@@ -248,4 +248,3 @@ volumes:
   prometheus_data:
   grafana-storage:
   alertmanager_data:
-  # Note: metrics-data volume removed in V2 - metrics served directly from memory

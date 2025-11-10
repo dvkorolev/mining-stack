@@ -96,19 +96,20 @@ TELEGRAM_ENABLED=true
 
 ### Production Deployment (Raspberry Pi)
 
-Deploy to Raspberry Pi using pre-built Docker images:
+Deploy to Raspberry Pi using locally built Docker images:
 
 ```bash
-# Clone and deploy
+# Clone repository
 git clone https://github.com/dvkorolev/mining-stack.git
 cd mining-stack
-chmod +x deploy-from-registry.sh
-./deploy-from-registry.sh pi raspberrypi.local
+
+# Build and deploy (smart - only transfers changes)
+./quick-deploy.sh
 ```
 
-**Access the dashboard:** http://raspberrypi.local:3000
+**Access the dashboard:** http://192.168.1.66:3000
 
-📖 See **[Deployment Guide](./docs/DEPLOYMENT.md)** for detailed instructions.
+📖 See **[Local Build Guide](./LOCAL_BUILD.md)** for detailed instructions.
 
 ## 🏗️ Architecture
 

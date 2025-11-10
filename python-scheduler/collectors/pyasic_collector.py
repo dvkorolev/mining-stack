@@ -138,25 +138,35 @@ def _get_max_temp(data) -> float:
 
 
 async def _cgminer_command(ip: str, command: str, port: int = 4028) -> Optional[Dict]:
-    """Send cgminer API command with newline terminator"""
+    """Send cgminer API command"""
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(ip, port), timeout=10.0)
         cmd = json.dumps({"command": command})
-        writer.write((cmd + "\n").encode())
+        # Send command without newline - some miners reject commands with \n
+        writer.write(cmd.encode())
         await writer.drain()
         data = await asyncio.wait_for(reader.read(65536), timeout=10.0)
         writer.close()
         await writer.wait_closed()
-        response_str = data.decode().strip('\x00')
+        response_str = data.decode().strip('\x00').strip()
+        # Remove trailing % if present
+        if response_str.endswith('%'):
+            response_str = response_str[:-1]
         try:
-            return json.loads(response_str)
-        except json.JSONDecodeError:
-            decoder = json.JSONDecoder()
-            obj, _ = decoder.raw_decode(response_str)
-            return obj
+            result = json.loads(response_str)
+            logger.debug(f"CGMiner {command} from {ip}: success")
+            return result
+        except json.JSONDecodeError as e:
+            logger.warning(f"CGMiner {command} from {ip}: JSON decode error: {e}, response: {response_str[:100]}")
+            try:
+                decoder = json.JSONDecoder()
+                obj, _ = decoder.raw_decode(response_str)
+                return obj
+            except:
+                return None
     except Exception as e:
-        logger.debug(f"_cgminer_command failed for {ip}:{port} cmd={command}: {type(e).__name__}: {e}")
+        logger.warning(f"_cgminer_command failed for {ip}:4028 cmd={command}: {type(e).__name__}: {e}")
         return None
 
 
@@ -191,6 +201,8 @@ def _merge_data(pyasic_data: Dict, cgminer_data: Dict, gaps: Dict[str, bool], cg
 
 def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: int = 2, algorithm: str = None):
     """Update Prometheus metrics"""
+    # Ensure model is a string
+    model = str(model) if model else "Unknown"
     is_scrypt = _is_scrypt_miner(model, algorithm)
     model = model.replace(" ", "_")
     
@@ -422,14 +434,21 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 pyasic_results[gap_info['index']]['method'] = 'merged'
                 logger.debug(f"Gap-filling completed for {gap_info['miner']['name']}: temp={merged.get('temperature', 0)}°C")
             else:
-                logger.warning(f"CGMiner returned None for {gap_info['miner']['name']}")
+                logger.warning(f"CGMiner returned None for {gap_info['miner']['name']}, using PyASIC data with gaps")
+                # Keep the original pyasic data even if gap-filling failed
     
     success_count = 0
     miners_data = []
     
     for i, result in enumerate(pyasic_results):
         miner = miners[i]
-        if result and result.get('data'):
+        
+        # Ensure required fields have valid values
+        miner_ip = miner.get('ip') or 'unknown'
+        miner_name = miner.get('name') or f'miner-{miner_ip}'
+        miner_model = miner.get('model') or 'Unknown'
+        
+        if result and isinstance(result, dict) and result.get('data'):
             data = result['data']
             method = result.get('method', 'pyasic')
             has_gaps = result.get('has_gaps', False)
@@ -441,7 +460,7 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             else:
                 scrape_status = 2
             
-            _update_metrics(data, miner['ip'], miner['name'], miner['model'], scrape_status, miner.get('algorithm'))
+            _update_metrics(data, miner_ip, miner_name, miner_model, scrape_status, miner.get('algorithm'))
             success_count += 1
             
             hashrate_val = _safe_float(data.get('hashrate', 0))
@@ -452,12 +471,12 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             
             # Log temperature for debugging
             if temp_val == 0 and hashrate_val > 0:
-                logger.warning(f"⚠️  {miner['name']}: Temperature is 0 despite hashrate {hashrate_val:.2f} TH/s (method={method}, has_gaps={has_gaps})")
+                logger.warning(f"⚠️  {miner_name}: Temperature is 0 despite hashrate {hashrate_val:.2f} TH/s (method={method}, has_gaps={has_gaps})")
             
             miner_data = {
-                'ip': miner['ip'],
-                'name': miner['name'],
-                'model': miner['model'],
+                'ip': miner_ip,
+                'name': miner_name,
+                'model': miner_model,
                 'hashrate': hashrate_val,
                 'power': _safe_float(data.get('power', 0)),
                 'temp_max': temp_val,
@@ -512,13 +531,13 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             else:
                 scrape_status = -2
             
-            miner_scrape_status.labels(ip=miner['ip'], name=miner['name'], model=miner['model']).set(scrape_status)
-            miner_state.labels(ip=miner['ip'], name=miner['name'], model=miner['model']).set(0)
+            miner_scrape_status.labels(ip=miner_ip, name=miner_name, model=miner_model).set(scrape_status)
+            miner_state.labels(ip=miner_ip, name=miner_name, model=miner_model).set(0)
             
             miners_data.append({
-                'ip': miner['ip'],
-                'name': miner['name'],
-                'model': miner['model'],
+                'ip': miner_ip,
+                'name': miner_name,
+                'model': miner_model,
                 'hashrate': 0,
                 'power': 0,
                 'temp_max': 0,
