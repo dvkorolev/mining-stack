@@ -9,6 +9,7 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import DashboardSkeleton from '../components/DashboardSkeleton';
 import MobileDashboard from '../components/MobileDashboard';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { formatHashrate } from '../utils/hashrate';
 import {
   Chart as ChartJS,
   CategoryScale,

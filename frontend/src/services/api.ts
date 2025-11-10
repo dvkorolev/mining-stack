@@ -39,11 +39,12 @@ export interface MinerStats {
   name: string;
   model: string;
   ip: string;
+  algorithm?: 'sha256' | 'scrypt';
   status: 'online' | 'offline' | 'error';
   statusMessage?: string;
   lastSeen: string;
-  currentHashrate: number;
-  averageHashrate: number;
+  currentHashrate: number; // Always in TH/s
+  averageHashrate: number; // Always in TH/s
   shares: {
     accepted: number;
     rejected: number;

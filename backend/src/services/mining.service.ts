@@ -46,11 +46,12 @@ export interface MinerStats {
   ip: string;
   alias?: string;
   owner?: string; // Telegram Chat ID for access control
+  algorithm?: 'sha256' | 'scrypt'; // Mining algorithm
   status: 'online' | 'offline' | 'error';
   statusMessage?: string; // Human-readable status message
   lastSeen: Date;
-  currentHashrate: number;
-  averageHashrate: number;
+  currentHashrate: number; // Always in TH/s for consistency
+  averageHashrate: number; // Always in TH/s for consistency
   shares: {
     accepted: number;
     rejected: number;
@@ -1003,17 +1004,27 @@ const updateMetricsFromScheduler = async (
       const total = accepted + rejected;
       const rejectionRate = total > 0 ? (rejected / total) * 100 : 0;
       
+      // Detect algorithm (SCRYPT miners have hashrate_mhs field)
+      const isScrypt = m.hashrate_mhs !== undefined && m.hashrate_mhs > 0;
+      const algorithm = isScrypt ? 'scrypt' : 'sha256';
+      
+      // Normalize hashrate to TH/s for consistency
+      // For SCRYPT: hashrate is in GH/s, convert to TH/s
+      // For SHA-256: hashrate is already in TH/s
+      const hashrateInThs = isScrypt ? (m.hashrate || 0) / 1000 : (m.hashrate || 0);
+      
       return {
         minerId: m.name || m.ip,
         name: m.name || m.ip,
         model: m.model || 'Unknown',
         ip: m.ip,
         owner: ownershipMap.get(m.ip) || undefined,
+        algorithm,
         status,
         statusMessage: status.toUpperCase(),
         lastSeen: new Date(),
-        currentHashrate: m.hashrate || 0,
-        averageHashrate: m.hashrate * 0.98 || 0,
+        currentHashrate: hashrateInThs,
+        averageHashrate: hashrateInThs * 0.98,
         shares: {
           accepted,
           rejected,

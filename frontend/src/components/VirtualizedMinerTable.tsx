@@ -17,6 +17,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import WarningIcon from '@mui/icons-material/Warning';
+import { formatHashrate } from '../utils/hashrate';
 
 interface MinerError {
   code: string;
@@ -34,6 +35,7 @@ interface Miner {
   model: string;
   alias?: string;
   owner?: string;
+  algorithm?: 'sha256' | 'scrypt';
   status: 'online' | 'offline' | 'error';
   statusMessage?: string;
   lastSeen: Date;
@@ -144,7 +146,7 @@ const VirtualizedMinerTable: React.FC<VirtualizedMinerTableProps> = ({
                 </TableCell>
                 <TableCell>
                   {miner.currentHashrate
-                    ? `${miner.currentHashrate.toFixed(2)} TH/s`
+                    ? formatHashrate(miner.currentHashrate, miner.algorithm)
                     : '-'}
                 </TableCell>
                 <TableCell>
