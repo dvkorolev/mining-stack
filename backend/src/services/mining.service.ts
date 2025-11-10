@@ -955,6 +955,11 @@ const updateMetricsFromScheduler = async (
   try {
     logger.info(`Processing metrics push: ${miners.length} miners`);
     
+    // Get miner ownership from database
+    const db = getDatabase();
+    const allMinersFromDb = db.getAllMiners();
+    const ownershipMap = new Map(allMinersFromDb.map(m => [m.ip, m.owner]));
+    
     // Convert scheduler format to our MinerStats format
     const minerStats: MinerStats[] = miners.map(m => {
       // Log temperature values for debugging
@@ -1003,6 +1008,7 @@ const updateMetricsFromScheduler = async (
         name: m.name || m.ip,
         model: m.model || 'Unknown',
         ip: m.ip,
+        owner: ownershipMap.get(m.ip) || undefined,
         status,
         statusMessage: status.toUpperCase(),
         lastSeen: new Date(),
