@@ -22,6 +22,22 @@ const isAdmin = (chatId: string): boolean => {
   return chatId === ADMIN_TELEGRAM_CHAT_ID;
 };
 
+/**
+ * Format hashrate with appropriate unit based on algorithm
+ */
+const formatHashrate = (hashrateThs: number, algorithm?: 'sha256' | 'scrypt'): string => {
+  if (!hashrateThs || hashrateThs === 0) return '0 TH/s';
+  
+  // For SCRYPT, display in GH/s (multiply by 1000)
+  if (algorithm === 'scrypt') {
+    const hashrateGhs = hashrateThs * 1000;
+    return `${hashrateGhs.toFixed(2)} GH/s`;
+  }
+  
+  // For SHA-256 or unknown, display in TH/s
+  return `${hashrateThs.toFixed(2)} TH/s`;
+};
+
 let bot: TelegramBot | null = null;
 let isEnabled = false;
 let authorizedChatIds: Set<string> = new Set();
@@ -1502,8 +1518,8 @@ ${statusEmoji} *${minerStats.name}*
 📊 Status: *${minerStats.status.toUpperCase()}*
 
 ⚡ *Performance:*
-Current: ${minerStats.currentHashrate.toFixed(2)} TH/s
-Average: ${minerStats.averageHashrate.toFixed(2)} TH/s
+Current: ${formatHashrate(minerStats.currentHashrate, minerStats.algorithm)}
+Average: ${formatHashrate(minerStats.averageHashrate, minerStats.algorithm)}
 
 🎯 *Shares:*
 Accepted: ${minerStats.shares.accepted}

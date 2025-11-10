@@ -19,6 +19,7 @@ import {
 import { Bar } from 'react-chartjs-2';
 import DownloadIcon from '@mui/icons-material/Download';
 import { fetchMiningStats, MiningStatsResponse } from '../services/api';
+import { formatHashrate, getHashrateValue } from '../utils/hashrate';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -357,7 +358,7 @@ const Analytics: React.FC = () => {
                             {miner.status.toUpperCase()}
                           </Box>
                         </TableCell>
-                        <TableCell align="right">{miner.currentHashrate.toFixed(2)}</TableCell>
+                        <TableCell align="right">{formatHashrate(miner.currentHashrate, miner.algorithm)}</TableCell>
                         <TableCell align="right">{efficiency.toFixed(2)}</TableCell>
                         <TableCell align="right">
                           <Typography
