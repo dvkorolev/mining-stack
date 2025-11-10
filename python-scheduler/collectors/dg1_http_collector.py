@@ -32,17 +32,26 @@ async def collect_dg1_http(miner_config: Dict) -> Optional[Dict]:
         # Create HTTP Basic Auth
         auth = aiohttp.BasicAuth(username, password)
         
-        # Fetch stats from CGI endpoint
+        # Fetch stats and pools from CGI endpoints
         async with aiohttp.ClientSession(auth=auth, timeout=aiohttp.ClientTimeout(total=10)) as session:
+            # Fetch stats
             async with session.get(f'http://{ip}/cgi-bin/stats.cgi') as response:
                 if response.status != 200:
                     logger.debug(f"DG1 HTTP {ip}: HTTP {response.status}")
                     return None
-                
-                data = await response.json()
+                stats_data = await response.json()
+            
+            # Fetch pools
+            pools_data = None
+            try:
+                async with session.get(f'http://{ip}/cgi-bin/pools.cgi') as response:
+                    if response.status == 200:
+                        pools_data = await response.json()
+            except Exception as e:
+                logger.debug(f"DG1 HTTP {ip}: Could not fetch pools - {e}")
         
         # Parse the response
-        return _parse_dg1_response(data, ip)
+        return _parse_dg1_response(stats_data, pools_data, ip)
         
     except asyncio.TimeoutError:
         logger.debug(f"DG1 HTTP {ip}: Timeout")
@@ -55,36 +64,44 @@ async def collect_dg1_http(miner_config: Dict) -> Optional[Dict]:
         return None
 
 
-def _parse_dg1_response(data: Dict, ip: str) -> Optional[Dict]:
+def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str) -> Optional[Dict]:
     """
     Parse DG1 CGI response into normalized format.
     
-    Expected format:
+    Args:
+        stats_data: Response from /cgi-bin/stats.cgi
+        pools_data: Response from /cgi-bin/pools.cgi (optional)
+        ip: Miner IP address
+    
+    Expected stats format:
     {
       "STATS": [{
         "rate_5s": 78980.57,  # MH/s
         "rate_15m": 14605,
         "elapsed": 846890,
-        "chain": [
-          {
-            "temp_chip": ["60125", "64125", "", ""],
-            "temp_pcb": [47, 46, 67, 66],
-            "rate_real": 3540.23,
-            "hw": 204,
-            "asic_num": 204
-          },
-          ...
-        ],
+        "chain": [...],
         "fan": ["6060", "6000", "6060", "6120"]
+      }]
+    }
+    
+    Expected pools format:
+    {
+      "POOLS": [{
+        "index": 0,
+        "url": "stratum+tcp://pool.com:3434",
+        "user": "worker.001",
+        "accepted": 177989,
+        "rejected": 867,
+        "status": "Alive"
       }]
     }
     """
     try:
-        if 'STATS' not in data or not data['STATS']:
+        if 'STATS' not in stats_data or not stats_data['STATS']:
             logger.debug(f"DG1 HTTP {ip}: No STATS in response")
             return None
         
-        stats = data['STATS'][0]
+        stats = stats_data['STATS'][0]
         
         # Extract hashrate (in MH/s for SCRYPT)
         hashrate_mhs = float(stats.get('rate_5s', 0))
@@ -121,6 +138,22 @@ def _parse_dg1_response(data: Dict, ip: str) -> Optional[Dict]:
         # Extract uptime
         uptime = int(stats.get('elapsed', 0))
         
+        # Parse pool data if available
+        pools = []
+        if pools_data and 'POOLS' in pools_data:
+            for pool in pools_data['POOLS']:
+                try:
+                    pools.append({
+                        'url': pool.get('url', ''),
+                        'user': pool.get('user', ''),
+                        'accepted': int(pool.get('accepted', 0)),
+                        'rejected': int(pool.get('rejected', 0)),
+                        'status': pool.get('status', 'Unknown'),
+                        'priority': int(pool.get('priority', 0))
+                    })
+                except (ValueError, TypeError, KeyError):
+                    continue
+        
         # Build normalized response (DG1 is SCRYPT, so hashrate in MH/s)
         result = {
             'hashrate': hashrate_mhs,  # MH/s for SCRYPT
@@ -134,7 +167,7 @@ def _parse_dg1_response(data: Dict, ip: str) -> Optional[Dict]:
             'errors': [],
             'hashboards': [],
             'fan_psu': [],
-            'pools': []
+            'pools': pools
         }
         
         logger.info(f"✓ DG1 HTTP {ip}: {hashrate_mhs:.2f} MH/s, {temperature:.1f}°C, {len(fans)} fans")

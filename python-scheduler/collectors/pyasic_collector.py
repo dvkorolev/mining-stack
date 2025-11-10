@@ -209,9 +209,11 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     miner_state.labels(ip=ip, name=name, model=model).set(state)
     
     if is_scrypt:
+        # SCRYPT: hashrate is in MH/s, convert to GH/s for miner_hashrate
         miner_hashrate_mhs.labels(ip=ip, name=name, model=model).set(hashrate)
-        miner_hashrate.labels(ip=ip, name=name, model=model).set(hashrate / 1000000.0)
+        miner_hashrate.labels(ip=ip, name=name, model=model).set(hashrate / 1000.0)  # MH/s → GH/s
     else:
+        # SHA-256: hashrate is already in TH/s
         miner_hashrate.labels(ip=ip, name=name, model=model).set(hashrate)
     
     power = float(data.get('power', 0) or 0)
