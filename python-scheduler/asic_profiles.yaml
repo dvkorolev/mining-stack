@@ -240,7 +240,7 @@ profiles:
   # ============================================================================
   
   elphapex_dg1:
-    name: "ElphaPex DG1"
+    name: "ElphaPex DG1/DG1+"
     manufacturer: "ElphaPex"
     algorithm: "scrypt"
     
@@ -248,33 +248,42 @@ profiles:
     match:
       exact:
         - "ElphaPex DG1"
+        - "ElphaPex DG1+"
         - "ElphaPex DG1 Pro"
         - "DG1"
+        - "DG1+"
+        - "DG1+ (Stock)"
       patterns:
-        - '\bDG1\b'
+        - '\bDG1\+?\b'
         - "ElphaPex.*DG1"
+        - "DG1.*Stock"
     
     drivers:
-      - type: "dg1_tcp"
+      - type: "dg1_http"
         priority: 1
+        config:
+          endpoints:
+            stats: "/cgi-bin/stats.cgi"
+            pools: "/cgi-bin/pools.cgi"
+            summary: "/cgi-bin/summary.cgi"
+          timeout: 10
+          auth_type: "basic"
+      - type: "dg1_tcp"
+        priority: 2
         config:
           port: 4028
           timeout: 10
           protocol: "custom_tcp"
-      - type: "cgminer"
-        priority: 2
-        config:
-          api_port: 4028
-          timeout: 10
     
     parser:
       type: "dg1"
       quirks:
-        hashrate_field: "MHS av"
-        hashrate_unit: "GH/s"  # SCRYPT reports in GH/s
-        hashrate_scale: 0.001  # Convert to TH/s for consistency
+        hashrate_field: "rate_5s"
+        hashrate_unit: "MH/s"  # DG1 reports in MH/s (SCRYPT)
+        hashrate_scale: 1.0    # Keep as MH/s, will be converted to GH/s by collector
         temp_source: "chip"
-        temp_fields: ["temp"]
+        temp_fields: ["temp_chip"]
+        temp_scale: 0.001      # Temperature in millidegrees (64125 = 64.125°C)
         power_field: "power"
         power_unit: "W"
     
@@ -283,10 +292,10 @@ profiles:
       password: "root"
     
     expected:
-      hashrate_min: 0.010  # 10 GH/s = 0.010 TH/s
-      hashrate_max: 0.016  # 16 GH/s = 0.016 TH/s
+      hashrate_min: 10000    # 10 GH/s = 10,000 MH/s
+      hashrate_max: 90000    # 90 GH/s = 90,000 MH/s (DG1+ can do ~80 GH/s)
       power_min: 3200
-      power_max: 3600
+      power_max: 3800
       temp_max: 80
 
   antminer_l7:
