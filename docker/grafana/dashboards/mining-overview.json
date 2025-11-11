@@ -10,7 +10,15 @@
     "editable": true,
     "fiscalYearStartMonth": 0,
     "graphTooltip": 0,
-    "links": [],
+    "links": [
+      {
+        "title": "SCRYPT Miners Dashboard",
+        "url": "/d/scrypt-miners",
+        "type": "link",
+        "icon": "dashboard",
+        "tooltip": "View detailed SCRYPT miners statistics"
+      }
+    ],
     "liveNow": false,
     "time": {
       "from": "now-6h",
