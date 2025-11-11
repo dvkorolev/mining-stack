@@ -1044,7 +1044,7 @@ const setupCallbackHandlers = (): void => {
     
     // Dedupe rapid refresh clicks
     const isRefreshAction = data === 'action_status' || data === 'action_alerts' || data === 'action_miners' ||
-                           data.startsWith('miners_page_') || data.startsWith('miner_');
+                           data.startsWith('miners_page_') || data.startsWith('miner_') || data.startsWith('alerts_page_');
     
     if (isRefreshAction) {
       const dedupeKey = `${chatId}_${messageId}`;
@@ -1163,7 +1163,11 @@ This will:
         await sendMinersList(query.message.chat.id, 0, 'all', true, messageId);
       }
       else if (data === 'action_alerts') {
-        await sendActiveAlerts(query.message.chat.id, true, messageId);
+        await sendActiveAlerts(query.message.chat.id, true, messageId, 0);
+      }
+      else if (data.startsWith('alerts_page_')) {
+        const page = parseInt(data.replace('alerts_page_', ''), 10);
+        await sendActiveAlerts(query.message.chat.id, true, messageId, page);
       }
       else if (data === 'refresh_alerts') {
         // Refresh the consolidated alert message
@@ -1716,11 +1720,16 @@ const sendMinerPools = async (chatId: number, minerName: string, isRefresh: bool
 };
 
 /**
- * Send active alerts
+ * Send active alerts with pagination
  */
-const sendActiveAlerts = async (chatId: number, isRefresh: boolean = false, messageId?: number): Promise<void> => {
+const sendActiveAlerts = async (
+  chatId: number, 
+  isRefresh: boolean = false, 
+  messageId?: number,
+  page: number = 0
+): Promise<void> => {
   try {
-    logger.info('Telegram: Fetching active alerts', { service: 'telegram', chatId });
+    logger.info('Telegram: Fetching active alerts', { service: 'telegram', chatId, page });
     
     // Import alert service to get active alerts
     const { getActiveAlerts } = require('./alert.service');
@@ -1738,73 +1747,110 @@ No active alerts at the moment.
       const keyboard = {
         inline_keyboard: [
           [
-            { text: '🔄 Refresh', callback_data: 'action_alerts' },
+            { text: '🔄 Refresh', callback_data: 'alerts_page_0' },
             { text: '📊 Farm Status', callback_data: 'action_status' },
           ],
         ],
       };
 
-      await sendOrEditMessage(chatId, message, keyboard, 'alerts', undefined, messageId, isRefresh);
+      await sendOrEditMessage(chatId, message, keyboard, 'alerts', { page: 0 }, messageId, isRefresh);
       return;
     }
 
-    // Group alerts by severity
-    const critical = alerts.filter((a: any) => a.severity === 'critical');
-    const warning = alerts.filter((a: any) => a.severity === 'warning');
-    const info = alerts.filter((a: any) => a.severity === 'info');
+    // Pagination settings
+    const ALERTS_PER_PAGE = 10;
+    const totalPages = Math.ceil(alerts.length / ALERTS_PER_PAGE);
+    const currentPage = Math.max(0, Math.min(page, totalPages - 1));
+    const startIdx = currentPage * ALERTS_PER_PAGE;
+    const endIdx = Math.min(startIdx + ALERTS_PER_PAGE, alerts.length);
+    const pageAlerts = alerts.slice(startIdx, endIdx);
 
-    let message = `🔔 *Active Alerts* (${alerts.length})\n\n`;
+    // Group alerts by severity
+    const critical = pageAlerts.filter((a: any) => a.severity === 'critical');
+    const warning = pageAlerts.filter((a: any) => a.severity === 'warning');
+    const info = pageAlerts.filter((a: any) => a.severity === 'info');
+
+    let message = `🔔 *Active Alerts* (${alerts.length} total)\n`;
+    message += `📄 Page ${currentPage + 1}/${totalPages} (showing ${startIdx + 1}-${endIdx})\n\n`;
 
     if (critical.length > 0) {
-      message += `🔥 *Critical (${critical.length}):*\n`;
-      critical.slice(0, 5).forEach((alert: any) => {
+      message += `🔥 *Critical:*\n`;
+      critical.forEach((alert: any) => {
+        const duration = formatDuration(alert.startsAt);
         message += `• ${alert.summary}\n`;
         if (alert.miner) message += `  Miner: \`${alert.miner}\`\n`;
+        message += `  Duration: ${duration}\n`;
       });
-      if (critical.length > 5) {
-        message += `  _...and ${critical.length - 5} more_\n`;
-      }
       message += '\n';
     }
 
     if (warning.length > 0) {
-      message += `⚠️ *Warning (${warning.length}):*\n`;
-      warning.slice(0, 5).forEach((alert: any) => {
+      message += `⚠️ *Warning:*\n`;
+      warning.forEach((alert: any) => {
+        const duration = formatDuration(alert.startsAt);
         message += `• ${alert.summary}\n`;
         if (alert.miner) message += `  Miner: \`${alert.miner}\`\n`;
+        message += `  Duration: ${duration}\n`;
       });
-      if (warning.length > 5) {
-        message += `  _...and ${warning.length - 5} more_\n`;
-      }
       message += '\n';
     }
 
     if (info.length > 0) {
-      message += `ℹ️ *Info (${info.length}):*\n`;
-      info.slice(0, 3).forEach((alert: any) => {
+      message += `ℹ️ *Info:*\n`;
+      info.forEach((alert: any) => {
+        const duration = formatDuration(alert.startsAt);
         message += `• ${alert.summary}\n`;
+        if (alert.miner) message += `  Miner: \`${alert.miner}\`\n`;
+        message += `  Duration: ${duration}\n`;
       });
-      if (info.length > 3) {
-        message += `  _...and ${info.length - 3} more_\n`;
+    }
+
+    // Build navigation buttons
+    const navButtons = [];
+    if (totalPages > 1) {
+      const row = [];
+      if (currentPage > 0) {
+        row.push({ text: '⬅️ Previous', callback_data: `alerts_page_${currentPage - 1}` });
+      }
+      if (currentPage < totalPages - 1) {
+        row.push({ text: 'Next ➡️', callback_data: `alerts_page_${currentPage + 1}` });
+      }
+      if (row.length > 0) {
+        navButtons.push(row);
       }
     }
 
-    // Add refresh button
     const keyboard = {
       inline_keyboard: [
+        ...navButtons,
         [
-          { text: '🔄 Refresh', callback_data: 'action_alerts' },
+          { text: '🔄 Refresh', callback_data: `alerts_page_${currentPage}` },
           { text: '📊 Farm Status', callback_data: 'action_status' },
         ],
       ],
     };
 
-    await sendOrEditMessage(chatId, message.trim(), keyboard, 'alerts', undefined, messageId, isRefresh);
-    logger.info('Telegram: Active alerts sent', { service: 'telegram', chatId, alertCount: alerts.length });
+    await sendOrEditMessage(chatId, message.trim(), keyboard, 'alerts', { page: currentPage }, messageId, isRefresh);
+    logger.info('Telegram: Active alerts sent', { service: 'telegram', chatId, alertCount: alerts.length, page: currentPage });
   } catch (error) {
     logger.error('Telegram: Error sending active alerts', { service: 'telegram', chatId, error });
     await bot?.sendMessage(chatId, '❌ Error fetching alerts');
   }
+};
+
+/**
+ * Format duration for display
+ */
+const formatDuration = (timestamp: number): string => {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  return `${minutes}m`;
 };
 
 /**
