@@ -216,6 +216,42 @@ groups:
         annotations:
           summary: "Miner {{ $labels.name }} poor efficiency"
           description: "Miner {{ $labels.name }} efficiency is {{ $value }} J/TH (threshold: 35 J/TH)"
+          
+      # Critical: Zombie miner SHA-256 (reports hashrate but power is too low)
+      # This detects miners that appear online with hashrate but are actually offline
+      # Common after power outages when miner reports stale/cached data
+      - alert: MinerZombieStateSHA256
+        expr: |
+          (
+            miner_hashrate_ths{algorithm="sha256"} > 10
+            and miner_power_watts < 200
+            and miner_is_mining{algorithm="sha256"} == 1
+          )
+        for: 5m
+        labels:
+          severity: critical
+          component: miner
+          algorithm: sha256
+        annotations:
+          summary: "Miner {{ $labels.name }} in zombie state (fake hashrate)"
+          description: "Miner {{ $labels.name }} reports {{ $value | printf \"%.1f\" }} TH/s but power is only {{ with query (printf \"miner_power_watts{name='%s'}\" $labels.name) }}{{ . | first | value | printf \"%.0f\" }}{{ end }}W. Likely reporting stale data after power outage."
+          
+      # Critical: Zombie miner SCRYPT (reports hashrate but power is too low)
+      - alert: MinerZombieStateSCRYPT
+        expr: |
+          (
+            miner_hashrate_mhs{algorithm="scrypt"} > 100
+            and miner_power_watts < 100
+            and miner_is_mining{algorithm="scrypt"} == 1
+          )
+        for: 5m
+        labels:
+          severity: critical
+          component: miner
+          algorithm: scrypt
+        annotations:
+          summary: "Miner {{ $labels.name }} in zombie state (fake hashrate)"
+          description: "Miner {{ $labels.name }} reports {{ $value | printf \"%.1f\" }} MH/s but power is only {{ with query (printf \"miner_power_watts{name='%s'}\" $labels.name) }}{{ . | first | value | printf \"%.0f\" }}{{ end }}W. Likely reporting stale data after power outage."
 
   - name: mining_farm
     interval: 30s
