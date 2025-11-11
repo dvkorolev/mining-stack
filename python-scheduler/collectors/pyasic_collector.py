@@ -647,12 +647,10 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
     collection_timestamp.labels(collector='hybrid').set(time.time())
     
     logger.info(f"✓ Batch collection: {success_count}/{len(miners)} miners in {duration:.1f}s")
-    logger.info(f"  Miners with gaps filled: {len(miners_with_gaps)}")
     
     return {
         'success': True,
         'miners_collected': success_count,
         'duration': duration,
-        'gaps_filled': len(miners_with_gaps),
         'miners_data': miners_data
     }
