@@ -538,8 +538,11 @@ const simulateMiningStats = (): MiningStats => {
     { timestamp: Date.now(), hashrate: totalHashrate }
   ].slice(-config.mining.maxHistoryPoints);
   
-  const averageHashrate24h = statsHistory.length > 0
-    ? statsHistory.reduce((sum, stat) => sum + stat.hashrate, 0) / statsHistory.length
+  // Calculate 24h average using only data from last 24 hours
+  const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+  const recentStats = statsHistory.filter(stat => stat.timestamp >= twentyFourHoursAgo);
+  const averageHashrate24h = recentStats.length > 0
+    ? recentStats.reduce((sum, stat) => sum + stat.hashrate, 0) / recentStats.length
     : totalHashrate;
   
   // Realistic BTC mining calculation
@@ -622,8 +625,11 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
       { timestamp: Date.now(), hashrate: totalHashrate }
     ].slice(-config.mining.maxHistoryPoints);
     
-    const averageHashrate24h = statsHistory.length > 0
-      ? statsHistory.reduce((sum, stat) => sum + stat.hashrate, 0) / statsHistory.length
+    // Calculate 24h average using only data from last 24 hours
+    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+    const recentStats = statsHistory.filter(stat => stat.timestamp >= twentyFourHoursAgo);
+    const averageHashrate24h = recentStats.length > 0
+      ? recentStats.reduce((sum, stat) => sum + stat.hashrate, 0) / recentStats.length
       : totalHashrate;
     
     // BTC calculation removed - not useful for monitoring
@@ -1057,8 +1063,11 @@ const updateMetricsFromScheduler = async (
       { timestamp: timestamp || Date.now(), hashrate: totalHashrate }
     ].slice(-config.mining.maxHistoryPoints);
     
-    const averageHashrate24h = statsHistory.length > 0
-      ? statsHistory.reduce((sum, stat) => sum + stat.hashrate, 0) / statsHistory.length
+    // Calculate 24h average using only data from last 24 hours
+    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+    const recentStats = statsHistory.filter(stat => stat.timestamp >= twentyFourHoursAgo);
+    const averageHashrate24h = recentStats.length > 0
+      ? recentStats.reduce((sum, stat) => sum + stat.hashrate, 0) / recentStats.length
       : totalHashrate;
     
     // Update global stats
