@@ -945,6 +945,25 @@ class DatabaseService {
   }
 
   /**
+   * Clean up invalid stats data (e.g., unrealistic hashrate values)
+   * @param maxHashrate Maximum realistic hashrate in TH/s (default: 10000)
+   */
+  cleanupInvalidStats(maxHashrate: number = 10000): number {
+    try {
+      const stmt = this.db.prepare(`
+        DELETE FROM stats_raw 
+        WHERE totalHashrate > ? OR totalHashrate < 0
+      `);
+      const result = stmt.run(maxHashrate);
+      logger.info(`Cleaned up ${result.changes} invalid stats records (hashrate > ${maxHashrate} TH/s)`);
+      return result.changes;
+    } catch (error) {
+      logger.error('Error cleaning up invalid stats:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Close database connection
    */
   close(): void {

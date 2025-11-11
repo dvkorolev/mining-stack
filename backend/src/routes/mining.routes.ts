@@ -147,6 +147,23 @@ router.post('/mining/database/backup', async (req, res, next) => {
   }
 });
 
+// Cleanup invalid stats data
+router.post('/mining/database/cleanup', requireAdmin, async (req, res, next) => {
+  try {
+    const { maxHashrate = 10000 } = req.body;
+    const db = getDatabase();
+    const deletedCount = db.cleanupInvalidStats(maxHashrate);
+    
+    res.json({ 
+      success: true, 
+      deletedRecords: deletedCount,
+      message: `Cleaned up ${deletedCount} invalid stats records (hashrate > ${maxHashrate} TH/s)`
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ===== Miner Management Endpoints =====
 
 // Get all miners configuration
