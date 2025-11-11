@@ -1113,7 +1113,14 @@ const updateMetricsFromScheduler = async (
       // Normalize hashrate to TH/s for consistency
       // For SCRYPT: hashrate is in GH/s, convert to TH/s
       // For SHA-256: hashrate is already in TH/s
-      const hashrateInThs = isScrypt ? (m.hashrate || 0) / 1000 : (m.hashrate || 0);
+      let hashrateInThs = isScrypt ? (m.hashrate || 0) / 1000 : (m.hashrate || 0);
+      
+      // Validate and cap individual miner hashrate (max 200 TH/s per miner is realistic)
+      const MAX_MINER_HASHRATE = 200; // TH/s (even S21 Pro is ~200 TH/s)
+      if (hashrateInThs > MAX_MINER_HASHRATE) {
+        logger.warn(`⚠️  Capping corrupted hashrate for ${m.name}: ${hashrateInThs.toFixed(2)} TH/s → ${MAX_MINER_HASHRATE} TH/s`);
+        hashrateInThs = 0; // Set to 0 to indicate data corruption
+      }
       
       return {
         minerId: m.name || m.ip,
@@ -1145,7 +1152,17 @@ const updateMetricsFromScheduler = async (
     });
     
     // Calculate aggregates
-    const totalHashrate = minerStats.reduce((sum, m) => sum + m.currentHashrate, 0);
+    let totalHashrate = minerStats.reduce((sum, m) => sum + m.currentHashrate, 0);
+    
+    // Safety check: Cap total hashrate to realistic farm value
+    const MAX_FARM_HASHRATE = 5000; // TH/s
+    if (totalHashrate > MAX_FARM_HASHRATE) {
+      logger.error(`🚨 CORRUPTED TOTAL HASHRATE DETECTED: ${totalHashrate.toFixed(2)} TH/s > ${MAX_FARM_HASHRATE} TH/s`);
+      logger.error(`Miners contributing to total:`, minerStats.map(m => ({ name: m.name, hashrate: m.currentHashrate })));
+      // Cap to max realistic value
+      totalHashrate = MAX_FARM_HASHRATE;
+    }
+    
     const activeMiners = minerStats.filter(m => m.status === 'online' || m.status === 'error').length;
     
     // Update stats history
