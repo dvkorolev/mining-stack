@@ -21,12 +21,15 @@ export interface Alert {
   severity: 'critical' | 'warning' | 'info';
   status: 'firing' | 'resolved';
   miner?: string;
+  minerIp?: string;
   summary: string;
   description: string;
   firedAt: number;
   resolvedAt?: number;
   labels: Record<string, string>;
   annotations: Record<string, string>;
+  recipients?: string[]; // Telegram chat IDs to send alert to
+  isFarmWide?: boolean; // If true, send to all users
 }
 
 // In-memory storage for active alerts
@@ -234,44 +237,62 @@ export const processAlertWebhook = async (payload: any): Promise<void> => {
       const severity = (alert.labels?.severity || 'info') as 'critical' | 'warning' | 'info';
       const status = alert.status as 'firing' | 'resolved';
       
+      const minerName = alert.labels?.miner || alert.labels?.name;
+      const minerIp = alert.labels?.ip;
+      
+      // Determine if this is a farm-wide alert or miner-specific
+      const isFarmWide = !minerName || alert.labels?.alertname?.toLowerCase().includes('farm');
+      
+      // Get recipients for this alert
+      const recipients = await determineAlertRecipients(minerIp, isFarmWide);
+      
       const alertData: Alert = {
         id: alertId,
         name: alert.labels?.alertname || 'Unknown',
         severity,
         status,
-        miner: alert.labels?.miner || alert.labels?.name,
+        miner: minerName,
+        minerIp,
         summary: alert.annotations?.summary || '',
         description: alert.annotations?.description || '',
         firedAt: new Date(alert.startsAt).getTime(),
         resolvedAt: status === 'resolved' ? new Date(alert.endsAt).getTime() : undefined,
         labels: alert.labels || {},
         annotations: alert.annotations || {},
+        recipients,
+        isFarmWide,
       };
 
       if (status === 'firing') {
         activeAlerts.set(alertId, alertData);
         
-        // Send to Telegram
-        await sendAlert({
+        // Send to Telegram with smart routing
+        const { sendSmartAlert } = require('./telegram.service');
+        await sendSmartAlert({
           severity: alertData.severity,
           title: alertData.summary,
           description: alertData.description,
           miner: alertData.miner,
+          recipients: alertData.recipients,
+          isFarmWide: alertData.isFarmWide,
         });
         
-        logger.info(`Alert fired: ${alertData.name} - ${alertData.summary}`);
+        const recipientInfo = alertData.isFarmWide ? 'all users' : `${alertData.recipients?.length || 0} owner(s)`;
+        logger.info(`Alert fired: ${alertData.name} - ${alertData.summary} (sent to ${recipientInfo})`);
       } else if (status === 'resolved') {
         activeAlerts.delete(alertId);
         alertData.resolvedAt = Date.now();
         
-        // Send resolution notification for all severities
-        // Use different emojis based on original severity
+        // Send resolution notification with smart routing
         const resolvedEmoji = severity === 'critical' ? '✅' : severity === 'warning' ? '✔️' : 'ℹ️';
-        await sendAlert({
+        const { sendSmartAlert } = require('./telegram.service');
+        await sendSmartAlert({
           severity: 'info',
           title: `${resolvedEmoji} Resolved: ${alertData.name}`,
           description: alertData.summary,
           miner: alertData.miner,
+          recipients: alertData.recipients,
+          isFarmWide: alertData.isFarmWide,
         });
         
         logger.info(`Alert resolved: ${alertData.name} - ${alertData.summary}`);
@@ -315,6 +336,44 @@ export const getMinerAlerts = (minerId: string): Alert[] => {
 export const clearResolvedAlerts = (): void => {
   const resolved = alertHistory.filter(a => a.status === 'resolved');
   logger.info(`Cleared ${resolved.length} resolved alerts from history`);
+};
+
+/**
+ * Determine which users should receive this alert
+ * @param minerIp IP address of the miner (if miner-specific alert)
+ * @param isFarmWide If true, send to all users
+ * @returns Array of Telegram chat IDs
+ */
+const determineAlertRecipients = async (minerIp?: string, isFarmWide?: boolean): Promise<string[]> => {
+  try {
+    // Farm-wide alerts go to everyone
+    if (isFarmWide || !minerIp) {
+      const { getBotStatus } = require('./telegram.service');
+      const status = getBotStatus();
+      return status.chatIds || [];
+    }
+    
+    // Miner-specific alerts go to the miner's owner(s)
+    const { getDatabase } = require('./database.service');
+    const db = getDatabase();
+    const miner = db.getMinerByIp(minerIp);
+    
+    if (miner && miner.owner) {
+      // Return owner as array
+      return [miner.owner];
+    }
+    
+    // If no owner found, send to all users (fallback)
+    const { getBotStatus } = require('./telegram.service');
+    const status = getBotStatus();
+    return status.chatIds || [];
+  } catch (error) {
+    logger.error('Error determining alert recipients:', error);
+    // Fallback: send to all users
+    const { getBotStatus } = require('./telegram.service');
+    const status = getBotStatus();
+    return status.chatIds || [];
+  }
 };
 
 /**

@@ -2034,6 +2034,52 @@ export const sendMessage = async (message: string, options?: any): Promise<void>
 };
 
 /**
+ * Send smart alert with targeted routing
+ * - Miner-specific alerts go to miner owner
+ * - Farm-wide alerts go to all users
+ */
+export const sendSmartAlert = async (alert: {
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  description: string;
+  miner?: string;
+  recipients?: string[]; // Specific chat IDs to send to
+  isFarmWide?: boolean; // If true, send to all users
+}): Promise<void> => {
+  if (!bot || !isEnabled) {
+    return;
+  }
+
+  const emoji = alert.severity === 'critical' ? '🚨' : alert.severity === 'warning' ? '⚠️' : 'ℹ️';
+  const minerInfo = alert.miner ? `\n🔧 Miner: *${alert.miner}*` : '';
+  const message = `${emoji} *${alert.title}*${minerInfo}\n\n${alert.description}`;
+
+  // Determine recipients
+  let targetChatIds: string[];
+  if (alert.isFarmWide) {
+    // Farm-wide: send to all users
+    targetChatIds = Array.from(authorizedChatIds);
+    logger.info(`Sending farm-wide alert to ${targetChatIds.length} users`, { service: 'telegram' });
+  } else if (alert.recipients && alert.recipients.length > 0) {
+    // Specific recipients (miner owners)
+    targetChatIds = alert.recipients;
+    logger.info(`Sending miner-specific alert to ${targetChatIds.length} owner(s)`, { 
+      service: 'telegram',
+      miner: alert.miner 
+    });
+  } else {
+    // Fallback: send to all users
+    targetChatIds = Array.from(authorizedChatIds);
+    logger.warn('No specific recipients, sending to all users', { service: 'telegram' });
+  }
+
+  // Send to each recipient
+  for (const chatId of targetChatIds) {
+    await sendMessageToChat(chatId, message, { parse_mode: 'Markdown' });
+  }
+};
+
+/**
  * Send alert notification (legacy function - now uses sendAlertNotification)
  */
 export const sendAlert = async (alert: {
