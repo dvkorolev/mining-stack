@@ -280,8 +280,8 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
             total_accepted = 0
             total_rejected = 0
         
-        miner_pool_accepted.labels(ip=ip, name=name, model=model, algorithm=algorithm).set(total_accepted)
-        miner_pool_rejected.labels(ip=ip, name=name, model=model, algorithm=algorithm).set(total_rejected)
+        miner_pool_accepted.labels(ip=ip, name=name, model=model, algorithm=algo).set(total_accepted)
+        miner_pool_rejected.labels(ip=ip, name=name, model=model, algorithm=algo).set(total_rejected)
     
     cgminer_board_temps = data.get('cgminer_board_temps', [])
     if cgminer_board_temps and isinstance(cgminer_board_temps, list):
