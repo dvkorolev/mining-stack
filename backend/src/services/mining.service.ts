@@ -437,8 +437,14 @@ const calculateAggregates = (minerStats: MinerStats[], statsHistory: { timestamp
     : 0;
 
   // Calculate max/min hashrate from last 24 hours
+  // Filter out unrealistic values (> 5000 TH/s is impossible for a single farm)
+  const MAX_REALISTIC_HASHRATE = 5000; // TH/s
   const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
-  const recentHistory = statsHistory.filter(h => h.timestamp >= twentyFourHoursAgo);
+  const recentHistory = statsHistory.filter(h => 
+    h.timestamp >= twentyFourHoursAgo && 
+    h.hashrate > 0 && 
+    h.hashrate <= MAX_REALISTIC_HASHRATE
+  );
   const hashrates = recentHistory.map(h => h.hashrate);
   const maxHashrate = hashrates.length > 0 ? Math.max(...hashrates) : 0;
   const minHashrate = hashrates.length > 0 ? Math.min(...hashrates) : 0;
@@ -600,8 +606,13 @@ const simulateMiningStats = (): MiningStats => {
   const activeMiners = minerStats.filter(m => m.status === 'online').length;
   
   // Calculate 24h average hashrate from history
+  // Filter out corrupted values (> 5000 TH/s) from existing history
+  const MAX_REALISTIC_HASHRATE = 5000;
+  const cleanHistory = miningStats.statsHistory.filter(h => 
+    h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
+  );
   const statsHistory = [
-    ...miningStats.statsHistory,
+    ...cleanHistory,
     { timestamp: Date.now(), hashrate: totalHashrate }
   ].slice(-config.mining.maxHistoryPoints);
   
@@ -691,8 +702,13 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
     const activeMiners = minerStats.filter(m => m.status === 'online' || m.status === 'error').length;
     
     // Calculate 24h average hashrate from history
+    // Filter out corrupted values (> 5000 TH/s) from existing history
+    const MAX_REALISTIC_HASHRATE = 5000;
+    const cleanHistory = miningStats.statsHistory.filter(h => 
+      h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
+    );
     const statsHistory = [
-      ...miningStats.statsHistory,
+      ...cleanHistory,
       { timestamp: Date.now(), hashrate: totalHashrate }
     ].slice(-config.mining.maxHistoryPoints);
     
@@ -1133,8 +1149,13 @@ const updateMetricsFromScheduler = async (
     const activeMiners = minerStats.filter(m => m.status === 'online' || m.status === 'error').length;
     
     // Update stats history
+    // Filter out corrupted values (> 5000 TH/s) from existing history
+    const MAX_REALISTIC_HASHRATE = 5000;
+    const cleanHistory = miningStats.statsHistory.filter(h => 
+      h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
+    );
     const statsHistory = [
-      ...miningStats.statsHistory,
+      ...cleanHistory,
       { timestamp: timestamp || Date.now(), hashrate: totalHashrate }
     ].slice(-config.mining.maxHistoryPoints);
     
