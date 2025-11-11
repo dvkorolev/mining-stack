@@ -260,7 +260,7 @@
       "type": "timeseries",
       "title": "SCRYPT Temperature (°C)",
       "targets": [{
-        "expr": "miner_temp_celsius{algorithm=\"scrypt\"}",
+        "expr": "miner_temp_max_c{algorithm=\"scrypt\"}",
         "legendFormat": "{{name}} ({{ip}})",
         "refId": "A"
       }],
@@ -320,7 +320,7 @@
           "refId": "B"
         },
         {
-          "expr": "miner_temp_celsius{algorithm=\"scrypt\"}",
+          "expr": "miner_temp_max_c{algorithm=\"scrypt\"}",
           "legendFormat": "",
           "format": "table",
           "instant": true,
