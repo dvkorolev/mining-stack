@@ -301,6 +301,21 @@ export const addMiner = (minerData: Omit<MinerConfig, 'status' | 'lastSeen'>, ow
     
     const name = minerData.name || `miner-${minerData.ip.replace(/\./g, '-')}`;
     
+    // Check if miner with same name already exists
+    const nameExists = db.getMinerByName(name);
+    if (nameExists) {
+      throw new Error(`Miner with name "${name}" already exists`);
+    }
+    
+    // Check if miner with same alias already exists
+    if (minerData.alias) {
+      const allMiners = db.getAllMiners();
+      const aliasExists = allMiners.find(m => m.alias === minerData.alias);
+      if (aliasExists) {
+        throw new Error(`Miner with alias "${minerData.alias}" already exists`);
+      }
+    }
+    
     // Prepare credentials JSON
     const credentials = (minerData.username || minerData.password) 
       ? JSON.stringify({ username: minerData.username, password: minerData.password })
@@ -360,6 +375,23 @@ export const updateMiner = (minerId: string, updates: Partial<MinerConfig>): Min
       const ipExists = db.getMinerByIp(updates.ip);
       if (ipExists) {
         throw new Error(`Miner with IP ${updates.ip} already exists`);
+      }
+    }
+    
+    // Don't allow changing name to one that already exists (for different miner)
+    if (updates.name && updates.name !== existing.name) {
+      const nameExists = db.getMinerByName(updates.name);
+      if (nameExists && nameExists.ip !== existing.ip) {
+        throw new Error(`Miner with name "${updates.name}" already exists`);
+      }
+    }
+    
+    // Don't allow changing alias to one that already exists (for different miner)
+    if (updates.alias && updates.alias !== existing.alias) {
+      const allMiners = db.getAllMiners();
+      const aliasExists = allMiners.find(m => m.alias === updates.alias && m.ip !== existing.ip);
+      if (aliasExists) {
+        throw new Error(`Miner with alias "${updates.alias}" already exists`);
       }
     }
     
