@@ -83,10 +83,16 @@ const Analytics: React.FC = () => {
       };
     }
 
-    const hashrates = stats.statsHistory.map(h => h.hashrate);
-    const avgHashrate = hashrates.reduce((sum, h) => sum + h, 0) / hashrates.length;
-    const maxHashrate = Math.max(...hashrates);
-    const minHashrate = Math.min(...hashrates);
+    // Filter to last 24 hours only
+    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+    const recentHistory = stats.statsHistory.filter(h => h.timestamp >= twentyFourHoursAgo);
+    
+    const hashrates = recentHistory.map(h => h.hashrate);
+    const avgHashrate = hashrates.length > 0 
+      ? hashrates.reduce((sum, h) => sum + h, 0) / hashrates.length 
+      : 0;
+    const maxHashrate = hashrates.length > 0 ? Math.max(...hashrates) : 0;
+    const minHashrate = hashrates.length > 0 ? Math.min(...hashrates) : 0;
     const uptimePercent = (stats.activeMiners / (stats.miners?.length || 1)) * 100;
 
     // Calculate total BTC for the period
