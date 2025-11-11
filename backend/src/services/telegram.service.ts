@@ -1776,7 +1776,7 @@ No active alerts at the moment.
     if (critical.length > 0) {
       message += `🔥 *Critical:*\n`;
       critical.forEach((alert: any) => {
-        const duration = formatDuration(alert.startsAt);
+        const duration = formatDuration(alert.firedAt);
         message += `• ${alert.summary}\n`;
         if (alert.miner) message += `  Miner: \`${alert.miner}\`\n`;
         message += `  Duration: ${duration}\n`;
@@ -1787,7 +1787,7 @@ No active alerts at the moment.
     if (warning.length > 0) {
       message += `⚠️ *Warning:*\n`;
       warning.forEach((alert: any) => {
-        const duration = formatDuration(alert.startsAt);
+        const duration = formatDuration(alert.firedAt);
         message += `• ${alert.summary}\n`;
         if (alert.miner) message += `  Miner: \`${alert.miner}\`\n`;
         message += `  Duration: ${duration}\n`;
@@ -1798,7 +1798,7 @@ No active alerts at the moment.
     if (info.length > 0) {
       message += `ℹ️ *Info:*\n`;
       info.forEach((alert: any) => {
-        const duration = formatDuration(alert.startsAt);
+        const duration = formatDuration(alert.firedAt);
         message += `• ${alert.summary}\n`;
         if (alert.miner) message += `  Miner: \`${alert.miner}\`\n`;
         message += `  Duration: ${duration}\n`;
@@ -1841,16 +1841,28 @@ No active alerts at the moment.
 /**
  * Format duration for display
  */
-const formatDuration = (timestamp: number): string => {
+const formatDuration = (timestamp: number | undefined): string => {
+  // Validate timestamp
+  if (!timestamp || isNaN(timestamp) || timestamp <= 0) {
+    return 'Unknown';
+  }
+
   const now = Date.now();
   const diff = now - timestamp;
+  
+  // Handle negative or invalid differences
+  if (diff < 0 || isNaN(diff)) {
+    return 'Just now';
+  }
+
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
   if (days > 0) return `${days}d ${hours % 24}h`;
   if (hours > 0) return `${hours}h ${minutes % 60}m`;
-  return `${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return 'Just now';
 };
 
 /**
