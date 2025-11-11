@@ -280,18 +280,48 @@ const Dashboard: React.FC = () => {
       )}
       
       <Grid container spacing={3}>
-        {/* Current Hashrate Card */}
+        {/* Current Hashrate Card - Split by Algorithm */}
         <Grid item xs={12} md={3}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" color="textSecondary" gutterBottom>
                 Current Hashrate
               </Typography>
-              <Typography variant="h4" sx={{ mb: 1 }}>
-                {stats?.totalHashrate ? `${stats.totalHashrate.toFixed(2)} TH/s` : 'N/A'}
-              </Typography>
+              {(() => {
+                const sha256Miners = stats?.miners?.filter(m => m.algorithm === 'sha256') || [];
+                const scryptMiners = stats?.miners?.filter(m => m.algorithm === 'scrypt') || [];
+                const sha256Hashrate = sha256Miners.reduce((sum, m) => sum + m.currentHashrate, 0);
+                const scryptHashrate = scryptMiners.reduce((sum, m) => sum + m.currentHashrate, 0);
+                
+                return (
+                  <>
+                    {sha256Hashrate > 0 && (
+                      <Box sx={{ mb: 1 }}>
+                        <Typography variant="caption" color="textSecondary">SHA-256</Typography>
+                        <Typography variant="h5">
+                          {sha256Hashrate.toFixed(2)} TH/s
+                        </Typography>
+                      </Box>
+                    )}
+                    {scryptHashrate > 0 && (
+                      <Box>
+                        <Typography variant="caption" color="textSecondary">SCRYPT</Typography>
+                        <Typography variant="h5">
+                          {(scryptHashrate * 1000000).toFixed(0)} MH/s
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          ({scryptHashrate.toFixed(4)} TH/s)
+                        </Typography>
+                      </Box>
+                    )}
+                    {sha256Hashrate === 0 && scryptHashrate === 0 && (
+                      <Typography variant="h4">N/A</Typography>
+                    )}
+                  </>
+                );
+              })()}
               {previousStats && (
-                <Box display="flex" alignItems="center" gap={0.5}>
+                <Box display="flex" alignItems="center" gap={0.5} sx={{ mt: 1 }}>
                   {hashrateTrend.isPositive ? (
                     <TrendingUpIcon color="success" fontSize="small" />
                   ) : (

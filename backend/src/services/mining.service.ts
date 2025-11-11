@@ -1106,14 +1106,27 @@ const updateMetricsFromScheduler = async (
       const total = accepted + rejected;
       const rejectionRate = total > 0 ? (rejected / total) * 100 : 0;
       
-      // Detect algorithm (SCRYPT miners have hashrate_mhs field)
-      const isScrypt = m.hashrate_mhs !== undefined && m.hashrate_mhs > 0;
+      // Detect algorithm (SCRYPT miners have hashrate_mhs field OR model contains DG1/L3/L7)
+      const modelLower = (m.model || '').toLowerCase();
+      const isScryptByModel = modelLower.includes('dg1') || modelLower.includes('l3') || modelLower.includes('l7');
+      const isScrypt = (m.hashrate_mhs !== undefined && m.hashrate_mhs > 0) || isScryptByModel;
       const algorithm = isScrypt ? 'scrypt' : 'sha256';
       
       // Normalize hashrate to TH/s for consistency
-      // For SCRYPT: hashrate is in GH/s, convert to TH/s
+      // For SCRYPT: hashrate is in MH/s or GH/s, convert to TH/s
       // For SHA-256: hashrate is already in TH/s
-      let hashrateInThs = isScrypt ? (m.hashrate || 0) / 1000 : (m.hashrate || 0);
+      let hashrateInThs = 0;
+      if (isScrypt) {
+        // SCRYPT: hashrate_mhs (MH/s) or hashrate (GH/s)
+        if (m.hashrate_mhs && m.hashrate_mhs > 0) {
+          hashrateInThs = m.hashrate_mhs / 1000000; // MH/s to TH/s
+        } else {
+          hashrateInThs = (m.hashrate || 0) / 1000; // GH/s to TH/s
+        }
+      } else {
+        // SHA-256: hashrate is in TH/s
+        hashrateInThs = m.hashrate || 0;
+      }
       
       // Validate and cap individual miner hashrate (max 200 TH/s per miner is realistic)
       const MAX_MINER_HASHRATE = 200; // TH/s (even S21 Pro is ~200 TH/s)
