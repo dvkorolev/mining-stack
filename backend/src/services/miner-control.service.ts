@@ -331,25 +331,38 @@ export const getMinerPools = async (minerId: string): Promise<{
     });
 
     // Try each method
-    for (const method of methods) {
+    const errors: string[] = [];
+    for (let i = 0; i < methods.length; i++) {
+      const method = methods[i];
       try {
+        logger.debug(`Trying pool retrieval method ${i + 1}/${methods.length} for ${miner.name}`);
         const pools = await method();
         if (pools && pools.length > 0) {
-          logger.info(`Retrieved ${pools.length} pools for ${miner.name}`);
+          logger.info(`✓ Retrieved ${pools.length} pools for ${miner.name} using method ${i + 1}`);
           return { success: true, pools };
         }
       } catch (error) {
         // Try next method
         const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.debug(`Pool retrieval method failed for ${miner.name}: ${errorMsg}`);
+        const errorDetail = `Method ${i + 1}: ${errorMsg}`;
+        errors.push(errorDetail);
+        logger.debug(`Pool retrieval method ${i + 1} failed for ${miner.name}: ${errorMsg}`);
         continue;
       }
     }
 
-    // If all methods fail, return helpful message
+    // If all methods fail, return helpful message with error details
+    logger.warn(`Failed to sync pools for ${miner.name} (${miner.ip}). Tried ${methods.length} methods. Errors: ${errors.join('; ')}`);
     return { 
       success: false, 
-      message: `Unable to retrieve pool configuration. Please check:\n• Miner is online at ${miner.ip}\n• Credentials are correct (${username})\n• Miner API is accessible\n\nYou can view pools manually at: http://${miner.ip}` 
+      message: `Unable to retrieve pool configuration from ${miner.name}.\n\n` +
+               `Tried ${methods.length} method(s):\n${errors.map((e, i) => `${i + 1}. ${e}`).join('\n')}\n\n` +
+               `Please check:\n` +
+               `• Miner is online at ${miner.ip}\n` +
+               `• Credentials are correct (username: ${username})\n` +
+               `• Miner web interface is accessible\n` +
+               `• CGMiner API port 4028 is open\n\n` +
+               `You can view pools manually at: http://${miner.ip}`
     };
   } catch (error) {
     logger.error(`Error getting pools for miner ${minerId}:`, error);
