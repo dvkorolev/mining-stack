@@ -412,10 +412,7 @@ const Dashboard: React.FC = () => {
                     Avg Efficiency
                   </Typography>
                   <Typography variant="h6">
-                    {stats?.miners?.length ? 
-                      (stats.miners.reduce((sum, m) => sum + (m.currentHashrate / (m.hardware?.powerUsage || 1)), 0) / stats.miners.length * 1000).toFixed(2)
-                      : 'N/A'
-                    } GH/W
+                    {stats?.aggregates?.avgEfficiency?.toFixed(2) || 'N/A'} GH/W
                   </Typography>
                 </Box>
               </Grid>
@@ -425,7 +422,7 @@ const Dashboard: React.FC = () => {
                     Total Power
                   </Typography>
                   <Typography variant="h6">
-                    {stats?.miners?.reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0).toFixed(0) || 'N/A'} W
+                    {stats?.aggregates?.totalPower?.toFixed(0) || 'N/A'} W
                   </Typography>
                 </Box>
               </Grid>
@@ -435,10 +432,7 @@ const Dashboard: React.FC = () => {
                     Avg Temperature
                   </Typography>
                   <Typography variant="h6">
-                    {stats?.miners?.length ?
-                      (stats.miners.reduce((sum, m) => sum + (m.hardware?.temperature || 0), 0) / stats.miners.length).toFixed(1)
-                      : 'N/A'
-                    }°C
+                    {stats?.aggregates?.avgTemperature?.toFixed(1) || 'N/A'}°C
                   </Typography>
                 </Box>
               </Grid>
@@ -448,11 +442,7 @@ const Dashboard: React.FC = () => {
                     Rejection Rate
                   </Typography>
                   <Typography variant="h6">
-                    {stats?.miners?.length ?
-                      ((stats.miners.reduce((sum, m) => sum + m.shares.rejected, 0) / 
-                        stats.miners.reduce((sum, m) => sum + m.shares.accepted + m.shares.rejected, 1)) * 100).toFixed(2)
-                      : 'N/A'
-                    }%
+                    {stats?.aggregates?.rejectionRate?.toFixed(2) || 'N/A'}%
                   </Typography>
                 </Box>
               </Grid>

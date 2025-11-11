@@ -71,43 +71,14 @@ const Analytics: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate statistics
-  const calculateStats = () => {
-    if (!stats?.statsHistory || stats.statsHistory.length === 0) {
-      return {
-        avgHashrate: 0,
-        maxHashrate: 0,
-        minHashrate: 0,
-        uptimePercent: 0,
-        totalBTC: 0,
-      };
-    }
-
-    // Filter to last 24 hours only
-    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
-    const recentHistory = stats.statsHistory.filter(h => h.timestamp >= twentyFourHoursAgo);
-    
-    const hashrates = recentHistory.map(h => h.hashrate);
-    const avgHashrate = hashrates.length > 0 
-      ? hashrates.reduce((sum, h) => sum + h, 0) / hashrates.length 
-      : 0;
-    const maxHashrate = hashrates.length > 0 ? Math.max(...hashrates) : 0;
-    const minHashrate = hashrates.length > 0 ? Math.min(...hashrates) : 0;
-    const uptimePercent = (stats.activeMiners / (stats.miners?.length || 1)) * 100;
-
-    // Calculate total BTC for the period
-    const networkHashrate = 600000000;
-    const dailyBTC = 450;
-    const updateInterval = 5000;
-    const timeFraction = updateInterval / 1000 / 86400;
-    const totalBTC = stats.statsHistory.reduce((sum, h) => 
-      sum + ((h.hashrate / networkHashrate) * dailyBTC * timeFraction), 0
-    );
-
-    return { avgHashrate, maxHashrate, minHashrate, uptimePercent, totalBTC };
+  // Use backend aggregates instead of local calculations
+  const analyticsStats = {
+    avgHashrate: stats?.averageHashrate24h || 0,
+    maxHashrate: stats?.aggregates?.maxHashrate || 0,
+    minHashrate: stats?.aggregates?.minHashrate || 0,
+    uptimePercent: stats?.aggregates?.uptimePercent || 0,
+    totalBTC: stats?.totalMined || 0,
   };
-
-  const analyticsStats = calculateStats();
 
   // Export data to CSV
   const exportToCSV = () => {
@@ -281,10 +252,10 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent>
               <Typography variant="body2" color="textSecondary" gutterBottom>
-                Uptime
+                Min Hashrate
               </Typography>
               <Typography variant="h5">
-                {analyticsStats.uptimePercent.toFixed(1)}%
+                {analyticsStats.minHashrate.toFixed(2)} TH/s
               </Typography>
             </CardContent>
           </Card>
@@ -294,10 +265,10 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent>
               <Typography variant="body2" color="textSecondary" gutterBottom>
-                Total BTC Mined
+                Uptime
               </Typography>
               <Typography variant="h5">
-                {analyticsStats.totalBTC.toFixed(8)}
+                {analyticsStats.uptimePercent.toFixed(1)}%
               </Typography>
             </CardContent>
           </Card>

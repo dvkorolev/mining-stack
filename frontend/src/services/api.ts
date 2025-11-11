@@ -71,6 +71,16 @@ export interface MiningStatsResponse {
     timestamp: number;
     hashrate: number;
   }[];
+  // Pre-calculated aggregate statistics from backend
+  aggregates?: {
+    avgEfficiency: number; // GH/W
+    totalPower: number; // W
+    avgTemperature: number; // °C
+    rejectionRate: number; // %
+    maxHashrate: number; // TH/s (from last 24h)
+    minHashrate: number; // TH/s (from last 24h)
+    uptimePercent: number; // %
+  };
 }
 
 export const fetchMiningStats = async (): Promise<MiningStatsResponse> => {

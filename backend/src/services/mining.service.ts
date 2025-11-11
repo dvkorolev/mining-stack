@@ -80,6 +80,16 @@ export interface MiningStats {
     timestamp: number;
     hashrate: number;
   }[];
+  // Aggregate statistics (calculated once in backend)
+  aggregates?: {
+    avgEfficiency: number; // GH/W
+    totalPower: number; // W
+    avgTemperature: number; // °C
+    rejectionRate: number; // %
+    maxHashrate: number; // TH/s (from last 24h)
+    minHashrate: number; // TH/s (from last 24h)
+    uptimePercent: number; // %
+  };
 }
 
 // In-memory storage for mining stats
@@ -392,6 +402,63 @@ const getRealMinerStats = async (
 };
 
 /**
+ * Calculate aggregate statistics from miner data
+ */
+const calculateAggregates = (minerStats: MinerStats[], statsHistory: { timestamp: number; hashrate: number }[]): MiningStats['aggregates'] => {
+  if (minerStats.length === 0) {
+    return {
+      avgEfficiency: 0,
+      totalPower: 0,
+      avgTemperature: 0,
+      rejectionRate: 0,
+      maxHashrate: 0,
+      minHashrate: 0,
+      uptimePercent: 0,
+    };
+  }
+
+  // Calculate average efficiency (GH/W)
+  const avgEfficiency = minerStats.reduce((sum, m) => {
+    const power = m.hardware?.powerUsage || 1;
+    return sum + (m.currentHashrate / power);
+  }, 0) / minerStats.length * 1000; // Convert TH/W to GH/W
+
+  // Calculate total power (W)
+  const totalPower = minerStats.reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0);
+
+  // Calculate average temperature (°C)
+  const avgTemperature = minerStats.reduce((sum, m) => sum + (m.hardware?.temperature || 0), 0) / minerStats.length;
+
+  // Calculate overall rejection rate (%)
+  const totalAccepted = minerStats.reduce((sum, m) => sum + m.shares.accepted, 0);
+  const totalRejected = minerStats.reduce((sum, m) => sum + m.shares.rejected, 0);
+  const rejectionRate = totalAccepted + totalRejected > 0 
+    ? (totalRejected / (totalAccepted + totalRejected)) * 100 
+    : 0;
+
+  // Calculate max/min hashrate from last 24 hours
+  const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+  const recentHistory = statsHistory.filter(h => h.timestamp >= twentyFourHoursAgo);
+  const hashrates = recentHistory.map(h => h.hashrate);
+  const maxHashrate = hashrates.length > 0 ? Math.max(...hashrates) : 0;
+  const minHashrate = hashrates.length > 0 ? Math.min(...hashrates) : 0;
+
+  // Calculate uptime percentage
+  const onlineMiners = minerStats.filter(m => m.status === 'online').length;
+  const uptimePercent = (onlineMiners / minerStats.length) * 100;
+
+  return {
+    avgEfficiency,
+    totalPower,
+    avgTemperature,
+    rejectionRate,
+    maxHashrate,
+    minHashrate,
+    uptimePercent,
+  };
+};
+
+/**
  * Simulate miner stats for a single miner
  * Uses configuration values for realistic simulation
  * Maintains persistent state to avoid constant status changes
@@ -568,6 +635,9 @@ const simulateMiningStats = (): MiningStats => {
   const rejectedShares = minerStats.reduce((sum, m) => sum + m.shares.rejected, 0);
   const rejectionRate = totalShares > 0 ? (rejectedShares / totalShares) * 100 : 0;
 
+  // Calculate aggregates
+  const aggregates = calculateAggregates(minerStats, statsHistory);
+  
   // Update global stats
   const stats: MiningStats = {
     totalHashrate,
@@ -577,7 +647,8 @@ const simulateMiningStats = (): MiningStats => {
     totalMined: miningStats.totalMined + btcMined,
     miners: minerStats,
     timestamp: Date.now(),
-    statsHistory
+    statsHistory,
+    aggregates
   };
 
   // Save to database
@@ -642,6 +713,9 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
     
     const avgPower = minerStats.reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0);
     
+    // Calculate aggregates
+    const aggregates = calculateAggregates(minerStats, statsHistory);
+    
     const stats: MiningStats = {
       totalHashrate,
       averageHashrate24h,
@@ -650,7 +724,8 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
       totalMined: miningStats.totalMined + btcMined,
       miners: minerStats,
       timestamp: Date.now(),
-      statsHistory
+      statsHistory,
+      aggregates
     };
 
     // Save to database
@@ -1070,6 +1145,9 @@ const updateMetricsFromScheduler = async (
       ? recentStats.reduce((sum, stat) => sum + stat.hashrate, 0) / recentStats.length
       : totalHashrate;
     
+    // Calculate aggregates
+    const aggregates = calculateAggregates(minerStats, statsHistory);
+    
     // Update global stats
     miningStats = {
       totalHashrate,
@@ -1079,7 +1157,8 @@ const updateMetricsFromScheduler = async (
       totalMined: miningStats.totalMined, // Keep existing total
       miners: minerStats,
       timestamp: timestamp || Date.now(),
-      statsHistory
+      statsHistory,
+      aggregates
     };
     
     // Save to database
