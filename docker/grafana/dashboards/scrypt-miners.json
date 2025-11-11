@@ -360,17 +360,6 @@
               "__name__": true,
               "algorithm": true
             },
-            "indexByName": {
-              "name": 0,
-              "ip": 1,
-              "model": 2,
-              "Value #A": 3,
-              "Value #B": 4,
-              "Value #C": 5,
-              "Value #D": 6,
-              "Value #E": 7,
-              "Value #F": 8
-            },
             "renameByName": {
               "name": "Miner",
               "ip": "IP",
