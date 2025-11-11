@@ -224,6 +224,10 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     # Determine algorithm label
     algo = 'scrypt' if is_scrypt else 'sha256'
     
+    # Clean up old metrics if miner labels changed (name/model/algorithm)
+    from metrics import update_miner_label_cache
+    update_miner_label_cache(ip, name, model, algo)
+    
     miner_scrape_status.labels(ip=ip, name=name, model=model, algorithm=algo).set(scrape_status)
     miner_state.labels(ip=ip, name=name, model=model, algorithm=algo).set(state)
     

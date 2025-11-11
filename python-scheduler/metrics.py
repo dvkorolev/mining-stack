@@ -52,3 +52,63 @@ miner_hashrate_mhs = Gauge('miner_hashrate_mhs', 'Miner hashrate in MH/s (SCRYPT
 
 # Gap-filling observability
 miner_gaps_filled_total = Counter('miner_gaps_filled_total', 'Count of gaps filled by CGMiner', ['type'])
+
+# ============================================================================
+# METRIC CLEANUP HELPERS
+# ============================================================================
+
+# Track miner label history to detect changes
+_miner_label_cache = {}  # {ip: {'name': str, 'model': str, 'algorithm': str}}
+
+def get_all_miner_metrics():
+    """Return all Gauge metrics that track miners"""
+    return [
+        miner_hashrate,
+        miner_hashrate_mhs,
+        miner_power,
+        miner_temp_max,
+        miner_is_mining,
+        miner_uptime,
+        miner_efficiency,
+        miner_fault_light,
+        miner_errors_count,
+        miner_scrape_status,
+        miner_state,
+        miner_pool_accepted,
+        miner_pool_rejected,
+    ]
+
+def remove_old_miner_labels(ip: str, old_name: str, old_model: str, old_algorithm: str):
+    """Remove metrics with old labels when a miner's name/model changes"""
+    for metric in get_all_miner_metrics():
+        try:
+            metric.remove(ip, old_name, old_model, old_algorithm)
+        except KeyError:
+            # Label combination doesn't exist, that's fine
+            pass
+
+def update_miner_label_cache(ip: str, name: str, model: str, algorithm: str):
+    """
+    Track miner labels and remove old metrics if labels changed.
+    Call this BEFORE setting new metrics.
+    """
+    if ip in _miner_label_cache:
+        old_labels = _miner_label_cache[ip]
+        # Check if any labels changed
+        if (old_labels['name'] != name or 
+            old_labels['model'] != model or 
+            old_labels['algorithm'] != algorithm):
+            # Labels changed - remove old metrics
+            remove_old_miner_labels(
+                ip,
+                old_labels['name'],
+                old_labels['model'],
+                old_labels['algorithm']
+            )
+    
+    # Update cache with new labels
+    _miner_label_cache[ip] = {
+        'name': name,
+        'model': model,
+        'algorithm': algorithm
+    }
