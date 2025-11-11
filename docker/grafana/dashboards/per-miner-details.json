@@ -216,7 +216,7 @@
       "title": "SHA-256 Detailed Miner Statistics",
       "targets": [
         {
-          "expr": "max by (ip, name, model) (miner_hashrate_ths{algorithm=\"sha256\"})",
+          "expr": "max by (ip, name, model, algorithm) (miner_hashrate_ths{algorithm=\"sha256\"})",
           "format": "table",
           "instant": true,
           "refId": "A"
