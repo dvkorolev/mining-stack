@@ -192,10 +192,12 @@
             "lineWidth": 2,
             "fillOpacity": 10,
             "showPoints": "never",
-            "spanNulls": true
+            "spanNulls": true,
+            "axisLabel": "GH/s"
           },
           "unit": "none",
           "decimals": 2,
+          "displayName": "${__field.labels.name} (${__field.labels.ip})",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -204,7 +206,8 @@
               {"value": 20, "color": "green"}
             ]
           }
-        }
+        },
+        "overrides": []
       }
     },
     {
