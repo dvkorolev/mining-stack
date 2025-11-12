@@ -24,6 +24,7 @@ import {
 } from '../config/miners.config';
 import { requireAdmin } from '../middleware/auth.middleware';
 import { getDatabase } from '../services/database.service';
+import * as alertRulesService from '../services/alert-rules.service';
 import { 
   initTelegramBot, 
   testConnection, 
@@ -860,8 +861,6 @@ router.post('/mining/backup-yaml', requireAdmin, (req, res, next) => {
 });
 
 // ==================== ALERT RULES MANAGEMENT ENDPOINTS ====================
-
-import * as alertRulesService from '../services/alert-rules.service';
 
 /**
  * GET /api/mining/alert-rules
