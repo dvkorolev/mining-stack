@@ -352,6 +352,7 @@ const Alerts: React.FC = () => {
         <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
           <Tab label={`Active (${activeAlerts.length})`} />
           <Tab label={`History (${alertHistory.length})`} />
+          <Tab label="Alert Rules" />
         </Tabs>
       </Paper>
 
@@ -537,6 +538,322 @@ const Alerts: React.FC = () => {
               </Table>
             </TableContainer>
           )}
+        </Paper>
+      )}
+
+      {/* Alert Rules Tab */}
+      {currentTab === 2 && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h5" gutterBottom>
+            Configured Alert Rules
+          </Typography>
+          <Typography variant="body2" color="textSecondary" paragraph>
+            These are the automated alert rules configured in Prometheus. They continuously monitor your mining farm and trigger alerts when conditions are met.
+          </Typography>
+
+          {/* Mining Critical Alerts */}
+          <Box sx={{ mt: 4, mb: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ErrorIcon color="error" />
+              Critical Mining Alerts
+            </Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell><strong>Alert Name</strong></TableCell>
+                    <TableCell><strong>Condition</strong></TableCell>
+                    <TableCell><strong>Duration</strong></TableCell>
+                    <TableCell><strong>Description</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>MinerOffline</TableCell>
+                    <TableCell>Scrape failed</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Miner is unreachable</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerHighTemperature</TableCell>
+                    <TableCell>&gt; 85°C</TableCell>
+                    <TableCell>2 min</TableCell>
+                    <TableCell>Temperature critically high</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerNotMining</TableCell>
+                    <TableCell>Online but not mining</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Miner stopped mining</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerHashrateCritical (SHA-256)</TableCell>
+                    <TableCell>&lt; 50% of expected</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Hashrate critically low</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerHashrateCritical (SCRYPT)</TableCell>
+                    <TableCell>&lt; 10,000 MH/s</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Hashrate critically low</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerZombieState</TableCell>
+                    <TableCell>Hashrate &gt; 0 but power &lt; 200W</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Reporting stale data after power outage</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+
+          {/* Mining Warning Alerts */}
+          <Box sx={{ mt: 4, mb: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <WarningIcon color="warning" />
+              Warning Mining Alerts
+            </Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell><strong>Alert Name</strong></TableCell>
+                    <TableCell><strong>Condition</strong></TableCell>
+                    <TableCell><strong>Duration</strong></TableCell>
+                    <TableCell><strong>Description</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>MinerTemperatureHigh</TableCell>
+                    <TableCell>75°C - 85°C</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Temperature elevated</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerHashrateWarning (SHA-256)</TableCell>
+                    <TableCell>50-80% of expected</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Hashrate below expected</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerHashrateWarning (SCRYPT)</TableCell>
+                    <TableCell>10,000 - 20,000 MH/s</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Hashrate below expected</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerRejectionRateWarning</TableCell>
+                    <TableCell>2% - 5%</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Elevated rejection rate</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerRejectionRateCritical</TableCell>
+                    <TableCell>&gt; 5%</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>High rejection rate</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerFaultLight</TableCell>
+                    <TableCell>Fault light on</TableCell>
+                    <TableCell>2 min</TableCell>
+                    <TableCell>Hardware fault indicator</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerErrors</TableCell>
+                    <TableCell>Error count &gt; 0</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Miner reporting errors</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerMissingChips</TableCell>
+                    <TableCell>Chips &lt; expected</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Missing chips on hashboard</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerFanSpeedWarning</TableCell>
+                    <TableCell>2000 - 3000 RPM</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Fan speed low</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerFanSpeedCritical</TableCell>
+                    <TableCell>&lt; 2000 RPM</TableCell>
+                    <TableCell>2 min</TableCell>
+                    <TableCell>Fan speed critically low</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>MinerPoorEfficiency</TableCell>
+                    <TableCell>&gt; 35 J/TH</TableCell>
+                    <TableCell>15 min</TableCell>
+                    <TableCell>Poor power efficiency</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+
+          {/* Farm-Wide Alerts */}
+          <Box sx={{ mt: 4, mb: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <NotificationsActiveIcon color="primary" />
+              Farm-Wide Alerts
+            </Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell><strong>Alert Name</strong></TableCell>
+                    <TableCell><strong>Condition</strong></TableCell>
+                    <TableCell><strong>Duration</strong></TableCell>
+                    <TableCell><strong>Description</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>FarmMultipleMinersOffline</TableCell>
+                    <TableCell>&gt; 3 miners offline</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Multiple miners unreachable</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>FarmHashrateDrop (SHA-256)</TableCell>
+                    <TableCell>&lt; 1500 TH/s (10+ miners)</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Total farm hashrate low</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>FarmHashrateDrop (SCRYPT)</TableCell>
+                    <TableCell>&lt; 10,000 MH/s</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Total farm hashrate low</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>FarmHighTemperature</TableCell>
+                    <TableCell>Avg &gt; 80°C</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Average temperature high</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>FarmHighPowerConsumption</TableCell>
+                    <TableCell>&gt; 70 kW</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Total power consumption high</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+
+          {/* Pool Network Alerts */}
+          <Box sx={{ mt: 4, mb: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <InfoIcon color="info" />
+              Pool & Network Alerts
+            </Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell><strong>Alert Name</strong></TableCell>
+                    <TableCell><strong>Condition</strong></TableCell>
+                    <TableCell><strong>Duration</strong></TableCell>
+                    <TableCell><strong>Description</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>PoolUnreachable</TableCell>
+                    <TableCell>Pool not reachable</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Mining pool unreachable</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>PoolHighPacketLoss</TableCell>
+                    <TableCell>&gt; 10% packet loss</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>High packet loss to pool</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>PoolHighLatency</TableCell>
+                    <TableCell>&gt; 100ms</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>High latency to pool</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>PoolPacketLoss</TableCell>
+                    <TableCell>1% - 10% packet loss</TableCell>
+                    <TableCell>10 min</TableCell>
+                    <TableCell>Packet loss detected</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>PoolSlowConnection</TableCell>
+                    <TableCell>&gt; 1000ms connect time</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Slow connection to pool</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>PoolDNSFailure</TableCell>
+                    <TableCell>DNS resolution failed</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Cannot resolve pool hostname</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+
+          {/* System Alerts */}
+          <Box sx={{ mt: 4, mb: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <WarningIcon color="warning" />
+              System Alerts
+            </Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell><strong>Alert Name</strong></TableCell>
+                    <TableCell><strong>Condition</strong></TableCell>
+                    <TableCell><strong>Duration</strong></TableCell>
+                    <TableCell><strong>Description</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>HighCPUUsage</TableCell>
+                    <TableCell>&gt; 80%</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>High CPU usage on system</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>HighMemoryUsage</TableCell>
+                    <TableCell>&gt; 85%</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>High memory usage on system</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>LowDiskSpace</TableCell>
+                    <TableCell>&lt; 15% available</TableCell>
+                    <TableCell>5 min</TableCell>
+                    <TableCell>Low disk space on system</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+
+          <MuiAlert severity="info" sx={{ mt: 3 }}>
+            <Typography variant="body2">
+              <strong>Note:</strong> These rules are evaluated by Prometheus every 30 seconds. 
+              Alerts are sent to Telegram when conditions persist for the specified duration. 
+              You can also create custom manual alerts using the "Create Alert" button above.
+            </Typography>
+          </MuiAlert>
         </Paper>
       )}
 
