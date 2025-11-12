@@ -445,3 +445,111 @@ export const getAlertPersistenceMetrics = (): AlertPersistenceMetrics => {
     averageWriteDurationMs,
   };
 };
+
+/**
+ * Create a manual alert (triggered by user via UI)
+ */
+export const createManualAlert = async (params: {
+  name: string;
+  severity: 'critical' | 'warning' | 'info';
+  summary: string;
+  description: string;
+  miner?: string;
+  minerIp?: string;
+  isFarmWide?: boolean;
+  recipients?: string[];
+}): Promise<Alert> => {
+  const alertId = `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const now = Date.now();
+  
+  // Determine recipients
+  let alertRecipients = params.recipients;
+  if (!alertRecipients || alertRecipients.length === 0) {
+    alertRecipients = await determineAlertRecipients(params.minerIp, params.isFarmWide);
+  }
+  
+  const alert: Alert = {
+    id: alertId,
+    name: params.name,
+    severity: params.severity,
+    status: 'firing',
+    miner: params.miner,
+    minerIp: params.minerIp,
+    summary: params.summary,
+    description: params.description,
+    firedAt: now,
+    labels: {
+      alertname: params.name,
+      severity: params.severity,
+      source: 'manual',
+      miner: params.miner || '',
+      ip: params.minerIp || '',
+    },
+    annotations: {
+      summary: params.summary,
+      description: params.description,
+    },
+    recipients: alertRecipients,
+    isFarmWide: params.isFarmWide || false,
+  };
+  
+  // Add to active alerts
+  activeAlerts.set(alertId, alert);
+  
+  // Add to history
+  addToHistory(alert);
+  
+  // Send to Telegram
+  const { sendSmartAlert } = require('./telegram.service');
+  await sendSmartAlert({
+    severity: alert.severity,
+    title: alert.summary,
+    description: alert.description,
+    miner: alert.miner,
+    recipients: alert.recipients,
+    isFarmWide: alert.isFarmWide,
+  });
+  
+  const recipientInfo = alert.isFarmWide ? 'all users' : `${alert.recipients?.length || 0} user(s)`;
+  logger.info(`Manual alert created: ${alert.name} - ${alert.summary} (sent to ${recipientInfo})`);
+  
+  return alert;
+};
+
+/**
+ * Resolve a manual alert
+ */
+export const resolveManualAlert = async (alertId: string): Promise<boolean> => {
+  const alert = activeAlerts.get(alertId);
+  
+  if (!alert) {
+    logger.warn(`Attempted to resolve non-existent alert: ${alertId}`);
+    return false;
+  }
+  
+  // Update alert status
+  alert.status = 'resolved';
+  alert.resolvedAt = Date.now();
+  
+  // Remove from active alerts
+  activeAlerts.delete(alertId);
+  
+  // Update in history
+  addToHistory(alert);
+  
+  // Send resolution notification
+  const resolvedEmoji = alert.severity === 'critical' ? '✅' : alert.severity === 'warning' ? '✔️' : 'ℹ️';
+  const { sendSmartAlert } = require('./telegram.service');
+  await sendSmartAlert({
+    severity: 'info',
+    title: `${resolvedEmoji} Resolved: ${alert.name}`,
+    description: alert.summary,
+    miner: alert.miner,
+    recipients: alert.recipients,
+    isFarmWide: alert.isFarmWide,
+  });
+  
+  logger.info(`Manual alert resolved: ${alert.name} - ${alert.summary}`);
+  
+  return true;
+};

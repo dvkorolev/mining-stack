@@ -659,6 +659,71 @@ router.get('/alerts/stats', async (req, res, next) => {
   }
 });
 
+// Create manual alert
+router.post('/alerts/manual', async (req, res, next) => {
+  try {
+    const { name, severity, summary, description, miner, minerIp, isFarmWide, recipients } = req.body;
+    
+    // Validation
+    if (!name || !severity || !summary) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: name, severity, summary',
+      });
+    }
+    
+    if (!['critical', 'warning', 'info'].includes(severity)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid severity. Must be: critical, warning, or info',
+      });
+    }
+    
+    const { createManualAlert } = require('../services/alert.service');
+    const alert = await createManualAlert({
+      name,
+      severity,
+      summary,
+      description: description || '',
+      miner,
+      minerIp,
+      isFarmWide: isFarmWide || false,
+      recipients,
+    });
+    
+    res.json({
+      success: true,
+      alert,
+      message: 'Manual alert created successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Resolve manual alert
+router.post('/alerts/:alertId/resolve', async (req, res, next) => {
+  try {
+    const { alertId } = req.params;
+    const { resolveManualAlert } = require('../services/alert.service');
+    const success = await resolveManualAlert(alertId);
+    
+    if (!success) {
+      return res.status(404).json({
+        success: false,
+        message: 'Alert not found or already resolved',
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Alert resolved successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ===== Miner Stats API =====
 
 // Get detailed stats for specific miner

@@ -18,6 +18,19 @@ import {
   Alert as MuiAlert,
   CircularProgress,
   Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormControlLabel,
+  Checkbox,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
@@ -26,6 +39,8 @@ import WarningIcon from '@mui/icons-material/Warning';
 import ErrorIcon from '@mui/icons-material/Error';
 import InfoIcon from '@mui/icons-material/Info';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import AddAlertIcon from '@mui/icons-material/AddAlert';
+import CloseIcon from '@mui/icons-material/Close';
 
 interface Alert {
   id: string;
@@ -56,6 +71,18 @@ const Alerts: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentTab, setCurrentTab] = useState(0);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  // Manual alert form state
+  const [formData, setFormData] = useState({
+    name: '',
+    severity: 'warning' as 'critical' | 'warning' | 'info',
+    summary: '',
+    description: '',
+    miner: '',
+    isFarmWide: false,
+  });
 
   // Load alerts data
   const loadAlerts = async () => {
@@ -92,6 +119,64 @@ const Alerts: React.FC = () => {
     const interval = setInterval(loadAlerts, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Create manual alert
+  const handleCreateAlert = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/alerts/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to create alert');
+      }
+      
+      setSuccessMessage('Alert created successfully!');
+      setCreateDialogOpen(false);
+      setFormData({
+        name: '',
+        severity: 'warning',
+        summary: '',
+        description: '',
+        miner: '',
+        isFarmWide: false,
+      });
+      
+      // Reload alerts
+      await loadAlerts();
+    } catch (err: any) {
+      setError(err.message || 'Failed to create alert');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Resolve manual alert
+  const handleResolveAlert = async (alertId: string) => {
+    try {
+      const response = await fetch(`/api/alerts/${alertId}/resolve`, {
+        method: 'POST',
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to resolve alert');
+      }
+      
+      setSuccessMessage('Alert resolved successfully!');
+      
+      // Reload alerts
+      await loadAlerts();
+    } catch (err: any) {
+      setError(err.message || 'Failed to resolve alert');
+    }
+  };
 
   // Get severity icon and color
   const getSeverityIcon = (severity: string) => {
@@ -155,19 +240,35 @@ const Alerts: React.FC = () => {
         <Typography variant="h4">
           Alerts & Notifications
         </Typography>
-        <Button
-          variant="outlined"
-          startIcon={<RefreshIcon />}
-          onClick={loadAlerts}
-          disabled={loading}
-        >
-          Refresh
-        </Button>
+        <Box display="flex" gap={2}>
+          <Button
+            variant="contained"
+            startIcon={<AddAlertIcon />}
+            onClick={() => setCreateDialogOpen(true)}
+            color="primary"
+          >
+            Create Alert
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={loadAlerts}
+            disabled={loading}
+          >
+            Refresh
+          </Button>
+        </Box>
       </Box>
 
       {error && (
         <MuiAlert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
+        </MuiAlert>
+      )}
+
+      {successMessage && (
+        <MuiAlert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage(null)}>
+          {successMessage}
         </MuiAlert>
       )}
 
@@ -278,6 +379,7 @@ const Alerts: React.FC = () => {
                     <TableCell>Description</TableCell>
                     <TableCell>Fired At</TableCell>
                     <TableCell>Duration</TableCell>
+                    <TableCell>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -323,6 +425,20 @@ const Alerts: React.FC = () => {
                           color="error"
                           variant="outlined"
                         />
+                      </TableCell>
+                      <TableCell>
+                        {alert.labels?.source === 'manual' && (
+                          <Tooltip title="Resolve Alert">
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="success"
+                              onClick={() => handleResolveAlert(alert.id)}
+                            >
+                              Resolve
+                            </Button>
+                          </Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -423,6 +539,115 @@ const Alerts: React.FC = () => {
           )}
         </Paper>
       )}
+
+      {/* Create Alert Dialog */}
+      <Dialog
+        open={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">Create Manual Alert</Typography>
+            <IconButton onClick={() => setCreateDialogOpen(false)} size="small">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField
+              label="Alert Name"
+              fullWidth
+              required
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="e.g., Maintenance Required"
+            />
+            
+            <FormControl fullWidth required>
+              <InputLabel>Severity</InputLabel>
+              <Select
+                value={formData.severity}
+                label="Severity"
+                onChange={(e) => setFormData({ ...formData, severity: e.target.value as any })}
+              >
+                <MenuItem value="info">
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <InfoIcon fontSize="small" color="info" />
+                    Info
+                  </Box>
+                </MenuItem>
+                <MenuItem value="warning">
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <WarningIcon fontSize="small" color="warning" />
+                    Warning
+                  </Box>
+                </MenuItem>
+                <MenuItem value="critical">
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <ErrorIcon fontSize="small" color="error" />
+                    Critical
+                  </Box>
+                </MenuItem>
+              </Select>
+            </FormControl>
+            
+            <TextField
+              label="Summary"
+              fullWidth
+              required
+              value={formData.summary}
+              onChange={(e) => setFormData({ ...formData, summary: e.target.value })}
+              placeholder="Brief summary of the alert"
+            />
+            
+            <TextField
+              label="Description"
+              fullWidth
+              multiline
+              rows={3}
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Detailed description (optional)"
+            />
+            
+            <TextField
+              label="Miner Name (Optional)"
+              fullWidth
+              value={formData.miner}
+              onChange={(e) => setFormData({ ...formData, miner: e.target.value })}
+              placeholder="Leave empty for farm-wide alert"
+              helperText="Specify a miner name to send alert to miner owner only"
+            />
+            
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={formData.isFarmWide}
+                  onChange={(e) => setFormData({ ...formData, isFarmWide: e.target.checked })}
+                />
+              }
+              label="Send to all users (farm-wide alert)"
+            />
+            
+            <MuiAlert severity="info" sx={{ mt: 1 }}>
+              This alert will be sent via Telegram to {formData.isFarmWide ? 'all authorized users' : formData.miner ? 'the miner owner' : 'all authorized users'}.
+            </MuiAlert>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleCreateAlert}
+            disabled={!formData.name || !formData.severity || !formData.summary}
+          >
+            Create Alert
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
