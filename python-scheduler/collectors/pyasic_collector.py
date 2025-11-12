@@ -473,11 +473,34 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     except Exception as e:
                         logger.debug(f"{name}: Failed to get profile power: {e}")
                 
+                # Determine is_mining more reliably than PyASIC
+                # PyASIC sometimes returns False even when miner is actively mining
+                pools = _normalize_list(data.pools if hasattr(data, 'pools') else None)
+                is_mining_override = False
+                
+                # Check if any pool is alive and accepting shares
+                if pools:
+                    for pool in pools:
+                        if hasattr(pool, 'alive') and pool.alive:
+                            is_mining_override = True
+                            break
+                        elif isinstance(pool, dict) and pool.get('status', '').lower() in ['alive', 'normal', 'active']:
+                            is_mining_override = True
+                            break
+                
+                # Fallback: If hashrate > 10 TH/s (or 1000 MH/s for scrypt), assume mining
+                if not is_mining_override and hashrate > 10:
+                    is_mining_override = True
+                    logger.debug(f"{name}: Overriding is_mining to True based on hashrate ({hashrate:.2f})")
+                
+                # Use override if we determined miner is mining, otherwise trust PyASIC
+                is_mining_final = is_mining_override if is_mining_override else (data.is_mining if hasattr(data, 'is_mining') else True)
+                
                 pyasic_data = {
                     'hashrate': hashrate,
                     'power': power,
                     'temperature': chip_temp,
-                    'is_mining': data.is_mining if hasattr(data, 'is_mining') else True,
+                    'is_mining': is_mining_final,
                     'uptime': _safe_float(data.uptime),
                     'efficiency': _safe_float(data.efficiency),
                     'fault_light': data.fault_light if hasattr(data, 'fault_light') else False,
@@ -485,7 +508,7 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     'hashboards': _normalize_list(data.hashboards if hasattr(data, 'hashboards') else None),
                     'fans': _normalize_list(data.fans if hasattr(data, 'fans') else None),
                     'fan_psu': _normalize_list(data.fan_psu if hasattr(data, 'fan_psu') else None),
-                    'pools': _normalize_list(data.pools if hasattr(data, 'pools') else None),
+                    'pools': pools,
                 }
                 
                 gaps = _check_data_gaps(pyasic_data, model)
