@@ -347,23 +347,25 @@ export async function reloadPrometheusConfig(): Promise<{ success: boolean; mess
       };
     }
 
-    // Send HUP signal to Prometheus to reload config
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
-    const execAsync = promisify(exec);
+    // Use Prometheus HTTP API to reload configuration
+    const prometheusUrl = process.env.PROMETHEUS_URL || 'http://prometheus:9090';
+    const reloadUrl = `${prometheusUrl}/-/reload`;
 
-    await execAsync('docker exec mining-stack-prometheus-1 kill -HUP 1');
+    const response = await axios.post(reloadUrl, {}, {
+      timeout: 5000,
+      validateStatus: (status) => status === 200,
+    });
 
-    logger.info('Prometheus configuration reloaded successfully');
+    logger.info('Prometheus configuration reloaded successfully via HTTP API');
     return {
       success: true,
       message: 'Prometheus configuration reloaded successfully',
     };
-  } catch (error) {
-    logger.error('Error reloading Prometheus:', error);
+  } catch (error: any) {
+    logger.error('Error reloading Prometheus:', error.message);
     return {
       success: false,
-      message: error instanceof Error ? error.message : 'Failed to reload Prometheus',
+      message: error.message || 'Failed to reload Prometheus',
     };
   }
 }
