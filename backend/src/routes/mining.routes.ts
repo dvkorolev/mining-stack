@@ -859,4 +859,196 @@ router.post('/mining/backup-yaml', requireAdmin, (req, res, next) => {
   }
 });
 
+// ==================== ALERT RULES MANAGEMENT ENDPOINTS ====================
+
+import * as alertRulesService from '../services/alert-rules.service';
+
+/**
+ * GET /api/mining/alert-rules
+ * Get all alert rules (with optional filters)
+ */
+router.get('/alert-rules', async (req, res, next) => {
+  try {
+    const filters: any = {};
+
+    if (req.query.enabled !== undefined) {
+      filters.enabled = req.query.enabled === 'true';
+    }
+    if (req.query.severity) {
+      filters.severity = req.query.severity;
+    }
+    if (req.query.component) {
+      filters.component = req.query.component;
+    }
+    if (req.query.scope) {
+      filters.scope = req.query.scope;
+    }
+    if (req.query.owner) {
+      filters.owner = req.query.owner;
+    }
+    if (req.query.minerIp) {
+      filters.minerIp = req.query.minerIp;
+    }
+
+    const rules = alertRulesService.getAllAlertRules(filters);
+    res.json({ success: true, rules });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/mining/alert-rules/:id
+ * Get single alert rule by ID
+ */
+router.get('/alert-rules/:id', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, error: 'Invalid rule ID' });
+    }
+
+    const rule = alertRulesService.getAlertRuleById(id);
+    if (!rule) {
+      return res.status(404).json({ success: false, error: 'Alert rule not found' });
+    }
+
+    res.json({ success: true, rule });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/mining/alert-rules
+ * Create new alert rule
+ */
+router.post('/alert-rules', async (req, res, next) => {
+  try {
+    const result = alertRulesService.createAlertRule(req.body);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/mining/alert-rules/:id
+ * Update existing alert rule
+ */
+router.put('/alert-rules/:id', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, error: 'Invalid rule ID' });
+    }
+
+    const changedBy = req.body.changed_by;
+    const result = alertRulesService.updateAlertRule(id, req.body, changedBy);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/mining/alert-rules/:id
+ * Delete alert rule
+ */
+router.delete('/alert-rules/:id', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, error: 'Invalid rule ID' });
+    }
+
+    const changedBy = req.body.changed_by || req.query.changed_by as string;
+    const result = alertRulesService.deleteAlertRule(id, changedBy);
+
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/mining/alert-rules/:id/toggle
+ * Enable or disable alert rule
+ */
+router.post('/alert-rules/:id/toggle', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, error: 'Invalid rule ID' });
+    }
+
+    const { enabled, changed_by } = req.body;
+    if (enabled === undefined) {
+      return res.status(400).json({ success: false, error: 'enabled field is required' });
+    }
+
+    const result = alertRulesService.toggleAlertRule(id, enabled, changed_by);
+
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/mining/alert-rules/:id/history
+ * Get alert rule change history
+ */
+router.get('/alert-rules/:id/history', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, error: 'Invalid rule ID' });
+    }
+
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+    const history = alertRulesService.getAlertRuleHistory(id, limit);
+
+    res.json({ success: true, history });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/mining/alert-rules/regenerate
+ * Regenerate Prometheus YAML from database and reload
+ */
+router.post('/alert-rules/regenerate', async (req, res, next) => {
+  try {
+    const result = await alertRulesService.regeneratePrometheusYAML();
+    
+    if (!result.success) {
+      return res.status(500).json(result);
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

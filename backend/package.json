@@ -9,7 +9,9 @@
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1",
     "migrate": "node dist/scripts/migrate-yaml-to-db.js",
-    "migrate:dev": "ts-node src/scripts/migrate-yaml-to-db.ts"
+    "migrate:dev": "ts-node src/scripts/migrate-yaml-to-db.ts",
+    "migrate:alert-rules": "node dist/scripts/migrate-alert-rules.js",
+    "migrate:alert-rules:dev": "ts-node src/scripts/migrate-alert-rules.ts"
   },
   "dependencies": {
     "@types/express": "^4.17.17",
