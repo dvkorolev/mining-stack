@@ -508,8 +508,9 @@ async def collect_all_metrics():
                         
                         # Explicitly set state metric (in case _update_metrics didn't)
                         model_normalized = miner['model'].replace(" ", "_")
-                        logger.info(f"  Setting state metric for {miner['name']}: state={miner_data['state']}, model={model_normalized}")
-                        miner_state.labels(ip=miner['ip'], name=miner['name'], model=model_normalized).set(miner_data['state'])
+                        algorithm = miner.get('algorithm', 'sha256')  # Default to sha256
+                        logger.info(f"  Setting state metric for {miner['name']}: state={miner_data['state']}, model={model_normalized}, algorithm={algorithm}")
+                        miner_state.labels(ip=miner['ip'], name=miner['name'], model=model_normalized, algorithm=algorithm).set(miner_data['state'])
                         
                         # Also update pools if available
                         if 'pools' in fallback_data and fallback_data['pools']:
