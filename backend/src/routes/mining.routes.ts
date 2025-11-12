@@ -724,6 +724,35 @@ router.post('/alerts/:alertId/resolve', async (req, res, next) => {
   }
 });
 
+// ===== Prometheus Alert Rules API =====
+
+// Get all Prometheus alert rules
+router.get('/prometheus/rules', async (req, res, next) => {
+  try {
+    const { getPrometheusAlertRules } = require('../services/prometheus.service');
+    const rules = await getPrometheusAlertRules();
+    res.json(rules);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Reload Prometheus configuration
+router.post('/prometheus/reload', async (req, res, next) => {
+  try {
+    const { reloadPrometheusConfig } = require('../services/prometheus.service');
+    const result = await reloadPrometheusConfig();
+    
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ===== Miner Stats API =====
 
 // Get detailed stats for specific miner

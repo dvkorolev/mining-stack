@@ -8,6 +8,9 @@
 import axios from 'axios';
 import { logger } from '../utils/logger';
 import { config } from '../config/config';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as yaml from 'js-yaml';
 
 // Prometheus configuration
 const PROMETHEUS_URL = process.env.PROMETHEUS_URL || 'http://prometheus:9090';
@@ -259,5 +262,108 @@ export async function checkPrometheusHealth(): Promise<boolean> {
   } catch (error) {
     logger.warn('Prometheus health check failed');
     return false;
+  }
+}
+
+/**
+ * Alert Rule Interface
+ */
+export interface AlertRule {
+  alert: string;
+  expr: string;
+  for: string;
+  labels: {
+    severity: string;
+    component: string;
+    [key: string]: string;
+  };
+  annotations: {
+    summary: string;
+    description: string;
+  };
+}
+
+export interface AlertRuleGroup {
+  name: string;
+  interval: string;
+  rules: AlertRule[];
+}
+
+export interface AlertRulesFile {
+  groups: AlertRuleGroup[];
+}
+
+/**
+ * Get Prometheus alert rules from YAML files
+ */
+export async function getPrometheusAlertRules(): Promise<{
+  mining: AlertRulesFile | null;
+  poolNetwork: AlertRulesFile | null;
+  error?: string;
+}> {
+  try {
+    const rulesDir = process.env.NODE_ENV === 'production'
+      ? '/opt/mining-stack/docker/prometheus/rules'
+      : path.join(process.cwd(), '../docker/prometheus/rules');
+
+    const miningRulesPath = path.join(rulesDir, 'mining_alerts.yml');
+    const poolNetworkRulesPath = path.join(rulesDir, 'pool_network_alerts.yml');
+
+    let mining: AlertRulesFile | null = null;
+    let poolNetwork: AlertRulesFile | null = null;
+
+    // Read mining alerts
+    if (fs.existsSync(miningRulesPath)) {
+      const miningContent = fs.readFileSync(miningRulesPath, 'utf8');
+      mining = yaml.load(miningContent) as AlertRulesFile;
+    }
+
+    // Read pool/network alerts
+    if (fs.existsSync(poolNetworkRulesPath)) {
+      const poolContent = fs.readFileSync(poolNetworkRulesPath, 'utf8');
+      poolNetwork = yaml.load(poolContent) as AlertRulesFile;
+    }
+
+    return { mining, poolNetwork };
+  } catch (error) {
+    logger.error('Error reading Prometheus alert rules:', error);
+    return {
+      mining: null,
+      poolNetwork: null,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Reload Prometheus configuration
+ */
+export async function reloadPrometheusConfig(): Promise<{ success: boolean; message: string }> {
+  try {
+    if (process.env.NODE_ENV !== 'production') {
+      return {
+        success: false,
+        message: 'Prometheus reload is only available in production',
+      };
+    }
+
+    // Send HUP signal to Prometheus to reload config
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+
+    await execAsync('docker exec mining-stack-prometheus-1 kill -HUP 1');
+
+    logger.info('Prometheus configuration reloaded successfully');
+    return {
+      success: true,
+      message: 'Prometheus configuration reloaded successfully',
+    };
+  } catch (error) {
+    logger.error('Error reloading Prometheus:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Failed to reload Prometheus',
+    };
   }
 }
