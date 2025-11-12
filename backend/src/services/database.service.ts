@@ -65,7 +65,7 @@ export interface AlertRuleRecord {
   description?: string;
   rule_group: string;
   severity: 'critical' | 'warning' | 'info';
-  component: 'miner' | 'network' | 'farm';
+  component: 'miner' | 'network' | 'farm' | 'system';
   expr: string;
   for_duration: string;
   summary_template: string;
@@ -258,7 +258,7 @@ class DatabaseService {
         description TEXT,
         rule_group TEXT NOT NULL,
         severity TEXT NOT NULL CHECK (severity IN ('critical', 'warning', 'info')),
-        component TEXT NOT NULL CHECK (component IN ('miner', 'network', 'farm')),
+        component TEXT NOT NULL CHECK (component IN ('miner', 'network', 'farm', 'system')),
         expr TEXT NOT NULL,
         for_duration TEXT NOT NULL,
         summary_template TEXT NOT NULL,

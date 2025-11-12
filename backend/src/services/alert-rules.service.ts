@@ -20,7 +20,7 @@ import { logger } from '../utils/logger';
 export interface AlertRuleFilters {
   enabled?: boolean;
   severity?: 'critical' | 'warning' | 'info';
-  component?: 'miner' | 'network' | 'farm';
+  component?: 'miner' | 'network' | 'farm' | 'system';
   scope?: 'global' | 'per_miner' | 'per_owner';
   owner?: string;
   minerIp?: string;
@@ -32,7 +32,7 @@ export interface CreateAlertRuleParams {
   description?: string;
   rule_group: string;
   severity: 'critical' | 'warning' | 'info';
-  component: 'miner' | 'network' | 'farm';
+  component: 'miner' | 'network' | 'farm' | 'system';
   expr: string;
   for_duration: string;
   summary_template: string;
@@ -49,7 +49,7 @@ export interface UpdateAlertRuleParams {
   description?: string;
   rule_group?: string;
   severity?: 'critical' | 'warning' | 'info';
-  component?: 'miner' | 'network' | 'farm';
+  component?: 'miner' | 'network' | 'farm' | 'system';
   expr?: string;
   for_duration?: string;
   summary_template?: string;
