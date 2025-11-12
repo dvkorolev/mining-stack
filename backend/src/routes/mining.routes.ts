@@ -866,7 +866,7 @@ router.post('/mining/backup-yaml', requireAdmin, (req, res, next) => {
  * GET /api/mining/alert-rules
  * Get all alert rules (with optional filters)
  */
-router.get('/alert-rules', async (req, res, next) => {
+router.get('/mining/alert-rules', async (req, res, next) => {
   try {
     const filters: any = {};
 
@@ -900,7 +900,7 @@ router.get('/alert-rules', async (req, res, next) => {
  * GET /api/mining/alert-rules/:id
  * Get single alert rule by ID
  */
-router.get('/alert-rules/:id', async (req, res, next) => {
+router.get('/mining/alert-rules/:id', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
@@ -922,7 +922,7 @@ router.get('/alert-rules/:id', async (req, res, next) => {
  * POST /api/mining/alert-rules
  * Create new alert rule
  */
-router.post('/alert-rules', async (req, res, next) => {
+router.post('/mining/alert-rules', async (req, res, next) => {
   try {
     const result = alertRulesService.createAlertRule(req.body);
     
@@ -940,7 +940,7 @@ router.post('/alert-rules', async (req, res, next) => {
  * PUT /api/mining/alert-rules/:id
  * Update existing alert rule
  */
-router.put('/alert-rules/:id', async (req, res, next) => {
+router.put('/mining/alert-rules/:id', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
@@ -964,7 +964,7 @@ router.put('/alert-rules/:id', async (req, res, next) => {
  * DELETE /api/mining/alert-rules/:id
  * Delete alert rule
  */
-router.delete('/alert-rules/:id', async (req, res, next) => {
+router.delete('/mining/alert-rules/:id', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
@@ -988,7 +988,7 @@ router.delete('/alert-rules/:id', async (req, res, next) => {
  * POST /api/mining/alert-rules/:id/toggle
  * Enable or disable alert rule
  */
-router.post('/alert-rules/:id/toggle', async (req, res, next) => {
+router.post('/mining/alert-rules/:id/toggle', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
@@ -1016,7 +1016,7 @@ router.post('/alert-rules/:id/toggle', async (req, res, next) => {
  * GET /api/mining/alert-rules/:id/history
  * Get alert rule change history
  */
-router.get('/alert-rules/:id/history', async (req, res, next) => {
+router.get('/mining/alert-rules/:id/history', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
@@ -1036,7 +1036,7 @@ router.get('/alert-rules/:id/history', async (req, res, next) => {
  * POST /api/mining/alert-rules/regenerate
  * Regenerate Prometheus YAML from database and reload
  */
-router.post('/alert-rules/regenerate', async (req, res, next) => {
+router.post('/mining/alert-rules/regenerate', async (req, res, next) => {
   try {
     const result = await alertRulesService.regeneratePrometheusYAML();
     
