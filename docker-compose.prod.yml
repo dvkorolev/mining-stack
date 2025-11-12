@@ -91,6 +91,7 @@ services:
       - ./etc:/opt/mining-stack/etc
       - ./bin:/opt/mining-stack/bin:ro
       - ./venv:/opt/mining-stack/venv:ro
+      - ./docker/prometheus/rules:/app/prometheus-rules
     depends_on:
       python-scheduler:
         condition: service_healthy

@@ -297,9 +297,9 @@ export async function regeneratePrometheusYAML(): Promise<{ success: boolean; me
 
     const yamlContent = yaml.dump({ groups }, { indent: 2, lineWidth: -1 });
 
-    // Determine output path
+    // Determine output path - write to mounted Prometheus rules directory
     const rulesDir = process.env.NODE_ENV === 'production'
-      ? '/opt/mining-stack/docker/prometheus/rules'
+      ? '/app/prometheus-rules'
       : path.join(__dirname, '../../../docker/prometheus/rules');
 
     // Ensure directory exists
