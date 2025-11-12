@@ -132,6 +132,7 @@ export const getMinerPools = async (minerId: string): Promise<{
                        model.includes('t19') || model.includes('t17') || model.includes('antminer');
     const isAvalonminer = model.includes('avalon') || model.includes('a1');
     const isInnosilicon = model.includes('a10') || model.includes('a11') || model.includes('innosilicon');
+    const isGoldshell = model.includes('dg1') || model.includes('hs') || model.includes('kd') || model.includes('goldshell');
 
     // Get credentials based on miner type
     let defaultUsername = 'root';
@@ -146,12 +147,15 @@ export const getMinerPools = async (minerId: string): Promise<{
     } else if (isInnosilicon) {
       defaultUsername = 'admin';
       defaultPassword = 'admin';
+    } else if (isGoldshell) {
+      defaultUsername = 'admin';
+      defaultPassword = 'admin';
     }
     
     const username = miner.username || defaultUsername;
     const password = miner.password || defaultPassword;
 
-    logger.debug(`Detected miner type for ${miner.name}: Whatsminer=${isWhatsminer}, Antminer=${isAntminer}, Avalon=${isAvalonminer}, Innosilicon=${isInnosilicon}`);
+    logger.debug(`Detected miner type for ${miner.name}: Whatsminer=${isWhatsminer}, Antminer=${isAntminer}, Avalon=${isAvalonminer}, Innosilicon=${isInnosilicon}, Goldshell=${isGoldshell}`);
 
     // Try different methods based on miner type
     const methods = [];
@@ -277,6 +281,25 @@ export const getMinerPools = async (minerId: string): Promise<{
             url: pool.url || '',
             user: pool.user || pool.worker || '',
             password: '***',
+          }));
+        }
+        throw new Error('No pool data');
+      });
+    }
+
+    if (isGoldshell) {
+      // Goldshell DG1/HS/KD series - Uses CGI API
+      methods.push(async () => {
+        const response = await axios.get(`http://${miner.ip}/cgi-bin/pools.cgi`, {
+          timeout: 5000,
+          auth: { username, password },
+        });
+        
+        if (response.data && response.data.POOLS) {
+          return response.data.POOLS.map((pool: any) => ({
+            url: (pool.url || '').replace(/^stratum\+tcp:\/\//, ''),
+            user: pool.user || '',
+            password: '***', // Goldshell doesn't expose passwords
           }));
         }
         throw new Error('No pool data');
