@@ -104,14 +104,24 @@ const MinerDetailsModal: React.FC<MinerDetailsModalProps> = ({
         const time = new Date(now - i * 60 * 1000);
         timestamps.push(time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         
-        // Add some variance to make it realistic
-        const hashrateVariance = (Math.random() - 0.5) * 2;
+        // Add some variance to make it realistic (proportional to base value)
+        const baseHashrate = miner.currentHashrate || 100;
+        const baseTemp = miner.hardware?.temperature || 70;
+        const baseFan = miner.hardware?.fanSpeed || 6000;
+        
+        // Use percentage-based variance for better scaling
+        const hashrateVariance = baseHashrate * (Math.random() - 0.5) * 0.02; // ±1%
         const tempVariance = (Math.random() - 0.5) * 3;
         const fanVariance = (Math.random() - 0.5) * 200;
         
-        hashrate.push((miner.currentHashrate || 100) + hashrateVariance);
-        temperature.push((miner.hardware?.temperature || 70) + tempVariance);
-        fanSpeed.push((miner.hardware?.fanSpeed || 6000) + fanVariance);
+        // Ensure values are valid numbers and non-negative
+        const hashrateValue = Math.max(0, baseHashrate + hashrateVariance);
+        const tempValue = Math.max(0, baseTemp + tempVariance);
+        const fanValue = Math.max(0, baseFan + fanVariance);
+        
+        hashrate.push(isNaN(hashrateValue) ? 0 : hashrateValue);
+        temperature.push(isNaN(tempValue) ? 0 : tempValue);
+        fanSpeed.push(isNaN(fanValue) ? 0 : fanValue);
       }
 
       setHistoryData({ timestamps, hashrate, temperature, fanSpeed });
@@ -405,7 +415,13 @@ const MinerDetailsModal: React.FC<MinerDetailsModalProps> = ({
                 Hashrate (Last Hour)
               </Typography>
               <Box sx={{ height: 300 }}>
-                <Line data={hashrateChartData} options={chartOptions} />
+                {historyData.hashrate.length > 0 ? (
+                  <Line data={hashrateChartData} options={chartOptions} />
+                ) : (
+                  <Box display="flex" alignItems="center" justifyContent="center" height="100%">
+                    <Typography color="text.secondary">No data available</Typography>
+                  </Box>
+                )}
               </Box>
             </Paper>
           </Grid>
@@ -415,7 +431,13 @@ const MinerDetailsModal: React.FC<MinerDetailsModalProps> = ({
                 Temperature (Last Hour)
               </Typography>
               <Box sx={{ height: 300 }}>
-                <Line data={temperatureChartData} options={chartOptions} />
+                {historyData.temperature.length > 0 ? (
+                  <Line data={temperatureChartData} options={chartOptions} />
+                ) : (
+                  <Box display="flex" alignItems="center" justifyContent="center" height="100%">
+                    <Typography color="text.secondary">No data available</Typography>
+                  </Box>
+                )}
               </Box>
             </Paper>
           </Grid>
