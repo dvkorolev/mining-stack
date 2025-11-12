@@ -212,7 +212,36 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     
     hashrate_raw = data.get('hashrate', 0) or 0
     hashrate = float(hashrate_raw) if hashrate_raw else 0.0
-    is_mining = data.get('is_mining', True)
+    
+    # Determine is_mining more reliably than just trusting the data
+    # PyASIC and other collectors sometimes return False even when miner is actively mining
+    pyasic_is_mining = data.get('is_mining', True)
+    is_mining_override = False
+    
+    # Check if any pool is alive and accepting shares
+    pools = data.get('pools', [])
+    if pools:
+        for pool in pools:
+            # Check for pool object with alive attribute
+            if hasattr(pool, 'alive') and pool.alive:
+                is_mining_override = True
+                logger.info(f"{name}: Pool alive detected, overriding is_mining to True (data said {pyasic_is_mining})")
+                break
+            # Check for dict with status field
+            elif isinstance(pool, dict):
+                status = pool.get('status', '').lower()
+                if status in ['alive', 'normal', 'active']:
+                    is_mining_override = True
+                    logger.info(f"{name}: Pool status '{status}', overriding is_mining to True (data said {pyasic_is_mining})")
+                    break
+    
+    # Fallback: If hashrate > 10 TH/s (or 1000 MH/s for scrypt), assume mining
+    if not is_mining_override and hashrate > 10:
+        is_mining_override = True
+        logger.info(f"{name}: Overriding is_mining to True based on hashrate ({hashrate:.2f}, data said {pyasic_is_mining})")
+    
+    # Use override if we determined miner is mining, otherwise trust the data
+    is_mining = is_mining_override if is_mining_override else pyasic_is_mining
     
     if hashrate == 0 and not is_mining:
         state = 1
