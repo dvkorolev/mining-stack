@@ -225,4 +225,174 @@ export const bulkUpdatePools = async (minerIds: string[], pools: any[]) => {
   }
 };
 
+// ==================== ALERT RULES API ====================
+
+export interface AlertRule {
+  id: number;
+  name: string;
+  display_name: string;
+  description?: string;
+  rule_group: string;
+  severity: 'critical' | 'warning' | 'info';
+  component: 'miner' | 'network' | 'farm' | 'system';
+  expr: string;
+  for_duration: string;
+  summary_template: string;
+  description_template?: string;
+  scope: 'global' | 'per_miner' | 'per_owner';
+  target_miner_ip?: string;
+  target_owner?: string;
+  enabled: number;
+  is_system: number;
+  created_by?: string;
+  created_at?: number;
+  updated_at?: number;
+}
+
+export interface AlertRuleFilters {
+  enabled?: boolean;
+  severity?: 'critical' | 'warning' | 'info';
+  component?: 'miner' | 'network' | 'farm' | 'system';
+  scope?: 'global' | 'per_miner' | 'per_owner';
+  owner?: string;
+  minerIp?: string;
+}
+
+export interface CreateAlertRuleParams {
+  name: string;
+  display_name: string;
+  description?: string;
+  rule_group: string;
+  severity: 'critical' | 'warning' | 'info';
+  component: 'miner' | 'network' | 'farm' | 'system';
+  expr: string;
+  for_duration: string;
+  summary_template: string;
+  description_template?: string;
+  scope?: 'global' | 'per_miner' | 'per_owner';
+  target_miner_ip?: string;
+  target_owner?: string;
+  enabled?: boolean;
+  created_by?: string;
+}
+
+export interface UpdateAlertRuleParams {
+  display_name?: string;
+  description?: string;
+  rule_group?: string;
+  severity?: 'critical' | 'warning' | 'info';
+  component?: 'miner' | 'network' | 'farm' | 'system';
+  expr?: string;
+  for_duration?: string;
+  summary_template?: string;
+  description_template?: string;
+  scope?: 'global' | 'per_miner' | 'per_owner';
+  target_miner_ip?: string;
+  target_owner?: string;
+  enabled?: boolean;
+  changed_by?: string;
+}
+
+// Get all alert rules
+export const getAlertRules = async (filters?: AlertRuleFilters) => {
+  try {
+    const params = new URLSearchParams();
+    if (filters?.enabled !== undefined) params.append('enabled', String(filters.enabled));
+    if (filters?.severity) params.append('severity', filters.severity);
+    if (filters?.component) params.append('component', filters.component);
+    if (filters?.scope) params.append('scope', filters.scope);
+    if (filters?.owner) params.append('owner', filters.owner);
+    if (filters?.minerIp) params.append('minerIp', filters.minerIp);
+    
+    const response = await api.get(`/mining/alert-rules?${params.toString()}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error getting alert rules:', error);
+    throw error;
+  }
+};
+
+// Get single alert rule
+export const getAlertRule = async (id: number) => {
+  try {
+    const response = await api.get(`/mining/alert-rules/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error getting alert rule:', error);
+    throw error;
+  }
+};
+
+// Create alert rule
+export const createAlertRule = async (params: CreateAlertRuleParams) => {
+  try {
+    const response = await api.post('/mining/alert-rules', params);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating alert rule:', error);
+    throw error;
+  }
+};
+
+// Update alert rule
+export const updateAlertRule = async (id: number, params: UpdateAlertRuleParams) => {
+  try {
+    const response = await api.put(`/mining/alert-rules/${id}`, params);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating alert rule:', error);
+    throw error;
+  }
+};
+
+// Delete alert rule
+export const deleteAlertRule = async (id: number, changedBy?: string) => {
+  try {
+    const response = await api.delete(`/mining/alert-rules/${id}`, {
+      params: { changed_by: changedBy }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting alert rule:', error);
+    throw error;
+  }
+};
+
+// Toggle alert rule
+export const toggleAlertRule = async (id: number, enabled: boolean, changedBy?: string) => {
+  try {
+    const response = await api.post(`/mining/alert-rules/${id}/toggle`, {
+      enabled,
+      changed_by: changedBy
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error toggling alert rule:', error);
+    throw error;
+  }
+};
+
+// Get alert rule history
+export const getAlertRuleHistory = async (id: number, limit?: number) => {
+  try {
+    const params = limit ? `?limit=${limit}` : '';
+    const response = await api.get(`/mining/alert-rules/${id}/history${params}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error getting alert rule history:', error);
+    throw error;
+  }
+};
+
+// Regenerate Prometheus YAML
+export const regeneratePrometheusYAML = async () => {
+  try {
+    const response = await api.post('/mining/alert-rules/regenerate');
+    return response.data;
+  } catch (error) {
+    console.error('Error regenerating Prometheus YAML:', error);
+    throw error;
+  }
+};
+
 export default api;

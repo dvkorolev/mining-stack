@@ -20,6 +20,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Miners = lazy(() => import('./pages/Miners'));
 const Analytics = lazy(() => import('./pages/Analytics'));
 const Alerts = lazy(() => import('./pages/Alerts'));
+const AlertRulesManagement = lazy(() => import('./pages/AlertRulesManagement'));
 const Settings = lazy(() => import('./pages/Settings'));
 const PoolsManagement = lazy(() => import('./pages/PoolsManagement'));
 const Login = lazy(() => import('./pages/Login'));
@@ -113,6 +114,7 @@ const App: React.FC = () => {
                       <Route path="/pools" element={<ProtectedRoute><AdminRoute><PoolsManagement /></AdminRoute></ProtectedRoute>} />
                       <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
                       <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
+                      <Route path="/alert-rules" element={<ProtectedRoute><AdminRoute><AlertRulesManagement /></AdminRoute></ProtectedRoute>} />
                       <Route path="/settings" element={<ProtectedRoute><AdminRoute><Settings /></AdminRoute></ProtectedRoute>} />
                     </Routes>
                   </Suspense>

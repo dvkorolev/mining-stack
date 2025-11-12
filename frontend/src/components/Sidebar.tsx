@@ -6,6 +6,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import PeopleIcon from '@mui/icons-material/People';
 import NotificationsIcon from '@mui/icons-material/Notifications';
+import RuleIcon from '@mui/icons-material/Rule';
 import PoolIcon from '@mui/icons-material/Pool';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -33,6 +34,7 @@ const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClo
     { text: 'Pools', icon: <PoolIcon />, path: '/pools', adminOnly: true },
     { text: 'Analytics', icon: <BarChartIcon />, path: '/analytics', adminOnly: false },
     { text: 'Alerts', icon: <NotificationsIcon />, path: '/alerts', adminOnly: false },
+    { text: 'Alert Rules', icon: <RuleIcon />, path: '/alert-rules', adminOnly: true },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings', adminOnly: true },
   ].filter(item => !item.adminOnly || isAdmin);
 
