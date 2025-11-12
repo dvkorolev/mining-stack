@@ -477,24 +477,27 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 # PyASIC sometimes returns False even when miner is actively mining
                 pools = _normalize_list(data.pools if hasattr(data, 'pools') else None)
                 is_mining_override = False
+                pyasic_is_mining = data.is_mining if hasattr(data, 'is_mining') else True
                 
                 # Check if any pool is alive and accepting shares
                 if pools:
                     for pool in pools:
                         if hasattr(pool, 'alive') and pool.alive:
                             is_mining_override = True
+                            logger.info(f"{name}: Pool alive detected, overriding is_mining to True (PyASIC said {pyasic_is_mining})")
                             break
                         elif isinstance(pool, dict) and pool.get('status', '').lower() in ['alive', 'normal', 'active']:
                             is_mining_override = True
+                            logger.info(f"{name}: Pool status '{pool.get('status')}', overriding is_mining to True (PyASIC said {pyasic_is_mining})")
                             break
                 
                 # Fallback: If hashrate > 10 TH/s (or 1000 MH/s for scrypt), assume mining
                 if not is_mining_override and hashrate > 10:
                     is_mining_override = True
-                    logger.debug(f"{name}: Overriding is_mining to True based on hashrate ({hashrate:.2f})")
+                    logger.info(f"{name}: Overriding is_mining to True based on hashrate ({hashrate:.2f} TH/s, PyASIC said {pyasic_is_mining})")
                 
                 # Use override if we determined miner is mining, otherwise trust PyASIC
-                is_mining_final = is_mining_override if is_mining_override else (data.is_mining if hasattr(data, 'is_mining') else True)
+                is_mining_final = is_mining_override if is_mining_override else pyasic_is_mining
                 
                 pyasic_data = {
                     'hashrate': hashrate,
