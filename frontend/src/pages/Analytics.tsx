@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -6,7 +6,6 @@ import {
   Grid,
   Card,
   CardContent,
-  Button,
   Table,
   TableBody,
   TableCell,
@@ -15,40 +14,25 @@ import {
   TableRow,
   CircularProgress,
   Alert,
+  TableSortLabel,
+  Chip,
+  Tooltip,
 } from '@mui/material';
-import { Bar } from 'react-chartjs-2';
-import DownloadIcon from '@mui/icons-material/Download';
-import { fetchMiningStats, MiningStatsResponse } from '../services/api';
+import WarningIcon from '@mui/icons-material/Warning';
+import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
+import FlashOnIcon from '@mui/icons-material/FlashOn';
+import { fetchMiningStats, MiningStatsResponse, MinerStats } from '../services/api';
 import { formatHashrate, getHashrateValue } from '../utils/hashrate';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler,
-} from 'chart.js';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
+type SortColumn = 'name' | 'hashrate' | 'efficiency' | 'temperature' | 'rejection';
+type SortOrder = 'asc' | 'desc';
 
 const Analytics: React.FC = () => {
   const [stats, setStats] = useState<MiningStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<SortColumn>('name');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
   useEffect(() => {
     const loadData = async () => {
@@ -85,116 +69,91 @@ const Analytics: React.FC = () => {
     totalBTC: stats?.totalMined || 0,
   };
 
-  // Export data to CSV
-  const exportToCSV = () => {
-    if (!stats?.statsHistory) return;
-
-    const headers = ['Timestamp', 'SHA256 Hashrate (TH/s)', 'SCRYPT Hashrate (GH/s)', 'Active Miners'];
-    const rows = stats.statsHistory.map(item => [
-      new Date(item.timestamp).toISOString(),
-      item.hashrateSha256.toFixed(2),
-      (item.hashrateScrypt * 1000).toFixed(2),
-      stats.activeMiners,
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mining-stats-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+  // Handle sorting
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortOrder('asc');
+    }
   };
 
-  // Miner comparison chart (SHA256 only, exclude SCRYPT)
-  const sha256Miners = stats?.miners?.filter(m => m.algorithm === 'sha256') || [];
-  const comparisonData = {
-    labels: sha256Miners.map(m => m.name),
-    datasets: [
-      {
-        label: 'Current Hashrate (TH/s)',
-        data: sha256Miners.map(m => m.currentHashrate),
-        backgroundColor: 'rgba(75, 192, 192, 0.6)',
-        borderColor: 'rgb(75, 192, 192)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Average Hashrate (TH/s)',
-        data: sha256Miners.map(m => m.averageHashrate),
-        backgroundColor: 'rgba(255, 159, 64, 0.6)',
-        borderColor: 'rgb(255, 159, 64)',
-        borderWidth: 1,
-      },
-    ],
-  };
+  // Sort miners
+  const sortedMiners = useMemo(() => {
+    const minersList = stats?.miners ?? [];
+    return [...minersList].sort((a, b) => {
+      let aVal: number | string = 0;
+      let bVal: number | string = 0;
 
-  const minerComparisonOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'Miner Performance Comparison',
-        font: { size: 16 },
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        title: {
-          display: true,
-          text: 'Hashrate (TH/s)',
-        },
-      },
-    },
-  };
+      switch (sortColumn) {
+        case 'name':
+          aVal = a.name.toLowerCase();
+          bVal = b.name.toLowerCase();
+          break;
+        case 'hashrate':
+          aVal = a.currentHashrate || 0;
+          bVal = b.currentHashrate || 0;
+          break;
+        case 'efficiency':
+          aVal = a.hardware?.powerUsage ? (a.currentHashrate / a.hardware.powerUsage) * 1000 : 0;
+          bVal = b.hardware?.powerUsage ? (b.currentHashrate / b.hardware.powerUsage) * 1000 : 0;
+          break;
+        case 'temperature':
+          aVal = a.hardware?.temperature || 0;
+          bVal = b.hardware?.temperature || 0;
+          break;
+        case 'rejection':
+          aVal = (a.shares.rejected / (a.shares.accepted + a.shares.rejected || 1)) * 100;
+          bVal = (b.shares.rejected / (b.shares.accepted + b.shares.rejected || 1)) * 100;
+          break;
+      }
 
-  // Efficiency chart (SHA256 only, exclude SCRYPT)
-  const efficiencyData = {
-    labels: sha256Miners.map(m => m.name),
-    datasets: [
-      {
-        label: 'Efficiency (GH/W)',
-        data: sha256Miners.map(m => 
-          (m.currentHashrate / (m.hardware?.powerUsage || 1)) * 1000
-        ),
-        backgroundColor: 'rgba(153, 102, 255, 0.6)',
-        borderColor: 'rgb(153, 102, 255)',
-        borderWidth: 1,
-      },
-    ],
-  };
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return sortOrder === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+    });
+  }, [stats?.miners, sortColumn, sortOrder]);
 
-  const efficiencyOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'Mining Efficiency by Device',
-        font: { size: 16 },
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        title: {
-          display: true,
-          text: 'GH/W',
-        },
-      },
-    },
+  // Check if miner has issues
+  const getMinerIssues = (miner: MinerStats) => {
+    const issues: Array<{ type: string; icon: React.ReactNode; message: string }> = [];
+    const temp = miner.hardware?.temperature;
+    const power = miner.hardware?.powerUsage;
+    const rejectionRate = (miner.shares.rejected / (miner.shares.accepted + miner.shares.rejected || 1)) * 100;
+    const efficiency = power ? (miner.currentHashrate / power) * 1000 : 0;
+
+    if (temp && temp > 75) {
+      issues.push({ 
+        type: 'temperature', 
+        icon: <LocalFireDepartmentIcon fontSize="small" />, 
+        message: `High temperature: ${temp.toFixed(1)}°C` 
+      });
+    }
+    if (rejectionRate > 2) {
+      issues.push({ 
+        type: 'rejection', 
+        icon: <WarningIcon fontSize="small" />, 
+        message: `High rejection rate: ${rejectionRate.toFixed(2)}%` 
+      });
+    }
+    if (power && efficiency < 30) {
+      issues.push({ 
+        type: 'efficiency', 
+        icon: <FlashOnIcon fontSize="small" />, 
+        message: `Low efficiency: ${efficiency.toFixed(2)} GH/W` 
+      });
+    }
+    if (miner.status === 'offline' || miner.status === 'error') {
+      issues.push({ 
+        type: 'offline', 
+        icon: <WarningIcon fontSize="small" />, 
+        message: `Miner ${miner.status}` 
+      });
+    }
+
+    return issues;
   };
 
   if (loading && !stats) {
@@ -208,17 +167,7 @@ const Analytics: React.FC = () => {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">
-          Analytics & Reporting
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<DownloadIcon />}
-          onClick={exportToCSV}
-          disabled={!stats?.statsHistory?.length}
-        >
-          Export CSV
-        </Button>
+        <Typography variant="h4">Analytics</Typography>
       </Box>
 
       {error && (
@@ -340,24 +289,6 @@ const Analytics: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Miner Comparison Chart */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
-            <Box sx={{ height: '400px' }}>
-              <Bar data={comparisonData} options={minerComparisonOptions} />
-            </Box>
-          </Paper>
-        </Grid>
-
-        {/* Efficiency Chart */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
-            <Box sx={{ height: '400px' }}>
-              <Bar data={efficiencyData} options={efficiencyOptions} />
-            </Box>
-          </Paper>
-        </Grid>
-
         {/* Detailed Miner Table */}
         <Grid item xs={12}>
           <Paper sx={{ p: 2 }}>
@@ -368,22 +299,81 @@ const Analytics: React.FC = () => {
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell>Miner</TableCell>
+                    <TableCell>
+                      <TableSortLabel
+                        active={sortColumn === 'name'}
+                        direction={sortColumn === 'name' ? sortOrder : 'asc'}
+                        onClick={() => handleSort('name')}
+                      >
+                        Miner
+                      </TableSortLabel>
+                    </TableCell>
+                    <TableCell>Issues</TableCell>
                     <TableCell align="right">Status</TableCell>
-                    <TableCell align="right">Hashrate (TH/s)</TableCell>
-                    <TableCell align="right">Efficiency (GH/W)</TableCell>
-                    <TableCell align="right">Temperature (°C)</TableCell>
-                    <TableCell align="right">Rejection %</TableCell>
+                    <TableCell align="right">
+                      <TableSortLabel
+                        active={sortColumn === 'hashrate'}
+                        direction={sortColumn === 'hashrate' ? sortOrder : 'asc'}
+                        onClick={() => handleSort('hashrate')}
+                      >
+                        Hashrate
+                      </TableSortLabel>
+                    </TableCell>
+                    <TableCell align="right">
+                      <TableSortLabel
+                        active={sortColumn === 'efficiency'}
+                        direction={sortColumn === 'efficiency' ? sortOrder : 'asc'}
+                        onClick={() => handleSort('efficiency')}
+                      >
+                        Efficiency (GH/W)
+                      </TableSortLabel>
+                    </TableCell>
+                    <TableCell align="right">
+                      <TableSortLabel
+                        active={sortColumn === 'temperature'}
+                        direction={sortColumn === 'temperature' ? sortOrder : 'asc'}
+                        onClick={() => handleSort('temperature')}
+                      >
+                        Temperature (°C)
+                      </TableSortLabel>
+                    </TableCell>
+                    <TableCell align="right">
+                      <TableSortLabel
+                        active={sortColumn === 'rejection'}
+                        direction={sortColumn === 'rejection' ? sortOrder : 'asc'}
+                        onClick={() => handleSort('rejection')}
+                      >
+                        Rejection %
+                      </TableSortLabel>
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {stats?.miners?.map((miner) => {
-                    const efficiency = (miner.currentHashrate / (miner.hardware?.powerUsage || 1)) * 1000;
+                  {sortedMiners.map((miner) => {
+                    const power = miner.hardware?.powerUsage;
+                    const efficiency = power ? (miner.currentHashrate / power) * 1000 : null;
                     const rejectionRate = ((miner.shares.rejected / (miner.shares.accepted + miner.shares.rejected || 1)) * 100);
-                    
+                    const issues = getMinerIssues(miner);
+
                     return (
                       <TableRow key={miner.minerId}>
                         <TableCell>{miner.name}</TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            {issues.map((issue, idx) => (
+                              <Tooltip key={idx} title={issue.message} arrow>
+                                <Chip
+                                  icon={issue.icon}
+                                  label=""
+                                  size="small"
+                                  color={issue.type === 'temperature' ? 'error' : 
+                                         issue.type === 'offline' ? 'error' : 'warning'}
+                                  sx={{ minWidth: '32px', '& .MuiChip-label': { px: 0 } }}
+                                />
+                              </Tooltip>
+                            ))}
+                          </Box>
+                        </TableCell>
                         <TableCell align="right">
                           <Box
                             component="span"
@@ -402,17 +392,21 @@ const Analytics: React.FC = () => {
                           </Box>
                         </TableCell>
                         <TableCell align="right">{formatHashrate(miner.currentHashrate, miner.algorithm)}</TableCell>
-                        <TableCell align="right">{efficiency.toFixed(2)}</TableCell>
+                        <TableCell align="right">
+                          {efficiency !== null ? efficiency.toFixed(2) : '—'}
+                        </TableCell>
                         <TableCell align="right">
                           <Typography
-                            color={miner.hardware?.temperature > 80 ? 'error' : 'inherit'}
+                            color={miner.hardware?.temperature && miner.hardware.temperature > 80 ? 'error' : 
+                                   miner.hardware?.temperature && miner.hardware.temperature > 75 ? 'warning.main' : 'inherit'}
                           >
-                            {miner.hardware?.temperature.toFixed(1)}
+                            {miner.hardware?.temperature !== undefined ? miner.hardware.temperature.toFixed(1) : '—'}
                           </Typography>
                         </TableCell>
                         <TableCell align="right">
                           <Typography
-                            color={rejectionRate > 5 ? 'error' : 'inherit'}
+                            color={rejectionRate > 5 ? 'error' : 
+                                   rejectionRate > 2 ? 'warning.main' : 'inherit'}
                           >
                             {rejectionRate.toFixed(2)}%
                           </Typography>
