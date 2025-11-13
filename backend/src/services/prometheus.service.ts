@@ -58,21 +58,27 @@ async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
  * Get all miner hashrates from Prometheus
  * Handles both SHA-256 (TH/s) and SCRYPT (MH/s) miners
  * Returns hashrates in TH/s for consistency (SCRYPT converted from MH/s)
+ * Works with or without algorithm label for backward compatibility
  */
 export async function getMinerHashrates(): Promise<Map<string, number>> {
   // Get SHA-256 hashrates (already in TH/s)
-  const sha256Results = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_ths{algorithm="sha256"})');
+  // Query without algorithm filter first, then filter by label if present
+  const sha256Results = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_ths)');
   
   // Get SCRYPT hashrates (in MH/s, need to convert to TH/s)
-  const scryptResults = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_mhs{algorithm="scrypt"})');
+  const scryptResults = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_mhs)');
   
   const hashrates = new Map<string, number>();
 
   // Process SHA-256 miners
+  // Filter by algorithm label if present, otherwise assume all are SHA-256
   for (const result of sha256Results) {
     const ip = result.metric.ip;
+    const algorithm = result.metric.algorithm;
     const hashrate = parseFloat(result.value[1]);
-    if (ip && !isNaN(hashrate)) {
+    
+    // Only include if algorithm is sha256 or not specified (backward compatibility)
+    if (ip && !isNaN(hashrate) && (!algorithm || algorithm === 'sha256')) {
       hashrates.set(ip, hashrate);
     }
   }
@@ -80,8 +86,11 @@ export async function getMinerHashrates(): Promise<Map<string, number>> {
   // Process SCRYPT miners (convert MH/s to TH/s)
   for (const result of scryptResults) {
     const ip = result.metric.ip;
+    const algorithm = result.metric.algorithm;
     const hashrateMhs = parseFloat(result.value[1]);
-    if (ip && !isNaN(hashrateMhs)) {
+    
+    // Only include if algorithm is scrypt or not specified (backward compatibility)
+    if (ip && !isNaN(hashrateMhs) && (!algorithm || algorithm === 'scrypt')) {
       // Convert MH/s to TH/s for consistency (divide by 1,000,000)
       hashrates.set(ip, hashrateMhs / 1000000);
     }
@@ -93,25 +102,33 @@ export async function getMinerHashrates(): Promise<Map<string, number>> {
 /**
  * Get miner algorithms from Prometheus
  * Returns a map of IP -> algorithm ('sha256' or 'scrypt')
+ * Works with or without algorithm label for backward compatibility
  */
 export async function getMinerAlgorithms(): Promise<Map<string, 'sha256' | 'scrypt'>> {
   // Query both metrics to get algorithm labels
-  const sha256Results = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_ths{algorithm="sha256"})');
-  const scryptResults = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_mhs{algorithm="scrypt"})');
+  // Don't filter by algorithm in the query - let the label tell us
+  const sha256Results = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_ths)');
+  const scryptResults = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_mhs)');
   
   const algorithms = new Map<string, 'sha256' | 'scrypt'>();
 
+  // SHA-256 miners (from miner_hashrate_ths metric)
   for (const result of sha256Results) {
     const ip = result.metric.ip;
+    const algorithm = result.metric.algorithm;
     if (ip) {
-      algorithms.set(ip, 'sha256');
+      // Use algorithm label if present, otherwise default to sha256
+      algorithms.set(ip, (algorithm === 'scrypt' ? 'scrypt' : 'sha256') as 'sha256' | 'scrypt');
     }
   }
 
+  // SCRYPT miners (from miner_hashrate_mhs metric)
   for (const result of scryptResults) {
     const ip = result.metric.ip;
+    const algorithm = result.metric.algorithm;
     if (ip) {
-      algorithms.set(ip, 'scrypt');
+      // Use algorithm label if present, otherwise default to scrypt
+      algorithms.set(ip, (algorithm === 'sha256' ? 'sha256' : 'scrypt') as 'sha256' | 'scrypt');
     }
   }
 
