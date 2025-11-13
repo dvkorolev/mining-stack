@@ -69,9 +69,15 @@ export interface MinerStats {
 }
 
 export interface MiningStats {
-  totalHashrate: number;
-  averageHashrate24h: number;
+  totalHashrate: number; // Total combined hashrate (SHA256 + SCRYPT in TH/s)
+  totalHashrateSha256: number; // SHA256 hashrate in TH/s
+  totalHashrateScrypt: number; // SCRYPT hashrate in TH/s (for display convert to GH/s)
+  averageHashrate24h: number; // Combined average
+  averageHashrate24hSha256: number; // SHA256 24h average in TH/s
+  averageHashrate24hScrypt: number; // SCRYPT 24h average in TH/s
   activeMiners: number;
+  activeMinersSha256: number; // Active SHA256 miners
+  activeMinersScrypt: number; // Active SCRYPT miners
   totalMiners: number;
   totalMined: number;
   miners: MinerStats[];
@@ -79,6 +85,8 @@ export interface MiningStats {
   statsHistory: {
     timestamp: number;
     hashrate: number;
+    hashrateSha256: number;
+    hashrateScrypt: number;
   }[];
   // Aggregate statistics (calculated once in backend)
   aggregates?: {
@@ -86,8 +94,10 @@ export interface MiningStats {
     totalPower: number; // W
     avgTemperature: number; // °C
     rejectionRate: number; // %
-    maxHashrate: number; // TH/s (from last 24h)
-    minHashrate: number; // TH/s (from last 24h)
+    maxHashrate: number; // TH/s (from last 24h, SHA256 only)
+    minHashrate: number; // TH/s (from last 24h, SHA256 only)
+    maxHashrateScrypt: number; // TH/s (from last 24h, SCRYPT only)
+    minHashrateScrypt: number; // TH/s (from last 24h, SCRYPT only)
     uptimePercent: number; // %
   };
 }
@@ -95,8 +105,14 @@ export interface MiningStats {
 // In-memory storage for mining stats
 let miningStats: MiningStats = {
   totalHashrate: 0,
+  totalHashrateSha256: 0,
+  totalHashrateScrypt: 0,
   averageHashrate24h: 0,
+  averageHashrate24hSha256: 0,
+  averageHashrate24hScrypt: 0,
   activeMiners: 0,
+  activeMinersSha256: 0,
+  activeMinersScrypt: 0,
   totalMiners: 0,
   totalMined: 0,
   miners: [],
@@ -404,7 +420,7 @@ const getRealMinerStats = async (
 /**
  * Calculate aggregate statistics from miner data
  */
-const calculateAggregates = (minerStats: MinerStats[], statsHistory: { timestamp: number; hashrate: number }[]): MiningStats['aggregates'] => {
+const calculateAggregates = (minerStats: MinerStats[], statsHistory: { timestamp: number; hashrate: number; hashrateSha256: number; hashrateScrypt: number }[]): MiningStats['aggregates'] => {
   if (minerStats.length === 0) {
     return {
       avgEfficiency: 0,
@@ -413,15 +429,20 @@ const calculateAggregates = (minerStats: MinerStats[], statsHistory: { timestamp
       rejectionRate: 0,
       maxHashrate: 0,
       minHashrate: 0,
+      maxHashrateScrypt: 0,
+      minHashrateScrypt: 0,
       uptimePercent: 0,
     };
   }
 
-  // Calculate average efficiency (GH/W)
-  const avgEfficiency = minerStats.reduce((sum, m) => {
-    const power = m.hardware?.powerUsage || 1;
-    return sum + (m.currentHashrate / power);
-  }, 0) / minerStats.length * 1000; // Convert TH/W to GH/W
+  // Calculate average efficiency (GH/W) - SHA256 miners only
+  const sha256Miners = minerStats.filter(m => m.algorithm === 'sha256');
+  const avgEfficiency = sha256Miners.length > 0
+    ? sha256Miners.reduce((sum, m) => {
+        const power = m.hardware?.powerUsage || 1;
+        return sum + (m.currentHashrate / power);
+      }, 0) / sha256Miners.length * 1000 // Convert TH/W to GH/W
+    : 0;
 
   // Calculate total power (W)
   const totalPower = minerStats.reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0);
@@ -436,18 +457,26 @@ const calculateAggregates = (minerStats: MinerStats[], statsHistory: { timestamp
     ? (totalRejected / (totalAccepted + totalRejected)) * 100 
     : 0;
 
-  // Calculate max/min hashrate from last 24 hours
-  // Filter out unrealistic values (> 5000 TH/s is impossible for a single farm)
+  // Calculate max/min hashrate from last 24 hours (SHA256 only)
   const MAX_REALISTIC_HASHRATE = 5000; // TH/s
   const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
   const recentHistory = statsHistory.filter(h => 
     h.timestamp >= twentyFourHoursAgo && 
-    h.hashrate > 0 && 
-    h.hashrate <= MAX_REALISTIC_HASHRATE
+    h.hashrateSha256 > 0 && 
+    h.hashrateSha256 <= MAX_REALISTIC_HASHRATE
   );
-  const hashrates = recentHistory.map(h => h.hashrate);
-  const maxHashrate = hashrates.length > 0 ? Math.max(...hashrates) : 0;
-  const minHashrate = hashrates.length > 0 ? Math.min(...hashrates) : 0;
+  const hashratesSha256 = recentHistory.map(h => h.hashrateSha256);
+  const maxHashrate = hashratesSha256.length > 0 ? Math.max(...hashratesSha256) : 0;
+  const minHashrate = hashratesSha256.length > 0 ? Math.min(...hashratesSha256) : 0;
+
+  // Calculate max/min hashrate for SCRYPT from last 24 hours
+  const recentHistoryScrypt = statsHistory.filter(h => 
+    h.timestamp >= twentyFourHoursAgo && 
+    h.hashrateScrypt > 0
+  );
+  const hashratesScrypt = recentHistoryScrypt.map(h => h.hashrateScrypt);
+  const maxHashrateScrypt = hashratesScrypt.length > 0 ? Math.max(...hashratesScrypt) : 0;
+  const minHashrateScrypt = hashratesScrypt.length > 0 ? Math.min(...hashratesScrypt) : 0;
 
   // Calculate uptime percentage
   const onlineMiners = minerStats.filter(m => m.status === 'online').length;
@@ -460,6 +489,8 @@ const calculateAggregates = (minerStats: MinerStats[], statsHistory: { timestamp
     rejectionRate,
     maxHashrate,
     minHashrate,
+    maxHashrateScrypt,
+    minHashrateScrypt,
     uptimePercent,
   };
 };
@@ -602,18 +633,38 @@ const simulateMiningStats = (): MiningStats => {
   const miners = getMiners();
   const minerStats = miners.map(simulateMinerStats);
   
+  // Calculate total hashrates by algorithm
   const totalHashrate = minerStats.reduce((sum, miner) => sum + miner.currentHashrate, 0);
+  const totalHashrateSha256 = minerStats
+    .filter(m => m.algorithm === 'sha256')
+    .reduce((sum, miner) => sum + miner.currentHashrate, 0);
+  const totalHashrateScrypt = minerStats
+    .filter(m => m.algorithm === 'scrypt')
+    .reduce((sum, miner) => sum + miner.currentHashrate, 0);
+  
   const activeMiners = minerStats.filter(m => m.status === 'online').length;
+  const activeMinersSha256 = minerStats.filter(m => m.status === 'online' && m.algorithm === 'sha256').length;
+  const activeMinersScrypt = minerStats.filter(m => m.status === 'online' && m.algorithm === 'scrypt').length;
   
   // Calculate 24h average hashrate from history
   // Filter out corrupted values (> 5000 TH/s) from existing history
   const MAX_REALISTIC_HASHRATE = 5000;
   const cleanHistory = miningStats.statsHistory.filter(h => 
     h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
-  );
+  ).map(h => ({
+    timestamp: h.timestamp,
+    hashrate: h.hashrate,
+    hashrateSha256: h.hashrateSha256 || 0,
+    hashrateScrypt: h.hashrateScrypt || 0
+  }));
   const statsHistory = [
     ...cleanHistory,
-    { timestamp: Date.now(), hashrate: totalHashrate }
+    { 
+      timestamp: Date.now(), 
+      hashrate: totalHashrate,
+      hashrateSha256: totalHashrateSha256,
+      hashrateScrypt: totalHashrateScrypt
+    }
   ].slice(-config.mining.maxHistoryPoints);
   
   // Calculate 24h average using only data from last 24 hours
@@ -622,6 +673,12 @@ const simulateMiningStats = (): MiningStats => {
   const averageHashrate24h = recentStats.length > 0
     ? recentStats.reduce((sum, stat) => sum + stat.hashrate, 0) / recentStats.length
     : totalHashrate;
+  const averageHashrate24hSha256 = recentStats.length > 0
+    ? recentStats.reduce((sum, stat) => sum + stat.hashrateSha256, 0) / recentStats.length
+    : totalHashrateSha256;
+  const averageHashrate24hScrypt = recentStats.length > 0
+    ? recentStats.reduce((sum, stat) => sum + stat.hashrateScrypt, 0) / recentStats.length
+    : totalHashrateScrypt;
   
   // Realistic BTC mining calculation
   // Network hashrate ~600 EH/s = 600,000,000 TH/s
@@ -652,8 +709,14 @@ const simulateMiningStats = (): MiningStats => {
   // Update global stats
   const stats: MiningStats = {
     totalHashrate,
+    totalHashrateSha256,
+    totalHashrateScrypt,
     averageHashrate24h,
+    averageHashrate24hSha256,
+    averageHashrate24hScrypt,
     activeMiners,
+    activeMinersSha256,
+    activeMinersScrypt,
     totalMiners: miners.length,
     totalMined: miningStats.totalMined + btcMined,
     miners: minerStats,
@@ -697,19 +760,39 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
     const minerStatsPromises = miners.map(miner => getRealMinerStats(miner, metrics));
     const minerStats = await Promise.all(minerStatsPromises);
     
+    // Calculate total hashrates by algorithm
     const totalHashrate = minerStats.reduce((sum, miner) => sum + miner.currentHashrate, 0);
+    const totalHashrateSha256 = minerStats
+      .filter(m => m.algorithm === 'sha256')
+      .reduce((sum, miner) => sum + miner.currentHashrate, 0);
+    const totalHashrateScrypt = minerStats
+      .filter(m => m.algorithm === 'scrypt')
+      .reduce((sum, miner) => sum + miner.currentHashrate, 0);
+    
     // Count miners that are online OR have errors (they're still mining, just with issues)
     const activeMiners = minerStats.filter(m => m.status === 'online' || m.status === 'error').length;
+    const activeMinersSha256 = minerStats.filter(m => (m.status === 'online' || m.status === 'error') && m.algorithm === 'sha256').length;
+    const activeMinersScrypt = minerStats.filter(m => (m.status === 'online' || m.status === 'error') && m.algorithm === 'scrypt').length;
     
     // Calculate 24h average hashrate from history
     // Filter out corrupted values (> 5000 TH/s) from existing history
     const MAX_REALISTIC_HASHRATE = 5000;
     const cleanHistory = miningStats.statsHistory.filter(h => 
       h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
-    );
+    ).map(h => ({
+      timestamp: h.timestamp,
+      hashrate: h.hashrate,
+      hashrateSha256: h.hashrateSha256 || 0,
+      hashrateScrypt: h.hashrateScrypt || 0
+    }));
     const statsHistory = [
       ...cleanHistory,
-      { timestamp: Date.now(), hashrate: totalHashrate }
+      { 
+        timestamp: Date.now(), 
+        hashrate: totalHashrate,
+        hashrateSha256: totalHashrateSha256,
+        hashrateScrypt: totalHashrateScrypt
+      }
     ].slice(-config.mining.maxHistoryPoints);
     
     // Calculate 24h average using only data from last 24 hours
@@ -718,6 +801,12 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
     const averageHashrate24h = recentStats.length > 0
       ? recentStats.reduce((sum, stat) => sum + stat.hashrate, 0) / recentStats.length
       : totalHashrate;
+    const averageHashrate24hSha256 = recentStats.length > 0
+      ? recentStats.reduce((sum, stat) => sum + stat.hashrateSha256, 0) / recentStats.length
+      : totalHashrateSha256;
+    const averageHashrate24hScrypt = recentStats.length > 0
+      ? recentStats.reduce((sum, stat) => sum + stat.hashrateScrypt, 0) / recentStats.length
+      : totalHashrateScrypt;
     
     // BTC calculation removed - not useful for monitoring
     const btcMined = 0;
@@ -734,8 +823,14 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
     
     const stats: MiningStats = {
       totalHashrate,
+      totalHashrateSha256,
+      totalHashrateScrypt,
       averageHashrate24h,
+      averageHashrate24hSha256,
+      averageHashrate24hScrypt,
       activeMiners,
+      activeMinersSha256,
+      activeMinersScrypt,
       totalMiners: miners.length,
       totalMined: miningStats.totalMined + btcMined,
       miners: minerStats,
@@ -784,15 +879,30 @@ const getMiningStats = (owner?: string): MiningStats => {
     return {
       ...miningStats,
       totalHashrate: 0,
+      totalHashrateSha256: 0,
+      totalHashrateScrypt: 0,
+      averageHashrate24hSha256: 0,
+      averageHashrate24hScrypt: 0,
       activeMiners: 0,
+      activeMinersSha256: 0,
+      activeMinersScrypt: 0,
       totalMiners: 0,
       miners: [],
     };
   }
   
   const activeMiners = ownerMiners.filter(m => m.status === 'online').length;
+  const activeMinersSha256 = ownerMiners.filter(m => m.status === 'online' && m.algorithm === 'sha256').length;
+  const activeMinersScrypt = ownerMiners.filter(m => m.status === 'online' && m.algorithm === 'scrypt').length;
+  
   const totalHashrate = ownerMiners
     .filter(m => m.status === 'online')
+    .reduce((sum, m) => sum + (m.currentHashrate || 0), 0);
+  const totalHashrateSha256 = ownerMiners
+    .filter(m => m.status === 'online' && m.algorithm === 'sha256')
+    .reduce((sum, m) => sum + (m.currentHashrate || 0), 0);
+  const totalHashrateScrypt = ownerMiners
+    .filter(m => m.status === 'online' && m.algorithm === 'scrypt')
     .reduce((sum, m) => sum + (m.currentHashrate || 0), 0);
   
   const avgTemperature = ownerMiners
@@ -808,7 +918,11 @@ const getMiningStats = (owner?: string): MiningStats => {
   return {
     ...miningStats,
     totalHashrate,
+    totalHashrateSha256,
+    totalHashrateScrypt,
     activeMiners,
+    activeMinersSha256,
+    activeMinersScrypt,
     totalMiners: ownerMiners.length,
     miners: ownerMiners,
   };
@@ -1164,8 +1278,14 @@ const updateMetricsFromScheduler = async (
       };
     });
     
-    // Calculate aggregates
+    // Calculate aggregates by algorithm
     let totalHashrate = minerStats.reduce((sum, m) => sum + m.currentHashrate, 0);
+    let totalHashrateSha256 = minerStats
+      .filter(m => m.algorithm === 'sha256')
+      .reduce((sum, m) => sum + m.currentHashrate, 0);
+    let totalHashrateScrypt = minerStats
+      .filter(m => m.algorithm === 'scrypt')
+      .reduce((sum, m) => sum + m.currentHashrate, 0);
     
     // Safety check: Cap total hashrate to realistic farm value
     const MAX_FARM_HASHRATE = 5000; // TH/s
@@ -1174,19 +1294,33 @@ const updateMetricsFromScheduler = async (
       logger.error(`Miners contributing to total:`, minerStats.map(m => ({ name: m.name, hashrate: m.currentHashrate })));
       // Cap to max realistic value
       totalHashrate = MAX_FARM_HASHRATE;
+      totalHashrateSha256 = Math.min(totalHashrateSha256, MAX_FARM_HASHRATE);
+      totalHashrateScrypt = Math.min(totalHashrateScrypt, MAX_FARM_HASHRATE);
     }
     
     const activeMiners = minerStats.filter(m => m.status === 'online' || m.status === 'error').length;
+    const activeMinersSha256 = minerStats.filter(m => (m.status === 'online' || m.status === 'error') && m.algorithm === 'sha256').length;
+    const activeMinersScrypt = minerStats.filter(m => (m.status === 'online' || m.status === 'error') && m.algorithm === 'scrypt').length;
     
     // Update stats history
     // Filter out corrupted values (> 5000 TH/s) from existing history
     const MAX_REALISTIC_HASHRATE = 5000;
     const cleanHistory = miningStats.statsHistory.filter(h => 
       h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
-    );
+    ).map(h => ({
+      timestamp: h.timestamp,
+      hashrate: h.hashrate,
+      hashrateSha256: h.hashrateSha256 || 0,
+      hashrateScrypt: h.hashrateScrypt || 0
+    }));
     const statsHistory = [
       ...cleanHistory,
-      { timestamp: timestamp || Date.now(), hashrate: totalHashrate }
+      { 
+        timestamp: timestamp || Date.now(), 
+        hashrate: totalHashrate,
+        hashrateSha256: totalHashrateSha256,
+        hashrateScrypt: totalHashrateScrypt
+      }
     ].slice(-config.mining.maxHistoryPoints);
     
     // Calculate 24h average using only data from last 24 hours
@@ -1195,6 +1329,12 @@ const updateMetricsFromScheduler = async (
     const averageHashrate24h = recentStats.length > 0
       ? recentStats.reduce((sum, stat) => sum + stat.hashrate, 0) / recentStats.length
       : totalHashrate;
+    const averageHashrate24hSha256 = recentStats.length > 0
+      ? recentStats.reduce((sum, stat) => sum + stat.hashrateSha256, 0) / recentStats.length
+      : totalHashrateSha256;
+    const averageHashrate24hScrypt = recentStats.length > 0
+      ? recentStats.reduce((sum, stat) => sum + stat.hashrateScrypt, 0) / recentStats.length
+      : totalHashrateScrypt;
     
     // Calculate aggregates
     const aggregates = calculateAggregates(minerStats, statsHistory);
@@ -1202,8 +1342,14 @@ const updateMetricsFromScheduler = async (
     // Update global stats
     miningStats = {
       totalHashrate,
+      totalHashrateSha256,
+      totalHashrateScrypt,
       averageHashrate24h,
+      averageHashrate24hSha256,
+      averageHashrate24hScrypt,
       activeMiners,
+      activeMinersSha256,
+      activeMinersScrypt,
       totalMiners: miners.length,
       totalMined: miningStats.totalMined, // Keep existing total
       miners: minerStats,
