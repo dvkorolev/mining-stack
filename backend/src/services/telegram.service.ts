@@ -1234,15 +1234,16 @@ const sendFarmStatus = async (chatId: number, isRefresh: boolean = false, messag
       statusMessage += `📈 24h Avg: *${sha256Avg}*\n`;
       statusMessage += `⛏️ Active: *${stats.activeMinersSha256}*\n\n`;
     }
-    
-    // Show SCRYPT stats if there are SCRYPT miners
+
+    // SCRYPT Section
     if (stats.activeMinersScrypt > 0 || stats.totalHashrateScrypt > 0) {
       statusMessage += `*SCRYPT Miners:*\n`;
       statusMessage += `⚡ Hashrate: *${scryptHashrate}*\n`;
       statusMessage += `📈 24h Avg: *${scryptAvg}*\n`;
       statusMessage += `⛏️ Active: *${stats.activeMinersScrypt}*\n\n`;
     }
-    
+
+    // Totals
     statusMessage += `*Total:*\n`;
     statusMessage += `⛏️ Active Miners: *${stats.activeMiners}* / ${stats.miners.length}\n`;
     statusMessage += `₿ Total Mined: *${stats.totalMined.toFixed(8)} BTC*\n\n`;
@@ -1334,9 +1335,9 @@ const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 
     const sha256Hashrate = formatHashrate(stats.totalHashrateSha256, 'sha256');
     const scryptHashrate = formatHashrate(stats.totalHashrateScrypt, 'scrypt');
 
-    const filterEmoji = filter === 'offline' ? '⚫' : filter === 'error' ? '🔴' : filter === 'online' ? '🟢' : '⛏️';
-    const filterText = filter === 'all' ? 'All Miners' : `${filter.charAt(0).toUpperCase() + filter.slice(1)} Miners`;
-    
+    const filterEmoji = filter === 'all' ? '📋' : filter === 'online' ? '🟢' : filter === 'offline' ? '⚫' : '🔴';
+    const filterText = filter.charAt(0).toUpperCase() + filter.slice(1);
+
     let message = `${filterEmoji} *${filterText}*\n\n`;
     message += `📊 Total: ${allMiners.length} miners\n`;
     message += `🟢 Online: ${onlineCount} | 🔴 Error: ${errorCount} | ⚫ Offline: ${offlineCount}\n`;
@@ -1550,65 +1551,58 @@ const sendMinerDetails = async (chatId: number, minerName: string, isRefresh: bo
   try {
     logger.info('Telegram: Sending miner details', { service: 'telegram', chatId, minerName });
     const miner = getMinerById(minerName);
+
     if (!miner) {
-      await bot?.sendMessage(chatId, `❌ Miner "${minerName}" not found`);
+      await sendOrEditMessage(chatId, `❌ Miner "${minerName}" not found.`);
       return;
     }
 
-    const minerStats = getMinerStats(minerName);
-    const statusEmoji = minerStats.status === 'online' ? '🟢' : 
-                       minerStats.status === 'error' ? '🔴' : '⚫';
+    const minerStats = getMinerStats(miner.name);
+    if (!minerStats) {
+      await sendOrEditMessage(chatId, `❌ Stats not available for miner "${minerName}".`);
+      return;
+    }
 
-    const message = `
-${statusEmoji} *${minerStats.name}*
+    const rejectionRate = (minerStats.shares.rejected / (minerStats.shares.accepted + minerStats.shares.rejected || 1)) * 100;
+    const statusEmoji = minerStats.status === 'online' ? '🟢' :
+                        minerStats.status === 'error' ? '🔴' : '⚫';
 
-📍 IP: \`${minerStats.ip}\`
-🏷️ Model: ${minerStats.model}
-📊 Status: *${minerStats.status.toUpperCase()}*
+    let message = `*${minerStats.name}* (${minerStats.model})\n\n`;
+    message += `${statusEmoji} Status: *${minerStats.status.toUpperCase()}*\n\n`;
 
-⚡ *Performance:*
-Current: ${formatHashrate(minerStats.currentHashrate, minerStats.algorithm)}
-Average: ${formatHashrate(minerStats.averageHashrate, minerStats.algorithm)}
+    // Hashrate Section
+    message += `*Performance:*
+`;
+    message += `⚡ Hashrate: *${formatHashrate(minerStats.currentHashrate, miner.algorithm)}*\n`;
+    message += `📈 24h Avg: *${formatHashrate(minerStats.averageHashrate, miner.algorithm)}*\n\n`;
 
-🎯 *Shares:*
-Accepted: ${minerStats.shares.accepted}
-Rejected: ${minerStats.shares.rejected}
-
-🌡️ *Hardware:*
-Temperature: ${minerStats.hardware.temperature.toFixed(1)}°C
-Fan Speed: ${minerStats.hardware.fanSpeed.toFixed(0)} RPM
-Power: ${minerStats.hardware.powerUsage.toFixed(0)}W
-
-⏱️ Uptime: ${formatUptime(minerStats.uptime)}
-🕐 Last Seen: ${new Date(minerStats.lastSeen).toLocaleString()}
-    `.trim();
-
-    // Get smart back button based on navigation stack
-    const context = getUserContext(chatId.toString());
-    const backButton = context.navigationStack.length > 0 
-      ? { text: `⬅️ Back to ${getViewName(context.currentView)}`, callback_data: 'nav_back' }
-      : { text: '⬅️ Back to Miners', callback_data: 'miners_list' };
+    // Hardware and Pool Stats
+    message += `*Details:*
+`;
+    message += `🌡️ Temp: *${minerStats.hardware.temperature.toFixed(1)}°C* | 💨 Fans: *${minerStats.hardware.fanSpeed.toFixed(0)}%*\n`;
+    message += `🔌 Power: *${minerStats.hardware.powerUsage.toFixed(0)}W* | 🕒 Uptime: *${formatUptime(minerStats.uptime)}*\n\n`;
+    message += `*Pool Stats:*
+`;
+    message += `✅ Accepted: *${minerStats.shares.accepted}* | ❌ Rejected: *${minerStats.shares.rejected}* (${rejectionRate.toFixed(2)}%)\n`;
 
     const keyboard = {
       inline_keyboard: [
         [
-          { text: '🔄 Reboot Miner', callback_data: `reboot_request_${minerName}` },
+          { text: '🔄 Refresh', callback_data: `miner_${minerName}` },
+          { text: '🔌 View Pools', callback_data: `pools_${minerName}` },
+          { text: '🔥 Reboot', callback_data: `reboot_request_${minerName}` },
         ],
         [
-          { text: '🌊 View Pools', callback_data: `pools_${minerName}` },
-          { text: '🔄 Refresh Stats', callback_data: `miner_${minerName}` },
-        ],
-        [
-          backButton,
+          { text: '⬅️ Back to Miners', callback_data: 'action_miners' },
+          { text: '🏠 Main Menu', callback_data: 'main_menu' },
         ],
       ],
     };
 
     await sendOrEditMessage(chatId, message, keyboard, 'miner_details', { minerName }, messageId, isRefresh);
-    logger.info('Telegram: Miner details sent', { service: 'telegram', chatId, minerName });
   } catch (error) {
     logger.error('Telegram: Error sending miner details', { service: 'telegram', chatId, minerName, error });
-    await bot?.sendMessage(chatId, `❌ Error fetching details for "${minerName}"`);
+    await bot?.sendMessage(chatId, `❌ Error fetching details for ${minerName}`);
   }
 };
 

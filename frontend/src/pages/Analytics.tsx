@@ -89,16 +89,17 @@ const Analytics: React.FC = () => {
   const exportToCSV = () => {
     if (!stats?.statsHistory) return;
 
-    const headers = ['Timestamp', 'Hashrate (TH/s)', 'Active Miners'];
+    const headers = ['Timestamp', 'SHA256 Hashrate (TH/s)', 'SCRYPT Hashrate (GH/s)', 'Active Miners'];
     const rows = stats.statsHistory.map(item => [
       new Date(item.timestamp).toISOString(),
-      item.hashrate.toFixed(2),
+      item.hashrateSha256.toFixed(2),
+      (item.hashrateScrypt * 1000).toFixed(2),
       stats.activeMiners,
     ]);
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.join(',')),
+      ...rows.map(row => row.join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });

@@ -94,27 +94,49 @@ const Dashboard: React.FC = () => {
 
   // Hashrate chart
   const hashrateChartData = {
-    labels: filteredHistory.map((item) => 
+    labels: filteredHistory.map((item) =>
       new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     ),
     datasets: [
       {
-        label: 'Hashrate (TH/s)',
-        data: filteredHistory.map((item) => item.hashrate),
+        label: 'SHA-256 Hashrate (TH/s)',
+        data: filteredHistory.map((item) => item.hashrateSha256),
         borderColor: 'rgb(75, 192, 192)',
         backgroundColor: 'rgba(75, 192, 192, 0.1)',
         fill: true,
         tension: 0.4,
         pointRadius: 2,
+        yAxisID: 'ySha256',
       },
       {
-        label: '24h Average',
-        data: filteredHistory.map(() => stats?.averageHashrate24h || 0),
-        borderColor: 'rgb(255, 159, 64)',
+        label: 'SCRYPT Hashrate (GH/s)',
+        data: filteredHistory.map((item) => item.hashrateScrypt * 1000),
+        borderColor: 'rgb(255, 99, 132)',
+        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 2,
+        yAxisID: 'yScrypt',
+      },
+      {
+        label: 'SHA-256 24h Average',
+        data: filteredHistory.map(() => stats?.averageHashrate24hSha256 || 0),
+        borderColor: 'rgb(75, 192, 192)',
         backgroundColor: 'transparent',
         borderDash: [5, 5],
         pointRadius: 0,
         tension: 0,
+        yAxisID: 'ySha256',
+      },
+      {
+        label: 'SCRYPT 24h Average',
+        data: filteredHistory.map(() => (stats?.averageHashrate24hScrypt || 0) * 1000),
+        borderColor: 'rgb(255, 99, 132)',
+        backgroundColor: 'transparent',
+        borderDash: [5, 5],
+        pointRadius: 0,
+        tension: 0,
+        yAxisID: 'yScrypt',
       },
     ],
   };
@@ -166,11 +188,27 @@ const Dashboard: React.FC = () => {
       },
     },
     scales: {
-      y: {
+      ySha256: {
+        type: 'linear' as const,
+        display: true,
+        position: 'left' as const,
         beginAtZero: true,
         title: {
           display: true,
-          text: 'TH/s',
+          text: 'SHA-256 (TH/s)',
+        },
+      },
+      yScrypt: {
+        type: 'linear' as const,
+        display: true,
+        position: 'right' as const,
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'SCRYPT (GH/s)',
+        },
+        grid: {
+          drawOnChartArea: false, // only show the grid for the primary axis
         },
       },
       x: {
