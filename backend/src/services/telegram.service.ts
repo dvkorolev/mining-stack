@@ -1207,16 +1207,37 @@ const sendFarmStatus = async (chatId: number, isRefresh: boolean = false, messag
     const stats = getMiningStats(owner);
     
     logger.info('Telegram: Sending farm status', { service: 'telegram', chatId });
-    const statusMessage = `
-📊 *Farm Status*
-
-⚡ Total Hashrate: *${stats.totalHashrate.toFixed(2)} TH/s*
-📈 24h Average: *${stats.averageHashrate24h.toFixed(2)} TH/s*
-⛏️ Active Miners: *${stats.activeMiners}* / ${stats.miners.length}
-₿ Total Mined: *${stats.totalMined.toFixed(8)} BTC*
-
-🕐 Last Update: ${new Date(stats.timestamp).toLocaleString()}
-    `.trim();
+    
+    // Format hashrates by algorithm
+    const sha256Hashrate = formatHashrate(stats.totalHashrateSha256, 'sha256');
+    const scryptHashrate = formatHashrate(stats.totalHashrateScrypt, 'scrypt');
+    const sha256Avg = formatHashrate(stats.averageHashrate24hSha256, 'sha256');
+    const scryptAvg = formatHashrate(stats.averageHashrate24hScrypt, 'scrypt');
+    
+    let statusMessage = `📊 *Farm Status*\n\n`;
+    
+    // Show SHA256 stats if there are SHA256 miners
+    if (stats.activeMinersSha256 > 0 || stats.totalHashrateSha256 > 0) {
+      statusMessage += `*SHA-256 Miners:*\n`;
+      statusMessage += `⚡ Hashrate: *${sha256Hashrate}*\n`;
+      statusMessage += `📈 24h Avg: *${sha256Avg}*\n`;
+      statusMessage += `⛏️ Active: *${stats.activeMinersSha256}*\n\n`;
+    }
+    
+    // Show SCRYPT stats if there are SCRYPT miners
+    if (stats.activeMinersScrypt > 0 || stats.totalHashrateScrypt > 0) {
+      statusMessage += `*SCRYPT Miners:*\n`;
+      statusMessage += `⚡ Hashrate: *${scryptHashrate}*\n`;
+      statusMessage += `📈 24h Avg: *${scryptAvg}*\n`;
+      statusMessage += `⛏️ Active: *${stats.activeMinersScrypt}*\n\n`;
+    }
+    
+    statusMessage += `*Total:*\n`;
+    statusMessage += `⛏️ Active Miners: *${stats.activeMiners}* / ${stats.miners.length}\n`;
+    statusMessage += `₿ Total Mined: *${stats.totalMined.toFixed(8)} BTC*\n\n`;
+    statusMessage += `🕐 Last Update: ${new Date(stats.timestamp).toLocaleString()}`;
+    
+    statusMessage = statusMessage.trim();
 
     // Add quick action buttons
     const keyboard = {
@@ -1297,15 +1318,28 @@ const sendMinersList = async (chatId: number, page: number = 0, filter: 'all' | 
     const onlineCount = stats.miners.filter(m => m.status === 'online').length;
     const offlineCount = stats.miners.filter(m => m.status === 'offline').length;
     const errorCount = stats.miners.filter(m => m.status === 'error').length;
-    const totalHashrate = stats.totalHashrate.toFixed(2);
+    
+    // Format hashrates by algorithm
+    const sha256Hashrate = formatHashrate(stats.totalHashrateSha256, 'sha256');
+    const scryptHashrate = formatHashrate(stats.totalHashrateScrypt, 'scrypt');
 
     const filterEmoji = filter === 'offline' ? '⚫' : filter === 'error' ? '🔴' : filter === 'online' ? '🟢' : '⛏️';
     const filterText = filter === 'all' ? 'All Miners' : `${filter.charAt(0).toUpperCase() + filter.slice(1)} Miners`;
-
+    
     let message = `${filterEmoji} *${filterText}*\n\n`;
     message += `📊 Total: ${allMiners.length} miners\n`;
     message += `🟢 Online: ${onlineCount} | 🔴 Error: ${errorCount} | ⚫ Offline: ${offlineCount}\n`;
-    message += `⚡ Total Hashrate: ${totalHashrate} TH/s\n\n`;
+    
+    // Show hashrates by algorithm if both types exist
+    if (stats.activeMinersSha256 > 0 && stats.activeMinersScrypt > 0) {
+      message += `⚡ SHA-256: ${sha256Hashrate} | SCRYPT: ${scryptHashrate}\n\n`;
+    } else if (stats.activeMinersSha256 > 0) {
+      message += `⚡ Total Hashrate: ${sha256Hashrate}\n\n`;
+    } else if (stats.activeMinersScrypt > 0) {
+      message += `⚡ Total Hashrate: ${scryptHashrate}\n\n`;
+    } else {
+      message += `⚡ Total Hashrate: 0 TH/s\n\n`;
+    }
     
     if (filter !== 'all') {
       message += `Showing ${filteredMiners.length} ${filter} miner${filteredMiners.length !== 1 ? 's' : ''}\n`;
