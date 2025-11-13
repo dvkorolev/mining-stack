@@ -610,7 +610,7 @@ router.post('/telegram/send', async (req, res, next) => {
 // ===== Alert APIs =====
 
 // Webhook endpoint for Alertmanager
-router.post('/alerts/webhook', async (req, res, next) => {
+router.post('/mining/alerts/webhook', async (req, res, next) => {
   try {
     await processAlertWebhook(req.body);
     res.json({ success: true });
@@ -620,7 +620,7 @@ router.post('/alerts/webhook', async (req, res, next) => {
 });
 
 // Get active alerts (cached for 3 seconds)
-router.get('/alerts/active', cacheMiddleware(3), async (req, res, next) => {
+router.get('/mining/alerts/active', cacheMiddleware(3), async (req, res, next) => {
   try {
     const alerts = getActiveAlerts();
     res.json(alerts);
@@ -630,7 +630,7 @@ router.get('/alerts/active', cacheMiddleware(3), async (req, res, next) => {
 });
 
 // Get alert history (cached for 10 seconds)
-router.get('/alerts/history', cacheMiddleware(10), async (req, res, next) => {
+router.get('/mining/alerts/history', cacheMiddleware(10), async (req, res, next) => {
   try {
     const { limit = 100 } = req.query;
     const alerts = getAlertHistory(parseInt(limit as string, 10));
@@ -641,7 +641,7 @@ router.get('/alerts/history', cacheMiddleware(10), async (req, res, next) => {
 });
 
 // Get alerts for specific miner (cached for 5 seconds)
-router.get('/alerts/miner/:minerId', cacheMiddleware(5), async (req, res, next) => {
+router.get('/mining/alerts/miner/:minerId', cacheMiddleware(5), async (req, res, next) => {
   try {
     const { minerId } = req.params;
     const alerts = getMinerAlerts(minerId);
@@ -652,7 +652,7 @@ router.get('/alerts/miner/:minerId', cacheMiddleware(5), async (req, res, next) 
 });
 
 // Get alert statistics
-router.get('/alerts/stats', async (req, res, next) => {
+router.get('/mining/alerts/stats', async (req, res, next) => {
   try {
     const stats = getAlertStats();
     res.json(stats);
@@ -662,7 +662,7 @@ router.get('/alerts/stats', async (req, res, next) => {
 });
 
 // Cleanup duplicate alerts from database
-router.post('/alerts/cleanup-duplicates', async (req, res, next) => {
+router.post('/mining/alerts/cleanup-duplicates', async (req, res, next) => {
   try {
     const result = cleanupDuplicateAlerts();
     res.json({
@@ -676,7 +676,7 @@ router.post('/alerts/cleanup-duplicates', async (req, res, next) => {
 });
 
 // Create manual alert
-router.post('/alerts/manual', async (req, res, next) => {
+router.post('/mining/alerts/manual', async (req, res, next) => {
   try {
     const { name, severity, summary, description, miner, minerIp, isFarmWide, recipients } = req.body;
     
@@ -718,7 +718,7 @@ router.post('/alerts/manual', async (req, res, next) => {
 });
 
 // Resolve manual alert
-router.post('/alerts/:alertId/resolve', async (req, res, next) => {
+router.post('/mining/alerts/:alertId/resolve', async (req, res, next) => {
   try {
     const { alertId } = req.params;
     const { resolveManualAlert } = require('../services/alert.service');

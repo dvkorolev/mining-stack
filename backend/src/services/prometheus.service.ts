@@ -62,11 +62,11 @@ async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
  */
 export async function getMinerHashrates(): Promise<Map<string, number>> {
   // Get SHA-256 hashrates (already in TH/s)
-  // Query without algorithm filter first, then filter by label if present
-  const sha256Results = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_ths)');
+  // Query without algorithm grouping first (it may not exist yet)
+  const sha256Results = await queryPrometheus('max by (ip) (miner_hashrate_ths)');
   
   // Get SCRYPT hashrates (in MH/s, need to convert to TH/s)
-  const scryptResults = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_mhs)');
+  const scryptResults = await queryPrometheus('max by (ip) (miner_hashrate_mhs)');
   
   const hashrates = new Map<string, number>();
 
@@ -106,9 +106,9 @@ export async function getMinerHashrates(): Promise<Map<string, number>> {
  */
 export async function getMinerAlgorithms(): Promise<Map<string, 'sha256' | 'scrypt'>> {
   // Query both metrics to get algorithm labels
-  // Don't filter by algorithm in the query - let the label tell us
-  const sha256Results = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_ths)');
-  const scryptResults = await queryPrometheus('max by (ip, algorithm) (miner_hashrate_mhs)');
+  // Group by ip only (algorithm label may not exist yet)
+  const sha256Results = await queryPrometheus('max by (ip) (miner_hashrate_ths)');
+  const scryptResults = await queryPrometheus('max by (ip) (miner_hashrate_mhs)');
   
   const algorithms = new Map<string, 'sha256' | 'scrypt'>();
 
