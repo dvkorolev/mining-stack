@@ -118,7 +118,7 @@ const Analytics: React.FC = () => {
 
   // Check if miner has issues
   const getMinerIssues = (miner: MinerStats) => {
-    const issues: Array<{ type: string; icon: React.ReactNode; message: string }> = [];
+    const issues: Array<{ type: string; icon: React.ReactElement; message: string }> = [];
     const temp = miner.hardware?.temperature;
     const power = miner.hardware?.powerUsage;
     const rejectionRate = (miner.shares.rejected / (miner.shares.accepted + miner.shares.rejected || 1)) * 100;
