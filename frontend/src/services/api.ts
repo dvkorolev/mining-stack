@@ -61,24 +61,34 @@ export interface MinerStats {
 }
 
 export interface MiningStatsResponse {
-  totalHashrate: number;
-  averageHashrate24h: number;
+  totalHashrate: number; // Combined total
+  totalHashrateSha256: number; // SHA256 total in TH/s
+  totalHashrateScrypt: number; // SCRYPT total in TH/s
+  averageHashrate24h: number; // Combined average
+  averageHashrate24hSha256: number; // SHA256 24h average
+  averageHashrate24hScrypt: number; // SCRYPT 24h average
   activeMiners: number;
+  activeMinersSha256: number; // Active SHA256 miners
+  activeMinersScrypt: number; // Active SCRYPT miners
   totalMined: number;
   miners: MinerStats[];
   timestamp: number;
   statsHistory: {
     timestamp: number;
     hashrate: number;
+    hashrateSha256: number;
+    hashrateScrypt: number;
   }[];
   // Pre-calculated aggregate statistics from backend
   aggregates?: {
-    avgEfficiency: number; // GH/W
+    avgEfficiency: number; // GH/W (SHA256 only)
     totalPower: number; // W
     avgTemperature: number; // °C
     rejectionRate: number; // %
-    maxHashrate: number; // TH/s (from last 24h)
-    minHashrate: number; // TH/s (from last 24h)
+    maxHashrate: number; // TH/s (from last 24h, SHA256 only)
+    minHashrate: number; // TH/s (from last 24h, SHA256 only)
+    maxHashrateScrypt: number; // TH/s (from last 24h, SCRYPT only)
+    minHashrateScrypt: number; // TH/s (from last 24h, SCRYPT only)
     uptimePercent: number; // %
   };
 }

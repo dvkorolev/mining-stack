@@ -339,15 +339,35 @@ const Dashboard: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* 24h Average Hashrate Card */}
+        {/* 24h Average Hashrate Card - Separate by Algorithm */}
         <Grid item xs={12} md={3}>
           <Paper sx={{ p: 2, height: '100%' }}>
             <Typography variant="h6" color="textSecondary" gutterBottom>
               24h Avg Hashrate
             </Typography>
-            <Typography variant="h4">
-              {stats?.averageHashrate24h ? `${stats.averageHashrate24h.toFixed(2)} TH/s` : 'N/A'}
-            </Typography>
+            {(stats?.activeMinersSha256 || 0) > 0 && (
+              <Box>
+                <Typography variant="body2" color="textSecondary">
+                  SHA-256
+                </Typography>
+                <Typography variant="h5">
+                  {stats?.averageHashrate24hSha256 ? `${stats.averageHashrate24hSha256.toFixed(2)} TH/s` : 'N/A'}
+                </Typography>
+              </Box>
+            )}
+            {(stats?.activeMinersScrypt || 0) > 0 && (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="body2" color="textSecondary">
+                  SCRYPT
+                </Typography>
+                <Typography variant="h5">
+                  {stats?.averageHashrate24hScrypt ? `${(stats.averageHashrate24hScrypt * 1000).toFixed(2)} GH/s` : 'N/A'}
+                </Typography>
+              </Box>
+            )}
+            {!stats?.activeMinersSha256 && !stats?.activeMinersScrypt && (
+              <Typography variant="h4">N/A</Typography>
+            )}
           </Paper>
         </Grid>
 

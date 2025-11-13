@@ -72,10 +72,15 @@ const Analytics: React.FC = () => {
   }, []);
 
   // Use backend aggregates instead of local calculations
+  // SHA256 metrics only (excluding SCRYPT)
   const analyticsStats = {
-    avgHashrate: stats?.averageHashrate24h || 0,
+    avgHashrate: stats?.averageHashrate24hSha256 || 0,
     maxHashrate: stats?.aggregates?.maxHashrate || 0,
     minHashrate: stats?.aggregates?.minHashrate || 0,
+    // SCRYPT metrics
+    avgHashrateScrypt: stats?.averageHashrate24hScrypt || 0,
+    maxHashrateScrypt: stats?.aggregates?.maxHashrateScrypt || 0,
+    minHashrateScrypt: stats?.aggregates?.minHashrateScrypt || 0,
     uptimePercent: stats?.aggregates?.uptimePercent || 0,
     totalBTC: stats?.totalMined || 0,
   };
@@ -105,20 +110,21 @@ const Analytics: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  // Miner performance comparison chart
-  const minerComparisonData = {
-    labels: stats?.miners?.map(m => m.name) || [],
+  // Miner comparison chart (SHA256 only, exclude SCRYPT)
+  const sha256Miners = stats?.miners?.filter(m => m.algorithm === 'sha256') || [];
+  const comparisonData = {
+    labels: sha256Miners.map(m => m.name),
     datasets: [
       {
         label: 'Current Hashrate (TH/s)',
-        data: stats?.miners?.map(m => m.currentHashrate) || [],
+        data: sha256Miners.map(m => m.currentHashrate),
         backgroundColor: 'rgba(75, 192, 192, 0.6)',
         borderColor: 'rgb(75, 192, 192)',
         borderWidth: 1,
       },
       {
         label: 'Average Hashrate (TH/s)',
-        data: stats?.miners?.map(m => m.averageHashrate) || [],
+        data: sha256Miners.map(m => m.averageHashrate),
         backgroundColor: 'rgba(255, 159, 64, 0.6)',
         borderColor: 'rgb(255, 159, 64)',
         borderWidth: 1,
@@ -150,15 +156,15 @@ const Analytics: React.FC = () => {
     },
   };
 
-  // Efficiency chart
+  // Efficiency chart (SHA256 only, exclude SCRYPT)
   const efficiencyData = {
-    labels: stats?.miners?.map(m => m.name) || [],
+    labels: sha256Miners.map(m => m.name),
     datasets: [
       {
         label: 'Efficiency (GH/W)',
-        data: stats?.miners?.map(m => 
+        data: sha256Miners.map(m => 
           (m.currentHashrate / (m.hardware?.powerUsage || 1)) * 1000
-        ) || [],
+        ),
         backgroundColor: 'rgba(153, 102, 255, 0.6)',
         borderColor: 'rgb(153, 102, 255)',
         borderWidth: 1,
@@ -222,44 +228,103 @@ const Analytics: React.FC = () => {
 
       <Grid container spacing={3}>
         {/* Summary Statistics */}
-        <Grid item xs={12} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="body2" color="textSecondary" gutterBottom>
-                Average Hashrate
+        {/* SHA256 Metrics */}
+        {(stats?.activeMinersSha256 || 0) > 0 && (
+          <>
+            <Grid item xs={12}>
+              <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
+                SHA-256 Miners
               </Typography>
-              <Typography variant="h5">
-                {analyticsStats.avgHashrate.toFixed(2)} TH/s
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Card>
+                <CardContent>
+                  <Typography variant="body2" color="textSecondary" gutterBottom>
+                    Avg Hashrate (24h)
+                  </Typography>
+                  <Typography variant="h5">
+                    {analyticsStats.avgHashrate.toFixed(2)} TH/s
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
 
-        <Grid item xs={12} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="body2" color="textSecondary" gutterBottom>
-                Peak Hashrate
-              </Typography>
-              <Typography variant="h5">
-                {analyticsStats.maxHashrate.toFixed(2)} TH/s
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+            <Grid item xs={12} md={4}>
+              <Card>
+                <CardContent>
+                  <Typography variant="body2" color="textSecondary" gutterBottom>
+                    Peak Hashrate
+                  </Typography>
+                  <Typography variant="h5">
+                    {analyticsStats.maxHashrate.toFixed(2)} TH/s
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
 
-        <Grid item xs={12} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="body2" color="textSecondary" gutterBottom>
-                Min Hashrate
+            <Grid item xs={12} md={4}>
+              <Card>
+                <CardContent>
+                  <Typography variant="body2" color="textSecondary" gutterBottom>
+                    Min Hashrate
+                  </Typography>
+                  <Typography variant="h5">
+                    {analyticsStats.minHashrate.toFixed(2)} TH/s
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </>
+        )}
+
+        {/* SCRYPT Metrics */}
+        {(stats?.activeMinersScrypt || 0) > 0 && (
+          <>
+            <Grid item xs={12}>
+              <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
+                SCRYPT Miners
               </Typography>
-              <Typography variant="h5">
-                {analyticsStats.minHashrate.toFixed(2)} TH/s
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Card>
+                <CardContent>
+                  <Typography variant="body2" color="textSecondary" gutterBottom>
+                    Avg Hashrate (24h)
+                  </Typography>
+                  <Typography variant="h5">
+                    {(analyticsStats.avgHashrateScrypt * 1000).toFixed(2)} GH/s
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <Card>
+                <CardContent>
+                  <Typography variant="body2" color="textSecondary" gutterBottom>
+                    Peak Hashrate
+                  </Typography>
+                  <Typography variant="h5">
+                    {(analyticsStats.maxHashrateScrypt * 1000).toFixed(2)} GH/s
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <Card>
+                <CardContent>
+                  <Typography variant="body2" color="textSecondary" gutterBottom>
+                    Min Hashrate
+                  </Typography>
+                  <Typography variant="h5">
+                    {(analyticsStats.minHashrateScrypt * 1000).toFixed(2)} GH/s
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </>
+        )}
 
         <Grid item xs={12} md={3}>
           <Card>
@@ -278,7 +343,7 @@ const Analytics: React.FC = () => {
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2 }}>
             <Box sx={{ height: '400px' }}>
-              <Bar data={minerComparisonData} options={minerComparisonOptions} />
+              <Bar data={comparisonData} options={minerComparisonOptions} />
             </Box>
           </Paper>
         </Grid>
