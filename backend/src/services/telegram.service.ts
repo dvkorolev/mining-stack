@@ -1153,6 +1153,17 @@ This will:
       // Pool actions
       else if (data.startsWith('pools_')) {
         const minerName = data.replace('pools_', '');
+        // Push current miner details view to navigation stack before viewing pools
+        const context = getUserContext(query.message.chat.id.toString());
+        const currentView = context.navigationStack[context.navigationStack.length - 1];
+        // Only push if we're not already in pools view
+        if (!currentView || currentView.type !== 'pools') {
+          pushView(query.message.chat.id.toString(), {
+            type: 'miner_details',
+            data: { minerName },
+            messageId: messageId,
+          });
+        }
         await sendMinerPools(query.message.chat.id, minerName, true, messageId);
       }
       // Quick actions (refresh = true, use callback message ID)
@@ -1696,8 +1707,13 @@ const sendMinerPools = async (chatId: number, minerName: string, isRefresh: bool
     logger.info('Telegram: Fetching pool configuration', { service: 'telegram', chatId, minerName });
     const miner = getMinerById(minerName);
     if (!miner) {
+      const context = getUserContext(chatId.toString());
+      const backButton = context.navigationStack.length > 1
+        ? { text: '⬅️ Back', callback_data: 'nav_back' }
+        : { text: '⬅️ Back to Miners', callback_data: 'miners_list' };
+      
       await sendOrEditMessage(chatId, `❌ Miner "${minerName}" not found`, {
-        inline_keyboard: [[{ text: '⬅️ Back to Miners', callback_data: 'miners_list' }]],
+        inline_keyboard: [[backButton]],
       }, 'pools', { minerName, error: true }, messageId, isRefresh);
       return;
     }
@@ -1710,10 +1726,15 @@ const sendMinerPools = async (chatId: number, minerName: string, isRefresh: bool
         `IP: \`${miner.ip}\`\n\n` +
         `${result.message || 'Unable to retrieve pool data'}`;
       
-      // Add back button
+      // Add smart back button
+      const context = getUserContext(chatId.toString());
+      const backButton = context.navigationStack.length > 1
+        ? { text: '⬅️ Back', callback_data: 'nav_back' }
+        : { text: '⬅️ Back to Miner', callback_data: `miner_${minerName}` };
+      
       const keyboard = {
         inline_keyboard: [
-          [{ text: '⬅️ Back to Miner', callback_data: `miner_${minerName}` }],
+          [backButton],
         ],
       };
       
@@ -1732,11 +1753,16 @@ const sendMinerPools = async (chatId: number, minerName: string, isRefresh: bool
       if (index < result.pools!.length - 1) message += '\n';
     });
 
-    // Add navigation buttons
+    // Add navigation buttons with smart back
+    const context = getUserContext(chatId.toString());
+    const backButton = context.navigationStack.length > 1
+      ? { text: '⬅️ Back', callback_data: 'nav_back' }
+      : { text: '🔙 Back to Miner', callback_data: `miner_${minerName}` };
+    
     const keyboard = {
       inline_keyboard: [
         [
-          { text: '🔙 Back to Miner', callback_data: `miner_${minerName}` },
+          backButton,
           { text: '⛏️ All Miners', callback_data: 'miners_list' },
         ],
       ],
@@ -1747,8 +1773,13 @@ const sendMinerPools = async (chatId: number, minerName: string, isRefresh: bool
   } catch (error) {
     logger.error('Telegram: Error sending pool configuration', { service: 'telegram', chatId, minerName, error });
     const errorMsg = `❌ Error fetching pool configuration for "${minerName}"`;
+    const context = getUserContext(chatId.toString());
+    const backButton = context.navigationStack.length > 1
+      ? { text: '⬅️ Back', callback_data: 'nav_back' }
+      : { text: '⬅️ Back to Miner', callback_data: `miner_${minerName}` };
+    
     await sendOrEditMessage(chatId, errorMsg, {
-      inline_keyboard: [[{ text: '⬅️ Back to Miner', callback_data: `miner_${minerName}` }]],
+      inline_keyboard: [[backButton]],
     }, 'pools', { minerName, error: true }, messageId, isRefresh);
   }
 };
