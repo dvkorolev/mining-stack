@@ -90,17 +90,17 @@ const Alerts: React.FC = () => {
       setLoading(true);
       
       // Fetch active alerts
-      const activeResponse = await fetch('/api/alerts/active');
+      const activeResponse = await fetch('/api/mining/alerts/active');
       const activeData = await activeResponse.json();
       setActiveAlerts(activeData);
 
       // Fetch alert history
-      const historyResponse = await fetch('/api/alerts/history?limit=50');
+      const historyResponse = await fetch('/api/mining/alerts/history?limit=50');
       const historyData = await historyResponse.json();
       setAlertHistory(historyData);
 
       // Fetch alert statistics
-      const statsResponse = await fetch('/api/alerts/stats');
+      const statsResponse = await fetch('/api/mining/alerts/stats');
       const statsData = await statsResponse.json();
       setAlertStats(statsData);
 
@@ -124,7 +124,7 @@ const Alerts: React.FC = () => {
   const handleCreateAlert = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/alerts/manual', {
+      const response = await fetch('/api/mining/alerts/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -159,7 +159,7 @@ const Alerts: React.FC = () => {
   // Resolve manual alert
   const handleResolveAlert = async (alertId: string) => {
     try {
-      const response = await fetch(`/api/alerts/${alertId}/resolve`, {
+      const response = await fetch(`/api/mining/alerts/${alertId}/resolve`, {
         method: 'POST',
       });
       
