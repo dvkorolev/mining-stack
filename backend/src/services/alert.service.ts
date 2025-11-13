@@ -190,6 +190,9 @@ const loadAlertsFromDb = (): void => {
     const last24h = Date.now() - 24 * 60 * 60 * 1000;
     const rows = stmt.all(last24h, MAX_HISTORY_SIZE) as any[];
     
+    // Use a Map to deduplicate alerts by ID (keep most recent version)
+    const alertsMap = new Map<string, Alert>();
+    
     rows.forEach(row => {
       const alert: Alert = {
         id: row.id,
@@ -205,6 +208,14 @@ const loadAlertsFromDb = (): void => {
         annotations: JSON.parse(row.annotations || '{}'),
       };
       
+      // Only keep the most recent version of each alert
+      if (!alertsMap.has(alert.id)) {
+        alertsMap.set(alert.id, alert);
+      }
+    });
+    
+    // Convert map to array and add to storage
+    alertsMap.forEach(alert => {
       // Add to in-memory storage
       if (alert.status === 'firing') {
         activeAlerts.set(alert.id, alert);
@@ -339,6 +350,68 @@ export const clearResolvedAlerts = (): void => {
 };
 
 /**
+ * Clean up duplicate alerts from database
+ * Keeps only the most recent version of each alert ID
+ */
+export const cleanupDuplicateAlerts = (): { removed: number } => {
+  if (!db) {
+    logger.warn('Cannot cleanup duplicates: database not initialized');
+    return { removed: 0 };
+  }
+  
+  try {
+    // Find duplicate alert IDs
+    const duplicatesStmt = db.prepare(`
+      SELECT id, COUNT(*) as count 
+      FROM alerts 
+      GROUP BY id 
+      HAVING count > 1
+    `);
+    
+    const duplicates = duplicatesStmt.all() as { id: string; count: number }[];
+    
+    if (duplicates.length === 0) {
+      logger.info('No duplicate alerts found in database');
+      return { removed: 0 };
+    }
+    
+    let totalRemoved = 0;
+    
+    // For each duplicate, keep only the most recent entry
+    for (const dup of duplicates) {
+      const keepStmt = db.prepare(`
+        SELECT rowid FROM alerts 
+        WHERE id = ? 
+        ORDER BY created_at DESC 
+        LIMIT 1
+      `);
+      
+      const keepRow = keepStmt.get(dup.id) as { rowid: number } | undefined;
+      
+      if (keepRow) {
+        const deleteStmt = db.prepare(`
+          DELETE FROM alerts 
+          WHERE id = ? AND rowid != ?
+        `);
+        
+        const result = deleteStmt.run(dup.id, keepRow.rowid);
+        totalRemoved += result.changes;
+      }
+    }
+    
+    logger.info(`Cleaned up ${totalRemoved} duplicate alerts from database`, {
+      duplicateIds: duplicates.length,
+      rowsRemoved: totalRemoved
+    });
+    
+    return { removed: totalRemoved };
+  } catch (error) {
+    logger.error('Failed to cleanup duplicate alerts', error);
+    return { removed: 0 };
+  }
+};
+
+/**
  * Determine which users should receive this alert
  * @param minerIp IP address of the miner (if miner-specific alert)
  * @param isFarmWide If true, send to all users
@@ -387,13 +460,23 @@ const generateAlertId = (alert: any): string => {
 
 /**
  * Add alert to history (in-memory and database)
+ * Updates existing alert if it already exists (by ID)
  */
 const addToHistory = (alert: Alert): void => {
-  alertHistory.unshift(alert);
+  // Check if alert already exists in history
+  const existingIndex = alertHistory.findIndex(a => a.id === alert.id);
   
-  // Keep history size limited
-  if (alertHistory.length > MAX_HISTORY_SIZE) {
-    alertHistory.splice(MAX_HISTORY_SIZE);
+  if (existingIndex !== -1) {
+    // Update existing alert in place
+    alertHistory[existingIndex] = alert;
+  } else {
+    // Add new alert to beginning of history
+    alertHistory.unshift(alert);
+    
+    // Keep history size limited
+    if (alertHistory.length > MAX_HISTORY_SIZE) {
+      alertHistory.splice(MAX_HISTORY_SIZE);
+    }
   }
   
   // Persist to database

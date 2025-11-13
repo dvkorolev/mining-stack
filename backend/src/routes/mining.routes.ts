@@ -36,7 +36,8 @@ import {
   getActiveAlerts, 
   getAlertHistory, 
   getMinerAlerts,
-  getAlertStats 
+  getAlertStats,
+  cleanupDuplicateAlerts
 } from '../services/alert.service';
 import {
   rebootMiner,
@@ -655,6 +656,20 @@ router.get('/alerts/stats', async (req, res, next) => {
   try {
     const stats = getAlertStats();
     res.json(stats);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Cleanup duplicate alerts from database
+router.post('/alerts/cleanup-duplicates', async (req, res, next) => {
+  try {
+    const result = cleanupDuplicateAlerts();
+    res.json({
+      success: true,
+      message: `Cleaned up ${result.removed} duplicate alerts`,
+      removed: result.removed
+    });
   } catch (error) {
     next(error);
   }
