@@ -93,6 +93,52 @@ export interface MiningStatsResponse {
   };
 }
 
+// ==================== THRESHOLDS API ====================
+
+export interface ThresholdsConfig {
+  temperature: {
+    warning: number;
+    critical: number;
+    shutdown: number;
+  };
+  hashrate: {
+    expected?: number;
+    warningPercent: number;
+    criticalPercent: number;
+  };
+  power: {
+    expected?: number;
+    warningPercent: number;
+  };
+  rejectionRate: {
+    warning: number;
+    critical: number;
+  };
+  fanSpeed: {
+    warning: number;
+    critical: number;
+  };
+}
+
+export interface ThresholdsResponse {
+  global: ThresholdsConfig;
+  miner?: ThresholdsConfig;
+  minerIp?: string;
+}
+
+export const getThresholds = async (minerIp?: string): Promise<ThresholdsResponse> => {
+  try {
+    const params = minerIp ? `?minerIp=${minerIp}` : '';
+    const response = await api.get(`/mining/thresholds${params}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching thresholds:', error);
+    throw error;
+  }
+};
+
+// ==================== MINING STATS API ====================
+
 export const fetchMiningStats = async (): Promise<MiningStatsResponse> => {
   try {
     const response = await api.get('/mining/stats');

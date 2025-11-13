@@ -21,6 +21,7 @@ import {
   importMinersFromYAML,
   exportMinersToYAML,
   backupMinersToYAML,
+  getEffectiveThresholds,
 } from '../config/miners.config';
 import { requireAdmin } from '../middleware/auth.middleware';
 import { getDatabase } from '../services/database.service';
@@ -48,6 +49,37 @@ import {
 } from '../services/miner-control.service';
 
 const router = Router();
+
+// Get configured thresholds (global defaults + per-miner overrides)
+router.get('/mining/thresholds', cacheMiddleware(30), async (req, res, next) => {
+  try {
+    const { config } = require('../config/config');
+    const globalThresholds = config.thresholds;
+    
+    // Get per-miner thresholds if minerIp is provided
+    const { minerIp } = req.query;
+    if (minerIp && typeof minerIp === 'string') {
+      const miners = getMiners();
+      const miner = miners.find(m => m.ip === minerIp);
+      if (miner) {
+        const effectiveThresholds = getEffectiveThresholds(miner);
+        res.json({
+          global: globalThresholds,
+          miner: effectiveThresholds,
+          minerIp,
+        });
+        return;
+      }
+    }
+    
+    // Return only global thresholds
+    res.json({
+      global: globalThresholds,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Get current mining stats (cached for 5 seconds, filtered by owner if not admin)
 router.get('/mining/stats', cacheMiddleware(5), async (req, res, next) => {
