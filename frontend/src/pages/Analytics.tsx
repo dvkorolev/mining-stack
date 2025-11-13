@@ -21,11 +21,18 @@ import {
 import WarningIcon from '@mui/icons-material/Warning';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import FlashOnIcon from '@mui/icons-material/FlashOn';
-import { fetchMiningStats, MiningStatsResponse, MinerStats } from '../services/api';
+import { fetchMiningStats, MiningStatsResponse, MinerStats, getAlertRules, AlertRule } from '../services/api';
 import { formatHashrate, getHashrateValue } from '../utils/hashrate';
 
 type SortColumn = 'name' | 'hashrate' | 'efficiency' | 'temperature' | 'rejection';
 type SortOrder = 'asc' | 'desc';
+
+interface AlertThresholds {
+  temperature?: { value: number; severity: 'critical' | 'warning' | 'info' }[];
+  rejectionRate?: { value: number; severity: 'critical' | 'warning' | 'info' }[];
+  efficiency?: { value: number; severity: 'critical' | 'warning' | 'info'; operator: 'less' | 'greater' }[];
+  offline?: { severity: 'critical' | 'warning' | 'info' };
+}
 
 const Analytics: React.FC = () => {
   const [stats, setStats] = useState<MiningStatsResponse | null>(null);
@@ -33,6 +40,29 @@ const Analytics: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  const [alertThresholds, setAlertThresholds] = useState<AlertThresholds>({});
+
+  // Load alert rules on mount
+  useEffect(() => {
+    const loadAlertRules = async () => {
+      try {
+        const rules = await getAlertRules({ enabled: true, component: 'miner' });
+        const thresholds = parseAlertThresholds(rules);
+        setAlertThresholds(thresholds);
+      } catch (error) {
+        console.error('Error fetching alert rules:', error);
+        // Fall back to default thresholds if API fails
+        setAlertThresholds({
+          temperature: [{ value: 75, severity: 'warning' }, { value: 80, severity: 'critical' }],
+          rejectionRate: [{ value: 2, severity: 'warning' }, { value: 5, severity: 'critical' }],
+          efficiency: [{ value: 30, severity: 'warning', operator: 'less' }],
+          offline: { severity: 'critical' },
+        });
+      }
+    };
+
+    loadAlertRules();
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -54,6 +84,59 @@ const Analytics: React.FC = () => {
 
     return () => clearInterval(interval);
   }, []);
+
+  // Parse alert rules to extract thresholds from PromQL expressions
+  const parseAlertThresholds = (rules: AlertRule[]): AlertThresholds => {
+    const thresholds: AlertThresholds = {
+      temperature: [],
+      rejectionRate: [],
+      efficiency: [],
+    };
+
+    rules.forEach(rule => {
+      const expr = rule.expr.toLowerCase();
+      
+      // Parse temperature thresholds: miner_temperature > 75
+      const tempMatch = expr.match(/miner_temperature\s*([><=]+)\s*([0-9.]+)/);
+      if (tempMatch) {
+        thresholds.temperature?.push({
+          value: parseFloat(tempMatch[2]),
+          severity: rule.severity,
+        });
+      }
+
+      // Parse rejection rate thresholds: miner_rejection_rate > 2
+      const rejectionMatch = expr.match(/rejection[_\s]*rate\s*([><=]+)\s*([0-9.]+)/);
+      if (rejectionMatch) {
+        thresholds.rejectionRate?.push({
+          value: parseFloat(rejectionMatch[2]),
+          severity: rule.severity,
+        });
+      }
+
+      // Parse efficiency thresholds: miner_efficiency < 30
+      const efficiencyMatch = expr.match(/efficiency\s*([><=]+)\s*([0-9.]+)/);
+      if (efficiencyMatch) {
+        thresholds.efficiency?.push({
+          value: parseFloat(efficiencyMatch[2]),
+          severity: rule.severity,
+          operator: efficiencyMatch[1].includes('<') ? 'less' : 'greater',
+        });
+      }
+
+      // Parse offline/status alerts
+      if (expr.includes('offline') || expr.includes('down') || expr.includes('status')) {
+        thresholds.offline = { severity: rule.severity };
+      }
+    });
+
+    // Sort thresholds by value for proper severity application
+    thresholds.temperature?.sort((a, b) => a.value - b.value);
+    thresholds.rejectionRate?.sort((a, b) => a.value - b.value);
+    thresholds.efficiency?.sort((a, b) => a.value - b.value);
+
+    return thresholds;
+  };
 
   // Use backend aggregates instead of local calculations
   // SHA256 metrics only (excluding SCRYPT)
@@ -116,40 +199,76 @@ const Analytics: React.FC = () => {
     });
   }, [stats?.miners, sortColumn, sortOrder]);
 
-  // Check if miner has issues
+  // Check if miner has issues using dynamic thresholds from alert rules
   const getMinerIssues = (miner: MinerStats) => {
-    const issues: Array<{ type: string; icon: React.ReactElement; message: string }> = [];
+    const issues: Array<{ type: string; icon: React.ReactElement; message: string; severity: 'critical' | 'warning' | 'info' }> = [];
     const temp = miner.hardware?.temperature;
     const power = miner.hardware?.powerUsage;
     const rejectionRate = (miner.shares.rejected / (miner.shares.accepted + miner.shares.rejected || 1)) * 100;
     const efficiency = power ? (miner.currentHashrate / power) * 1000 : 0;
 
-    if (temp && temp > 75) {
-      issues.push({ 
-        type: 'temperature', 
-        icon: <LocalFireDepartmentIcon fontSize="small" />, 
-        message: `High temperature: ${temp.toFixed(1)}°C` 
-      });
+    // Check temperature against dynamic thresholds
+    if (temp && alertThresholds.temperature) {
+      for (let i = alertThresholds.temperature.length - 1; i >= 0; i--) {
+        const threshold = alertThresholds.temperature[i];
+        if (temp > threshold.value) {
+          issues.push({ 
+            type: 'temperature', 
+            icon: <LocalFireDepartmentIcon fontSize="small" />, 
+            message: `High temperature: ${temp.toFixed(1)}°C (threshold: ${threshold.value}°C)`,
+            severity: threshold.severity,
+          });
+          break;
+        }
+      }
     }
-    if (rejectionRate > 2) {
-      issues.push({ 
-        type: 'rejection', 
-        icon: <WarningIcon fontSize="small" />, 
-        message: `High rejection rate: ${rejectionRate.toFixed(2)}%` 
-      });
+
+    // Check rejection rate against dynamic thresholds
+    if (alertThresholds.rejectionRate) {
+      for (let i = alertThresholds.rejectionRate.length - 1; i >= 0; i--) {
+        const threshold = alertThresholds.rejectionRate[i];
+        if (rejectionRate > threshold.value) {
+          issues.push({ 
+            type: 'rejection', 
+            icon: <WarningIcon fontSize="small" />, 
+            message: `High rejection rate: ${rejectionRate.toFixed(2)}% (threshold: ${threshold.value}%)`,
+            severity: threshold.severity,
+          });
+          break;
+        }
+      }
     }
-    if (power && efficiency < 30) {
-      issues.push({ 
-        type: 'efficiency', 
-        icon: <FlashOnIcon fontSize="small" />, 
-        message: `Low efficiency: ${efficiency.toFixed(2)} GH/W` 
-      });
+
+    // Check efficiency against dynamic thresholds
+    if (power && alertThresholds.efficiency) {
+      for (const threshold of alertThresholds.efficiency) {
+        if (threshold.operator === 'less' && efficiency < threshold.value) {
+          issues.push({ 
+            type: 'efficiency', 
+            icon: <FlashOnIcon fontSize="small" />, 
+            message: `Low efficiency: ${efficiency.toFixed(2)} GH/W (threshold: ${threshold.value} GH/W)`,
+            severity: threshold.severity,
+          });
+          break;
+        } else if (threshold.operator === 'greater' && efficiency > threshold.value) {
+          issues.push({ 
+            type: 'efficiency', 
+            icon: <FlashOnIcon fontSize="small" />, 
+            message: `Efficiency issue: ${efficiency.toFixed(2)} GH/W (threshold: ${threshold.value} GH/W)`,
+            severity: threshold.severity,
+          });
+          break;
+        }
+      }
     }
+
+    // Check offline status
     if (miner.status === 'offline' || miner.status === 'error') {
       issues.push({ 
         type: 'offline', 
         icon: <WarningIcon fontSize="small" />, 
-        message: `Miner ${miner.status}` 
+        message: `Miner ${miner.status}`,
+        severity: alertThresholds.offline?.severity || 'critical',
       });
     }
 
@@ -366,8 +485,8 @@ const Analytics: React.FC = () => {
                                   icon={issue.icon}
                                   label=""
                                   size="small"
-                                  color={issue.type === 'temperature' ? 'error' : 
-                                         issue.type === 'offline' ? 'error' : 'warning'}
+                                  color={issue.severity === 'critical' ? 'error' : 
+                                         issue.severity === 'warning' ? 'warning' : 'info'}
                                   sx={{ minWidth: '32px', '& .MuiChip-label': { px: 0 } }}
                                 />
                               </Tooltip>
@@ -397,16 +516,39 @@ const Analytics: React.FC = () => {
                         </TableCell>
                         <TableCell align="right">
                           <Typography
-                            color={miner.hardware?.temperature && miner.hardware.temperature > 80 ? 'error' : 
-                                   miner.hardware?.temperature && miner.hardware.temperature > 75 ? 'warning.main' : 'inherit'}
+                            color={
+                              miner.hardware?.temperature && alertThresholds.temperature
+                                ? (() => {
+                                    const temp = miner.hardware.temperature;
+                                    for (let i = alertThresholds.temperature.length - 1; i >= 0; i--) {
+                                      const t = alertThresholds.temperature[i];
+                                      if (temp > t.value) {
+                                        return t.severity === 'critical' ? 'error' : 'warning.main';
+                                      }
+                                    }
+                                    return 'inherit';
+                                  })()
+                                : 'inherit'
+                            }
                           >
                             {miner.hardware?.temperature !== undefined ? miner.hardware.temperature.toFixed(1) : '—'}
                           </Typography>
                         </TableCell>
                         <TableCell align="right">
                           <Typography
-                            color={rejectionRate > 5 ? 'error' : 
-                                   rejectionRate > 2 ? 'warning.main' : 'inherit'}
+                            color={
+                              alertThresholds.rejectionRate
+                                ? (() => {
+                                    for (let i = alertThresholds.rejectionRate.length - 1; i >= 0; i--) {
+                                      const t = alertThresholds.rejectionRate[i];
+                                      if (rejectionRate > t.value) {
+                                        return t.severity === 'critical' ? 'error' : 'warning.main';
+                                      }
+                                    }
+                                    return 'inherit';
+                                  })()
+                                : 'inherit'
+                            }
                           >
                             {rejectionRate.toFixed(2)}%
                           </Typography>
