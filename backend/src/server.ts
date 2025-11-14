@@ -6,7 +6,6 @@ import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import miningRoutes from './routes/mining.routes';
-import poolsRoutes from './routes/pools.routes';
 import poolApiRoutes from './routes/pool.routes';
 import logsRoutes from './routes/logs.routes';
 import telegramRoutes from './routes/telegram.routes';
@@ -60,7 +59,6 @@ app.use('/api', optionalAuth);
 // API Routes
 app.use('/api', authRoutes); // Auth routes (no authentication required)
 app.use('/api', miningRoutes);
-app.use('/api/pools', poolsRoutes); // Pool configuration (stratum)
 app.use('/api', poolApiRoutes); // Pool API monitoring (EMCD, etc.)
 app.use('/api/logs', logsRoutes);
 app.use('/api/telegram', telegramRoutes);
@@ -187,13 +185,7 @@ server.listen(PORT, async () => {
   logger.info(`Server is running on port ${PORT}`);
   console.log(`Server is running on http://localhost:${PORT}`);
   
-  // Initialize pools from YAML if database is empty
-  try {
-    const { initializePoolsFromYAML } = require('./services/pools-config.service');
-    initializePoolsFromYAML();
-  } catch (error) {
-    logger.error('Failed to initialize pools from YAML:', error);
-  }
+  // Pool configuration removed - miners store their own pool settings
 
   // Initialize miners from YAML if database is empty
   try {
