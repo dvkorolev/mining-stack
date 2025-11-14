@@ -1233,10 +1233,16 @@ const updateMetricsFromScheduler = async (
       const total = accepted + rejected;
       const rejectionRate = total > 0 ? (rejected / total) * 100 : 0;
       
-      // Detect algorithm (SCRYPT miners have hashrate_mhs field OR model contains DG1/L3/L7)
+      // Detect algorithm - prioritize model-based detection over hashrate_mhs field
+      // Model-based detection is more reliable than checking hashrate_mhs field
       const modelLower = (m.model || '').toLowerCase();
       const isScryptByModel = modelLower.includes('dg1') || modelLower.includes('l3') || modelLower.includes('l7');
-      const isScrypt = (m.hashrate_mhs !== undefined && m.hashrate_mhs > 0) || isScryptByModel;
+      
+      // Only use hashrate_mhs as secondary indicator if model is ambiguous
+      // AND only if hashrate_mhs is significantly large (> 1000 MH/s = 1 GH/s)
+      const hasScryptHashrate = m.hashrate_mhs !== undefined && m.hashrate_mhs > 1000;
+      
+      const isScrypt = isScryptByModel || (!modelLower && hasScryptHashrate);
       const algorithm = isScrypt ? 'scrypt' : 'sha256';
       
       // Normalize hashrate to TH/s for consistency
