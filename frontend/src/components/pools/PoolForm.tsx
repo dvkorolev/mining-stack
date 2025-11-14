@@ -65,15 +65,26 @@ const PoolForm: React.FC<PoolFormProps> = ({
     } else if (!formData.url.includes(':')) {
       newErrors.url = 'URL must be in format hostname:port';
     } else {
-      const [hostname, portStr] = formData.url.split(':');
-      const port = parseInt(portStr, 10);
+      // Split from the right to handle URLs with protocols (e.g., stratum+tcp://pool.com:3333)
+      const parts = formData.url.split(':');
+      const portStr = parts[parts.length - 1];
+      const hostname = parts.slice(0, -1).join(':');
       
-      if (!hostname || hostname.length === 0) {
+      // Clean hostname from protocol prefixes
+      const cleanHostname = hostname.replace(/^(stratum\+tcp|stratum\+ssl|stratum):\/\//, '');
+      
+      if (!cleanHostname || cleanHostname.length === 0) {
         newErrors.url = 'Invalid hostname';
       }
       
-      if (isNaN(port) || port < 1 || port > 65535) {
-        newErrors.url = 'Port must be between 1 and 65535';
+      // Validate port: must be a non-empty numeric string between 1-65535
+      if (!portStr || portStr.trim().length === 0) {
+        newErrors.url = 'Port is required';
+      } else {
+        const port = parseInt(portStr, 10);
+        if (isNaN(port) || port < 1 || port > 65535) {
+          newErrors.url = 'Port must be a number between 1 and 65535';
+        }
       }
     }
 
