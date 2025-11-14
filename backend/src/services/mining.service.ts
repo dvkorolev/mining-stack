@@ -1177,6 +1177,10 @@ const updateMetricsFromScheduler = async (
     const allMinersFromDb = db.getAllMiners();
     const ownershipMap = new Map(allMinersFromDb.map(m => [m.ip, m.owner]));
     
+    // Get all configured miners (to include those not yet scraped after restart)
+    const configuredMiners = getMiners();
+    const pushedMinerIps = new Set(miners.map(m => m.ip));
+    
     // Convert scheduler format to our MinerStats format
     const minerStats: MinerStats[] = miners.map(m => {
       // Log temperature values for debugging
@@ -1287,6 +1291,32 @@ const updateMetricsFromScheduler = async (
       };
     });
     
+    // Add configured miners that weren't in the push (not yet scraped after restart)
+    for (const configMiner of configuredMiners) {
+      if (!pushedMinerIps.has(configMiner.ip)) {
+        logger.info(`Adding configured miner not in push: ${configMiner.name} (${configMiner.ip})`);
+        minerStats.push({
+          minerId: configMiner.name || configMiner.ip,
+          name: configMiner.alias || configMiner.name || configMiner.ip,
+          model: configMiner.model,
+          ip: configMiner.ip,
+          owner: ownershipMap.get(configMiner.ip) || undefined,
+          algorithm: undefined, // Will be detected when metrics arrive
+          status: 'offline',
+          statusMessage: 'PENDING', // Not yet scraped
+          lastSeen: new Date(0), // Never seen
+          currentHashrate: 0,
+          averageHashrate: 0,
+          shares: { accepted: 0, rejected: 0 },
+          hardware: { temperature: 0, fanSpeed: 0, powerUsage: 0 },
+          uptime: 0,
+          errors: [],
+          errorCount: 0,
+          lastError: undefined,
+        });
+      }
+    }
+    
     // Calculate aggregates by algorithm
     let totalHashrate = minerStats.reduce((sum, m) => sum + m.currentHashrate, 0);
     let totalHashrateSha256 = minerStats
@@ -1359,7 +1389,7 @@ const updateMetricsFromScheduler = async (
       activeMiners,
       activeMinersSha256,
       activeMinersScrypt,
-      totalMiners: miners.length,
+      totalMiners: minerStats.length, // Use merged count (includes configured miners not yet scraped)
       totalMined: miningStats.totalMined, // Keep existing total
       miners: minerStats,
       timestamp: timestamp || Date.now(),
@@ -1384,7 +1414,7 @@ const updateMetricsFromScheduler = async (
         totalHashrate: miningStats.totalHashrate,
         averageHashrate24h: miningStats.averageHashrate24h,
         activeMiners: miningStats.activeMiners,
-        totalMiners: miners.length,
+        totalMiners: minerStats.length, // Use merged count
         totalMined: miningStats.totalMined,
         avgTemperature,
         avgPower,

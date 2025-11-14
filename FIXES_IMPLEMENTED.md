@@ -261,19 +261,161 @@ if (!portStr || portStr.trim().length === 0) {
 
 ## Files Modified
 
-1. `backend/src/services/mining.service.ts` - Status determination logic
+1. `backend/src/services/mining.service.ts` - Status determination logic, missing miners after restart
 2. `python-scheduler/main.py` - Fallback state calculation, algorithm passing
 3. `backend/src/services/pools-config.service.ts` - TypeScript type annotation
 4. `frontend/src/components/pools/PoolForm.tsx` - URL validation
+5. `backend/src/services/telegram.service.ts` - Fan speed unit display
 
 ---
 
 ## Impact Assessment
 
-**Critical:** Miner status bugs - Fixes miners showing incorrectly as offline
-**High:** Algorithm label consistency - Prevents metric duplication
-**Medium:** TypeScript error - Unblocks build process
-**Low:** Frontend validation - Improves edge case handling
+**Critical:** 
+- Miner status bugs - Fixes miners showing incorrectly as offline
+- Fan speed display - Fixes misleading percentage display in Telegram
+
+**High:** 
+- Algorithm label consistency - Prevents metric duplication
+
+**Medium:** 
+- TypeScript error - Unblocks build process
+
+**Low:** 
+- Frontend validation - Improves edge case handling
+
+---
+
+---
+
+## 5. Telegram Fan Speed Display Fix
+
+### Issue: Fan Speed Shown as Percentage Instead of RPM
+
+#### Problem: Unit Display Error
+**File:** `backend/src/services/telegram.service.ts`
+**Line:** 1582
+
+**Root Cause:**
+- Fan speeds are stored in **RPM** (revolutions per minute) in Prometheus metrics
+- Telegram message displayed RPM values with **%** symbol
+- Created misleading display like "Fans: 4633%" instead of "Fans: 4633 RPM"
+
+**Example from Production:**
+```
+m301 (M30S++ VH90 (Stock))
+🟢 Status: ONLINE
+Details:
+🌡️ Temp: 75.8°C | 💨 Fans: 4633%  ❌ WRONG
+```
+
+**Data Flow:**
+1. Prometheus metric `miner_fan_speed_rpm` stores actual RPM values (e.g., 4633)
+2. Mining service averages RPM values: `avgFanSpeed = sum(fans) / fans.length`
+3. Telegram service displayed: `${fanSpeed}%` ← **Wrong unit**
+
+**Fix:**
+```typescript
+// BEFORE: Incorrect unit symbol
+message += `💨 Fans: *${minerStats.hardware.fanSpeed.toFixed(0)}%*\n`;
+
+// AFTER: Correct unit (RPM)
+message += `💨 Fans: *${minerStats.hardware.fanSpeed.toFixed(0)} RPM*\n`;
+```
+
+**Corrected Output:**
+```
+m301 (M30S++ VH90 (Stock))
+🟢 Status: ONLINE
+Details:
+🌡️ Temp: 75.8°C | 💨 Fans: 4633 RPM  ✅ CORRECT
+```
+
+**Impact:**
+- **Critical:** User-facing display error causing confusion
+- **Scope:** Telegram bot messages only
+- **Frontend:** Already displays RPM correctly in Analytics page
+
+---
+
+## 6. Missing Miners After Container Restart Fix
+
+### Issue: All Miners Except One Show Offline After Restart
+
+#### Problem: Miners Not Yet Scraped Don't Appear
+**File:** `backend/src/services/mining.service.ts`
+**Lines:** 1167-1318
+
+**Root Cause:**
+- After container restart, Python scheduler gradually scrapes miners
+- Backend only displayed miners that were in the pushed metrics data
+- Miners not yet scraped were completely missing from the UI (not shown as offline)
+- Only miners that were scraped appeared, others disappeared until first scrape
+
+**Scenario:**
+```
+1. Container restarts → Prometheus metrics cleared
+2. Python scheduler starts scraping miners one by one
+3. m301 gets scraped first → Shows in UI
+4. Other miners not yet scraped → Missing from UI entirely
+5. User sees: "All miners except m301 are offline"
+   Reality: Other miners just aren't in the data yet
+```
+
+**Data Flow Issue:**
+```typescript
+// BEFORE: Only processed pushed miners
+const minerStats: MinerStats[] = miners.map(m => { ... });
+// If miner not in 'miners' array, it doesn't appear!
+```
+
+**Fix:**
+```typescript
+// AFTER: Include all configured miners
+// Get all configured miners from database
+const configuredMiners = getMiners();
+const pushedMinerIps = new Set(miners.map(m => m.ip));
+
+// Process pushed miners (same as before)
+const minerStats: MinerStats[] = miners.map(m => { ... });
+
+// Add configured miners that weren't in the push
+for (const configMiner of configuredMiners) {
+  if (!pushedMinerIps.has(configMiner.ip)) {
+    logger.info(`Adding configured miner not in push: ${configMiner.name}`);
+    minerStats.push({
+      minerId: configMiner.name || configMiner.ip,
+      name: configMiner.alias || configMiner.name || configMiner.ip,
+      model: configMiner.model,
+      ip: configMiner.ip,
+      status: 'offline',
+      statusMessage: 'PENDING', // Not yet scraped
+      lastSeen: new Date(0),
+      currentHashrate: 0,
+      // ... other default values
+    });
+  }
+}
+```
+
+**Corrected Behavior:**
+```
+1. Container restarts
+2. Backend loads all configured miners from database
+3. All miners show as "offline" with status "PENDING"
+4. As Python scheduler scrapes each miner, status updates
+5. User sees: All miners listed, status updates as they're scraped
+```
+
+**Additional Fixes:**
+- Updated `totalMiners` count to use merged array length
+- Status "PENDING" indicates miner is configured but not yet scraped
+- `lastSeen: new Date(0)` shows miner has never been seen
+
+**Impact:**
+- **Critical:** Prevents miners from disappearing after restart
+- **Scope:** Backend metrics processing
+- **User Experience:** All miners always visible, status updates as data arrives
 
 ---
 

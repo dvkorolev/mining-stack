@@ -1579,7 +1579,7 @@ const sendMinerDetails = async (chatId: number, minerName: string, isRefresh: bo
     // Hardware and Pool Stats
     message += `*Details:*
 `;
-    message += `🌡️ Temp: *${minerStats.hardware.temperature.toFixed(1)}°C* | 💨 Fans: *${minerStats.hardware.fanSpeed.toFixed(0)}%*\n`;
+    message += `🌡️ Temp: *${minerStats.hardware.temperature.toFixed(1)}°C* | 💨 Fans: *${minerStats.hardware.fanSpeed.toFixed(0)} RPM*\n`;
     message += `🔌 Power: *${minerStats.hardware.powerUsage.toFixed(0)}W* | 🕒 Uptime: *${formatUptime(minerStats.uptime)}*\n\n`;
     message += `*Pool Stats:*
 `;
