@@ -27,7 +27,6 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { Line } from 'react-chartjs-2';
-import MinerPoolConfig from './miners/MinerPoolConfig';
 
 interface MinerError {
   code: string;
@@ -267,7 +266,6 @@ const MinerDetailsModal: React.FC<MinerDetailsModalProps> = ({
         <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
           <Tab label="Overview" />
           <Tab label="Charts" />
-          <Tab label="Pool Configuration" />
         </Tabs>
       </Box>
 
@@ -444,10 +442,7 @@ const MinerDetailsModal: React.FC<MinerDetailsModalProps> = ({
         </Grid>
         )}
 
-        {/* Tab Panel 2: Pool Configuration */}
-        {tabValue === 2 && (
-          <MinerPoolConfig minerIp={miner.ip} minerName={miner.name} />
-        )}
+        {/* Pool Configuration tab removed - pools synced from hardware only */}
       </DialogContent>
 
       <DialogActions>
