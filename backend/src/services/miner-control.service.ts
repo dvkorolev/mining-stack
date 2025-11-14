@@ -322,7 +322,21 @@ export const getMinerPools = async (minerId: string): Promise<{
 
         client.on('end', () => {
           try {
-            const parsed = JSON.parse(responseData);
+            // Clean response: remove null bytes, control characters, and trailing garbage
+            const cleanResponse = responseData
+              .replace(/\0/g, '')           // Remove null bytes
+              .replace(/[\x00-\x1F\x7F]/g, '') // Remove other control characters
+              .trim();
+            
+            // Try to extract valid JSON if response has trailing data
+            let jsonStr = cleanResponse;
+            const firstBrace = cleanResponse.indexOf('{');
+            const lastBrace = cleanResponse.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+              jsonStr = cleanResponse.substring(firstBrace, lastBrace + 1);
+            }
+            
+            const parsed = JSON.parse(jsonStr);
             if (parsed && parsed.POOLS) {
               const pools = parsed.POOLS.map((pool: any) => ({
                 url: pool.URL || pool.url || '',
@@ -334,7 +348,7 @@ export const getMinerPools = async (minerId: string): Promise<{
               reject(new Error('No pool data in response'));
             }
           } catch (error) {
-            reject(new Error(`Failed to parse CGMiner response: ${error}`));
+            reject(new Error(`Failed to parse CGMiner response: ${error}. Raw length: ${responseData.length}`));
           }
         });
 
