@@ -262,10 +262,14 @@ if (!portStr || portStr.trim().length === 0) {
 ## Files Modified
 
 1. `backend/src/services/mining.service.ts` - Status determination logic, missing miners after restart
-2. `python-scheduler/main.py` - Fallback state calculation, algorithm passing, removed duplicate metric setting
+2. `python-scheduler/main.py` - Fallback state calculation, algorithm passing, removed duplicate metric setting, standardized field names, removed redundant fallback
 3. `backend/src/services/pools-config.service.ts` - TypeScript type annotation
 4. `frontend/src/components/pools/PoolForm.tsx` - URL validation
 5. `backend/src/services/telegram.service.ts` - Fan speed unit display
+6. `python-scheduler/collectors/whatsminer_cgi_collector.py` - Standardized to use `temperature` and `fans` list
+7. `python-scheduler/collectors/whatsminer_cgminer_collector.py` - **DELETED** (redundant)
+8. `python-scheduler/COLLECTOR_STANDARD.md` - NEW: Standard data format documentation
+9. `python-scheduler/COLLECTOR_DUPLICATION_ANALYSIS.md` - NEW: Duplication analysis
 
 ---
 
@@ -276,9 +280,11 @@ if (!portStr || portStr.trim().length === 0) {
 - Missing miners after restart - All configured miners now always visible
 - Fan speed display - Fixes misleading percentage display in Telegram
 - Performance regression - Restored fast scraping speed after restart
+- Redundant collector removal - Eliminates duplicate CGMiner attempts
 
 **High:** 
 - Algorithm label consistency - Prevents metric duplication
+- Collector standardization - Unified data format across all collectors
 
 **Medium:** 
 - TypeScript error - Unblocks build process
@@ -466,6 +472,191 @@ for (const configMiner of configuredMiners) {
 - **Critical:** Prevents miners from disappearing after restart
 - **Scope:** Backend metrics processing
 - **User Experience:** All miners always visible, status updates as data arrives
+
+---
+
+## 8. Collector Data Format Standardization
+
+### Issue: Inconsistent Field Names Across Collectors
+
+#### Problem: Different Collectors Returned Different Field Names
+**Files:** All collector files in `python-scheduler/collectors/`
+
+**Root Cause:**
+- Different fallback collectors used different field names for the same data
+- `antminer_cgi`: Used `temperature`
+- `whatsminer_cgi`: Used `temp_max` ❌
+- `whatsminer_cgminer`: Used both `temperature` AND `temp_max` ❌
+- `whatsminer_cgi`: Used `fan_speed` (int) instead of `fans` (list) ❌
+- Main.py had fallback logic: `fallback_data.get('temp_max', fallback_data.get('temperature', 0))` ❌
+
+**Issues Caused:**
+- Confusing code with multiple fallback checks
+- Potential for bugs when adding new collectors
+- Inconsistent data processing logic
+- Harder to maintain and debug
+
+**Standard Format Established:**
+
+Created `COLLECTOR_STANDARD.md` documenting required format:
+```python
+{
+    # Required fields
+    'hashrate': float,       # TH/s or GH/s
+    'temperature': float,    # Celsius (NOT temp_max!)
+    'power': float,          # Watts
+    'is_mining': bool,       # True/False
+    
+    # Optional fields
+    'uptime': int,
+    'fans': list,            # [{'speed': rpm}, ...] (NOT fan_speed int!)
+    'hashboards': list,
+    'pools': list,
+    'errors': list,
+    'fan_psu': list,
+    'efficiency': float,
+    'fault_light': bool,
+}
+```
+
+**Collectors Fixed:**
+
+1. **✅ whatsminer_cgi_collector.py**:
+   - Changed `temp_max` → `temperature`
+   - Changed `fan_speed: int` → `fans: [{'speed': rpm}]`
+   - Added `is_mining` boolean based on hashrate
+   - Removed `ip` field from result dict
+   - Added all standard optional fields
+
+2. **✅ whatsminer_cgminer_collector.py**:
+   - Removed redundant `temp_max` field
+   - Kept only `temperature`
+   - Changed `fan_speed: int` → `fans: [{'speed': rpm}]`
+   - Removed `ip` field from result dict
+   - Added all standard optional fields
+
+3. **✅ main.py**:
+   - Simplified: `fallback_data.get('temperature', 0)` (no more double fallback)
+   - Added comment: "Use standard 'temperature' field"
+
+4. **✅ Already correct**:
+   - `antminer_cgi_collector.py` - Used `temperature` ✓
+   - `dg1_http_collector.py` - Used `temperature` ✓
+   - `dg1_tcp_collector.py` - Used `temperature` ✓
+
+**Benefits:**
+- **Consistency**: All collectors now return identical field names
+- **Simplicity**: No more fallback logic for field names
+- **Maintainability**: Easy to add new collectors following standard
+- **Clarity**: Single source of truth in COLLECTOR_STANDARD.md
+- **Performance**: Slightly faster due to no double field lookups
+
+**Testing Checklist:**
+- [ ] All fallback collectors return `temperature` (not `temp_max`)
+- [ ] All collectors return `fans` as list (not `fan_speed` int)
+- [ ] All collectors return `is_mining` boolean
+- [ ] Main.py processes data correctly from all collectors
+- [ ] Prometheus metrics set correctly from all paths
+
+---
+
+## 9. Removed Redundant Whatsminer CGMiner Collector
+
+### Issue: Duplicate Collector with PyASIC Native Support
+
+#### Problem: whatsminer_cgminer_collector.py Was Completely Redundant
+**File:** `python-scheduler/collectors/whatsminer_cgminer_collector.py` (DELETED)
+
+**Root Cause:**
+- PyASIC library already has **native Whatsminer support**
+- PyASIC already uses **CGMiner API (port 4028)** for gap filling
+- Separate whatsminer_cgminer collector did **exactly the same thing** but as fallback
+- Created **duplicate `_cgminer_command()` function** (identical implementation)
+- Legacy fallback re-attempted the **same CGMiner API** that PyASIC already tried
+
+**Evidence of Duplication:**
+
+1. **PyASIC Native Support:**
+```python
+# pyasic_collector.py:450
+# For Whatsminers, get chip temperature directly from CGMiner API
+chip_temp = _safe_float(_get_max_temp(data))
+
+# pyasic_collector.py:456-481
+# If PyASIC returns None/0 for critical metrics, try CGMiner API
+if (chip_temp == 0 or hashrate == 0 or power == 0) and hasattr(miner_obj, 'api'):
+    summary_data = await asyncio.wait_for(miner_obj.api.summary(), timeout=5)
+    devs_data = await asyncio.wait_for(miner_obj.api.devs(), timeout=5)
+```
+
+2. **Duplicate Function:**
+- `_cgminer_command()` existed in both pyasic_collector.py AND whatsminer_cgminer_collector.py
+- Nearly identical implementations (only difference: newline terminator)
+
+3. **Same Protocol, Same Data Source:**
+- Both used CGMiner API on port 4028
+- Both sent same commands: `summary`, `devs`, `pools`
+- Both parsed same response format
+
+**Why Fallback Couldn't Help:**
+- If PyASIC failed to connect to CGMiner API, fallback would also fail (same API)
+- If PyASIC parsed incorrectly, that's a PyASIC bug (fix PyASIC, not add fallback)
+- No authentication on CGMiner API, so both fail equally if blocked
+
+**Legitimate vs Redundant Fallbacks:**
+
+✅ **Keep:** `antminer_cgi_collector.py` - Uses HTTP/CGI (different protocol than CGMiner)
+✅ **Keep:** `whatsminer_cgi_collector.py` - Uses HTTPS/HTTP (different protocol than CGMiner)
+✅ **Keep:** `dg1_http_collector.py` - Uses DG1 HTTP API (different protocol, handles auth)
+✅ **Keep:** `dg1_tcp_collector.py` - Uses DG1 TCP protocol (different format than CGMiner)
+❌ **Remove:** `whatsminer_cgminer_collector.py` - Same protocol as PyASIC (redundant!)
+
+**Changes Made:**
+
+1. **Deleted:** `python-scheduler/collectors/whatsminer_cgminer_collector.py`
+
+2. **main.py** - Removed import:
+```python
+# BEFORE:
+from collectors.whatsminer_cgminer_collector import collect_whatsminer_cgminer
+
+# AFTER:
+# whatsminer_cgminer_collector removed - redundant with PyASIC's native CGMiner support
+```
+
+3. **main.py** - Updated fallback logic:
+```python
+# BEFORE (lines 447-452):
+if 'whatsminer' in model_lower:
+    fallback_data = await collect_whatsminer_cgminer(miner)
+    fallback_method = 'whatsminer_cgminer'
+
+# AFTER (uses CGI instead - different protocol):
+if 'whatsminer' in model_lower:
+    fallback_data = await collect_whatsminer_cgi(miner)  # Web interface fallback
+    fallback_method = 'whatsminer_cgi'
+```
+
+4. **main.py** - Removed scrape_status case:
+```python
+# Removed: elif fallback_method == 'whatsminer_cgminer': new_scrape_status = 0.6
+```
+
+**Benefits:**
+
+✅ **Performance:** Eliminates redundant CGMiner API attempts (faster scraping)
+✅ **Simplicity:** Less confusing fallback logic
+✅ **Maintainability:** Fewer collectors to keep in sync
+✅ **Logic:** Primary (PyASIC+CGMiner) → CGI fallback (actually different protocol)
+✅ **Correctness:** No duplicate work
+
+**New Fallback Flow for Whatsminers:**
+
+1. **Primary:** PyASIC with native Whatsminer support + CGMiner gap filling
+2. **Fallback:** Whatsminer CGI (web interface - different protocol, can succeed when CGMiner blocked)
+
+**Documentation Created:**
+- `COLLECTOR_DUPLICATION_ANALYSIS.md` - Comprehensive analysis of duplication with evidence
 
 ---
 

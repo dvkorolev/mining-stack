@@ -96,15 +96,18 @@ def _parse_whatsminer_json_response(data: Dict, ip: str) -> Optional[Dict]:
     """
     try:
         result = {
-            'ip': ip,
             'hashrate': 0.0,
-            'temp_max': 0.0,
-            'fan_speed': 0,
+            'temperature': 0.0,  # Standard field name
             'power': 0,
             'uptime': 0,
-            'hashboards': [],
+            'is_mining': True,  # Will be updated based on hashrate
             'fans': [],
-            'pools': [],  # Pool URLs if available
+            'hashboards': [],
+            'pools': [],
+            'errors': [],
+            'fan_psu': [],
+            'efficiency': 0,
+            'fault_light': False,
         }
         
         # Try to extract hashrate (various field names)
@@ -122,13 +125,15 @@ def _parse_whatsminer_json_response(data: Dict, ip: str) -> Optional[Dict]:
         # Extract temperature
         for field in ['temp', 'temperature', 'Temperature']:
             if field in data:
-                result['temp_max'] = float(data[field])
+                result['temperature'] = float(data[field])
                 break
         
-        # Extract fan speed
+        # Extract fan speed and convert to standard format
         for field in ['fan', 'fan_speed', 'Fan Speed']:
             if field in data:
-                result['fan_speed'] = int(data[field])
+                fan_rpm = int(data[field])
+                if fan_rpm > 0:
+                    result['fans'] = [{'speed': fan_rpm}]
                 break
         
         # Extract power
@@ -137,7 +142,10 @@ def _parse_whatsminer_json_response(data: Dict, ip: str) -> Optional[Dict]:
                 result['power'] = int(data[field])
                 break
         
-        logger.info(f"✓ Whatsminer CGI {ip}: {result['hashrate']:.2f} TH/s, {result['temp_max']:.1f}°C")
+        # Set is_mining based on hashrate
+        result['is_mining'] = result['hashrate'] > 0
+        
+        logger.info(f"✓ Whatsminer CGI {ip}: {result['hashrate']:.2f} TH/s, {result['temperature']:.1f}°C")
         return result
         
     except Exception as e:
@@ -153,15 +161,18 @@ def _parse_whatsminer_html_response(html: str, ip: str) -> Optional[Dict]:
     """
     try:
         result = {
-            'ip': ip,
             'hashrate': 0.0,
-            'temp_max': 0.0,
-            'fan_speed': 0,
+            'temperature': 0.0,  # Standard field name
             'power': 0,
             'uptime': 0,
-            'hashboards': [],
+            'is_mining': True,  # Will be updated based on hashrate
             'fans': [],
-            'pools': [],  # Pool URLs if available
+            'hashboards': [],
+            'pools': [],
+            'errors': [],
+            'fan_psu': [],
+            'efficiency': 0,
+            'fault_light': False,
         }
         
         # Extract hashrate (e.g., "111.000 TH/s" or "111000 GH/s")
@@ -176,20 +187,25 @@ def _parse_whatsminer_html_response(html: str, ip: str) -> Optional[Dict]:
         # Extract temperature (e.g., "76.1°C" or "76.1 C")
         temp_match = re.search(r'(\d+\.?\d*)\s*[°]?C', html, re.IGNORECASE)
         if temp_match:
-            result['temp_max'] = float(temp_match.group(1))
+            result['temperature'] = float(temp_match.group(1))
         
-        # Extract fan speed (e.g., "5190 RPM")
+        # Extract fan speed (e.g., "5190 RPM") and convert to standard format
         fan_match = re.search(r'(\d+)\s*RPM', html, re.IGNORECASE)
         if fan_match:
-            result['fan_speed'] = int(fan_match.group(1))
+            fan_rpm = int(fan_match.group(1))
+            if fan_rpm > 0:
+                result['fans'] = [{'speed': fan_rpm}]
         
         # Extract power (e.g., "3500 W")
         power_match = re.search(r'(\d+)\s*W', html, re.IGNORECASE)
         if power_match:
             result['power'] = int(power_match.group(1))
         
+        # Set is_mining based on hashrate
+        result['is_mining'] = result['hashrate'] > 0
+        
         if result['hashrate'] > 0:
-            logger.info(f"✓ Whatsminer CGI {ip}: {result['hashrate']:.2f} TH/s, {result['temp_max']:.1f}°C")
+            logger.info(f"✓ Whatsminer CGI {ip}: {result['hashrate']:.2f} TH/s, {result['temperature']:.1f}°C")
             return result
         else:
             logger.warning(f"Whatsminer CGI {ip}: Could not extract hashrate from HTML")
