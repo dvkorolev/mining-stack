@@ -36,6 +36,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src/config ./dist/config
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/init.sh /app/init.sh
+COPY --from=builder /app/scripts ./scripts
 
 # Ensure migration script is executable
 RUN test -f /app/dist/scripts/migrate-yaml-to-db.js || echo "Warning: Migration script not found"
