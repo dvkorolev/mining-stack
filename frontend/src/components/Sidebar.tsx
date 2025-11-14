@@ -32,8 +32,7 @@ const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClo
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', adminOnly: false },
     { text: 'Miners', icon: <PeopleIcon />, path: '/miners', adminOnly: false },
-    { text: 'Pools', icon: <PoolIcon />, path: '/pools', adminOnly: true },
-    { text: 'Pool Monitoring', icon: <AccountBalanceWalletIcon />, path: '/pool-monitoring', adminOnly: false },
+    { text: 'Pool Earnings', icon: <AccountBalanceWalletIcon />, path: '/pool-earnings', adminOnly: false },
     { text: 'Analytics', icon: <BarChartIcon />, path: '/analytics', adminOnly: false },
     { text: 'Alerts', icon: <NotificationsIcon />, path: '/alerts', adminOnly: false },
     { text: 'Alert Rules', icon: <RuleIcon />, path: '/alert-rules', adminOnly: true },

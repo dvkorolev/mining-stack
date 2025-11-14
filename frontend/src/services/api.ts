@@ -464,6 +464,9 @@ export interface PoolAccount {
   pool_api_id: number;
   pool_name: string;
   account_name: string;
+  usernames?: string; // Comma-separated list of pool usernames for matching
+  coin?: string; // btc, ltc, etc.
+  notes?: string; // User notes
   // api_key is never sent to frontend
 }
 
