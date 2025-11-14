@@ -44,7 +44,7 @@ from metrics import (
     collection_success, collection_timestamp,
     miner_scrape_status, miner_state
 )
-from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float, _is_scrypt_miner
+from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
 from collectors.antminer_cgi_collector import collect_antminer_cgi
 from collectors.whatsminer_cgi_collector import collect_whatsminer_cgi
 from collectors.whatsminer_cgminer_collector import collect_whatsminer_cgminer
@@ -510,13 +510,7 @@ async def collect_all_metrics():
                         # state: 2=mining (hashrate>0), 1=idle (hashrate=0, not mining), 0=faulty (hashrate=0, should be mining)
                         miner_data['state'] = 2 if hashrate_val > 0 else (1 if not is_mining else 0)
                         
-                        # Explicitly set state metric (in case _update_metrics didn't)
-                        model_normalized = miner['model'].replace(" ", "_")
-                        # Use same algorithm detection as _update_metrics to avoid label mismatch
-                        is_scrypt = _is_scrypt_miner(miner['model'], miner.get('algorithm'))
-                        algorithm = 'scrypt' if is_scrypt else 'sha256'
-                        logger.info(f"  Setting state metric for {miner['name']}: state={miner_data['state']}, model={model_normalized}, algorithm={algorithm}")
-                        miner_state.labels(ip=miner['ip'], name=miner['name'], model=model_normalized, algorithm=algorithm).set(miner_data['state'])
+                        # Note: _update_metrics() already set miner_state metric, no need to duplicate
                         
                         # Also update pools if available
                         if 'pools' in fallback_data and fallback_data['pools']:
