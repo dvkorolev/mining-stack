@@ -44,7 +44,7 @@ from metrics import (
     collection_success, collection_timestamp,
     miner_scrape_status, miner_state
 )
-from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
+from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float, _is_scrypt_miner
 from collectors.antminer_cgi_collector import collect_antminer_cgi
 from collectors.whatsminer_cgi_collector import collect_whatsminer_cgi
 from collectors.whatsminer_cgminer_collector import collect_whatsminer_cgminer
@@ -495,7 +495,8 @@ async def collect_all_metrics():
                             miner['ip'],
                             miner['name'],
                             miner['model'],
-                            new_scrape_status
+                            new_scrape_status,
+                            miner.get('algorithm')  # Pass algorithm from config
                         )
                         
                         # Update miners_data with merged result
@@ -511,7 +512,9 @@ async def collect_all_metrics():
                         
                         # Explicitly set state metric (in case _update_metrics didn't)
                         model_normalized = miner['model'].replace(" ", "_")
-                        algorithm = miner.get('algorithm', 'sha256')  # Default to sha256
+                        # Use same algorithm detection as _update_metrics to avoid label mismatch
+                        is_scrypt = _is_scrypt_miner(miner['model'], miner.get('algorithm'))
+                        algorithm = 'scrypt' if is_scrypt else 'sha256'
                         logger.info(f"  Setting state metric for {miner['name']}: state={miner_data['state']}, model={model_normalized}, algorithm={algorithm}")
                         miner_state.labels(ip=miner['ip'], name=miner['name'], model=model_normalized, algorithm=algorithm).set(miner_data['state'])
                         

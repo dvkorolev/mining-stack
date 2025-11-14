@@ -4,6 +4,7 @@ import yaml from 'js-yaml';
 import path from 'path';
 import { logger } from '../utils/logger';
 import { getDatabase } from './database.service';
+import type { MinerConfig } from '../config/miners.config';
 
 export interface PoolConfig {
   id?: number;  // Pool ID from database
@@ -450,7 +451,7 @@ export const syncPoolsFromMiners = async (): Promise<{
     logger.info(`Syncing pools from ${miners.length} miners...`);
     
     const results = await Promise.all(
-      miners.map(async (miner) => {
+      miners.map(async (miner: MinerConfig) => {
         try {
           const poolsResult = await getMinerPools(miner.name);
           
