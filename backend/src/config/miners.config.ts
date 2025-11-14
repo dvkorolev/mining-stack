@@ -405,7 +405,7 @@ export const updateMiner = (minerId: string, updates: Partial<MinerConfig>): Min
       });
     }
     
-    const updatedRecord: MinerRecord = {
+    const updatedRecord: MinerRecord & { pool_account_id?: number | null } = {
       ip: updates.ip ?? existing.ip,
       name: updates.name ?? existing.name,
       model: updates.model ?? existing.model,
@@ -414,6 +414,7 @@ export const updateMiner = (minerId: string, updates: Partial<MinerConfig>): Min
       status: existing.status,
       credentials,
       api_port: updates.api_port ?? existing.api_port,
+      pool_account_id: (updates as any).pool_account_id !== undefined ? (updates as any).pool_account_id : (existing as any).pool_account_id,
     };
     
     db.upsertMiner(updatedRecord);

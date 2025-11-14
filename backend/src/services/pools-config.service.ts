@@ -3,11 +3,7 @@ import fs from 'fs';
 import yaml from 'js-yaml';
 import path from 'path';
 import { logger } from '../utils/logger';
-import { FileLockTimeout, FileLockError } from '../utils/fileLock';
 import { getDatabase } from './database.service';
-
-// Re-export lock errors for use in routes
-export { FileLockTimeout, FileLockError };
 
 export interface PoolConfig {
   id?: number;  // Pool ID from database
@@ -417,5 +413,78 @@ export const initializePoolsFromYAML = (): void => {
   } catch (error) {
     logger.error('Failed to initialize pools from YAML:', error);
     // Don't throw - allow application to start even if YAML import fails
+  }
+};
+
+// ==================== SYNC FROM MINERS ====================
+
+/**
+ * Sync pools from all miners
+ * Queries each miner to get its actual pool configuration
+ */
+export const syncPoolsFromMiners = async (): Promise<{
+  success: boolean;
+  message: string;
+  results: Array<{
+    minerName: string;
+    minerIp: string;
+    success: boolean;
+    pools?: Array<{ url: string; user: string }>;
+    error?: string;
+  }>;
+}> => {
+  try {
+    const { getMiners } = require('../config/miners.config');
+    const { getMinerPools } = require('./miner-control.service');
+    
+    const miners = getMiners();
+    
+    if (miners.length === 0) {
+      return {
+        success: false,
+        message: 'No miners configured',
+        results: [],
+      };
+    }
+
+    logger.info(`Syncing pools from ${miners.length} miners...`);
+    
+    const results = await Promise.all(
+      miners.map(async (miner) => {
+        try {
+          const poolsResult = await getMinerPools(miner.name);
+          
+          return {
+            minerName: miner.name,
+            minerIp: miner.ip,
+            success: poolsResult.success,
+            pools: poolsResult.pools,
+            error: poolsResult.message,
+          };
+        } catch (error) {
+          return {
+            minerName: miner.name,
+            minerIp: miner.ip,
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      })
+    );
+
+    const successCount = results.filter(r => r.success).length;
+    
+    return {
+      success: true,
+      message: `Synced ${successCount} of ${miners.length} miners`,
+      results,
+    };
+  } catch (error) {
+    logger.error('Failed to sync pools from miners:', error);
+    return {
+      success: false,
+      message: `Failed to sync: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      results: [],
+    };
   }
 };

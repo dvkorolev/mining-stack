@@ -17,6 +17,7 @@ import { useNotification } from '../context/NotificationContext';
 import PoolsList from '../components/pools/PoolsList';
 import PoolForm from '../components/pools/PoolForm';
 import PoolConfigPanel from '../components/pools/PoolConfigPanel';
+import SyncResultsDialog from '../components/pools/SyncResultsDialog';
 import {
   getPoolsConfig,
   updatePoolsConfig,
@@ -25,6 +26,8 @@ import {
   deletePool,
   testPool,
   triggerPoolCollection,
+  syncPoolsFromMiners,
+  MinerPoolSyncResult,
   PoolConfig,
   PoolsConfiguration,
 } from '../services/poolsApi';
@@ -58,7 +61,9 @@ const PoolsManagement: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingPool, setEditingPool] = useState<PoolConfig | null>(null);
-  const [testingPools, setTestingPools] = useState<Record<string, 'testing' | 'success' | 'error' | 'idle'>>({}); // Track testing status per pool
+  const [testingPools, setTestingPools] = useState<Record<string, 'testing' | 'success' | 'error' | 'idle'>>({});
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [syncResults, setSyncResults] = useState<MinerPoolSyncResult[]>([]); // Track testing status per pool
 
   // Load pools configuration
   const loadConfig = async () => {
@@ -185,6 +190,22 @@ const PoolsManagement: React.FC = () => {
     }
   };
 
+  // Sync pools from miners
+  const handleSyncFromMiners = async () => {
+    try {
+      showInfo('Syncing pools from miners...');
+      const result = await syncPoolsFromMiners();
+      
+      setSyncResults(result.results);
+      setSyncDialogOpen(true);
+      
+      const successCount = result.results.filter(r => r.success).length;
+      showSuccess(`Synced ${successCount} of ${result.results.length} miners`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to sync pools');
+    }
+  };
+
   if (loading) {
     return (
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4, textAlign: 'center' }}>
@@ -218,6 +239,14 @@ const PoolsManagement: React.FC = () => {
           Pool Management
         </Typography>
         <Box>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={handleSyncFromMiners}
+            sx={{ mr: 1 }}
+          >
+            Sync from Miners
+          </Button>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
@@ -295,6 +324,13 @@ const PoolsManagement: React.FC = () => {
           title="Edit Pool"
         />
       )}
+
+      {/* Sync Results Dialog */}
+      <SyncResultsDialog
+        open={syncDialogOpen}
+        onClose={() => setSyncDialogOpen(false)}
+        results={syncResults}
+      />
 
     </Container>
   );

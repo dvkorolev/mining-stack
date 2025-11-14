@@ -80,6 +80,19 @@ export interface AlertRuleRecord {
   updated_at?: number;
 }
 
+export interface PoolApiRecord {
+  id?: number;
+  name: string;
+  api_base_url: string;
+}
+
+export interface PoolAccountRecord {
+  id?: number;
+  pool_api_id: number;
+  account_name: string;
+  api_key: string; // Encrypted
+}
+
 export interface AlertRuleHistoryRecord {
   id?: number;
   rule_id: number;
@@ -309,7 +322,37 @@ class DatabaseService {
       }
     }
 
+    // Add pool_account_id to miners table (migration)
+    try {
+      this.db.exec(`ALTER TABLE miners ADD COLUMN pool_account_id INTEGER REFERENCES pool_accounts(id) ON DELETE SET NULL`);
+      logger.info('Added pool_account_id column to miners table');
+    } catch (error: any) {
+      if (!error.message.includes('duplicate column')) {
+        logger.warn('Could not add pool_account_id column:', error.message);
+      }
+    }
+
+    // Initialize default pool APIs
+    this.initializeDefaultPoolApis();
+
     logger.info('Database schema initialized');
+  }
+
+  /**
+   * Initialize default pool APIs (EMCD)
+   */
+  private initializeDefaultPoolApis(): void {
+    try {
+      const existing = this.db.prepare('SELECT COUNT(*) as count FROM pool_apis').get() as { count: number };
+      
+      if (existing.count === 0) {
+        // Add EMCD as default pool API
+        this.db.prepare('INSERT INTO pool_apis (name, api_base_url) VALUES (?, ?)').run('EMCD', 'https://api.emcd.io/v2');
+        logger.info('Initialized default pool APIs');
+      }
+    } catch (error) {
+      logger.warn('Could not initialize default pool APIs:', error);
+    }
   }
 
   /**
@@ -1358,6 +1401,60 @@ class DatabaseService {
 
     const stmt = this.db.prepare(query);
     return stmt.all(...params) as AlertRuleHistoryRecord[];
+  }
+
+  // ================== POOL API MONITORING METHODS ==================
+
+  getAllPoolApis(): PoolApiRecord[] {
+    return this.db.prepare('SELECT * FROM pool_apis').all() as PoolApiRecord[];
+  }
+
+  insertPoolApi(poolApi: Omit<PoolApiRecord, 'id'>): number {
+    const stmt = this.db.prepare('INSERT INTO pool_apis (name, api_base_url) VALUES (?, ?)');
+    const result = stmt.run(poolApi.name, poolApi.api_base_url);
+    return result.lastInsertRowid as number;
+  }
+
+  updatePoolApi(id: number, poolApi: Omit<PoolApiRecord, 'id'>): void {
+    this.db.prepare('UPDATE pool_apis SET name = ?, api_base_url = ? WHERE id = ?').run(poolApi.name, poolApi.api_base_url, id);
+  }
+
+  deletePoolApi(id: number): void {
+    this.db.prepare('DELETE FROM pool_apis WHERE id = ?').run(id);
+  }
+
+  getAllPoolAccounts(): (PoolAccountRecord & { pool_name: string })[] {
+    const stmt = this.db.prepare(`
+      SELECT pa.*, p.name as pool_name
+      FROM pool_accounts pa
+      JOIN pool_apis p ON pa.pool_api_id = p.id
+    `);
+    return stmt.all() as (PoolAccountRecord & { pool_name: string })[];
+  }
+
+  getPoolAccountById(id: number): (PoolAccountRecord & { pool_name: string; api_base_url: string }) | null {
+    const stmt = this.db.prepare(`
+      SELECT pa.*, p.name as pool_name, p.api_base_url
+      FROM pool_accounts pa
+      JOIN pool_apis p ON pa.pool_api_id = p.id
+      WHERE pa.id = ?
+    `);
+    return stmt.get(id) as (PoolAccountRecord & { pool_name: string; api_base_url: string }) | null;
+  }
+
+  insertPoolAccount(account: Omit<PoolAccountRecord, 'id'>): number {
+    const stmt = this.db.prepare('INSERT INTO pool_accounts (pool_api_id, account_name, api_key) VALUES (?, ?, ?)');
+    const result = stmt.run(account.pool_api_id, account.account_name, account.api_key);
+    return result.lastInsertRowid as number;
+  }
+
+  updatePoolAccount(id: number, account: Omit<PoolAccountRecord, 'id'>): void {
+    this.db.prepare('UPDATE pool_accounts SET pool_api_id = ?, account_name = ?, api_key = ? WHERE id = ?')
+      .run(account.pool_api_id, account.account_name, account.api_key, id);
+  }
+
+  deletePoolAccount(id: number): void {
+    this.db.prepare('DELETE FROM pool_accounts WHERE id = ?').run(id);
   }
 
   /**

@@ -15,41 +15,9 @@ import {
   backupPoolsToYAML,
   PoolConfig,
   PoolsConfiguration,
-  FileLockTimeout,
-  FileLockError,
 } from '../services/pools-config.service';
 
 const router = Router();
-
-/**
- * Helper function to handle lock errors with appropriate HTTP status codes
- */
-function handleLockError(error: unknown, res: Response): void {
-  if (error instanceof FileLockTimeout) {
-    // 423 Locked - Resource is locked
-    res.status(423).json({
-      success: false,
-      message: 'Configuration file is locked by another process',
-      error: error.message,
-      code: 'FILE_LOCKED',
-    });
-  } else if (error instanceof FileLockError) {
-    // 409 Conflict - Unable to acquire lock
-    res.status(409).json({
-      success: false,
-      message: 'Unable to lock configuration file',
-      error: error.message,
-      code: 'LOCK_CONFLICT',
-    });
-  } else {
-    // 500 Internal Server Error - Other errors
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-}
 
 /**
  * GET /api/pools/config
@@ -97,17 +65,11 @@ router.post('/config', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error saving pools config:', error);
-    
-    // Handle lock errors with appropriate status codes
-    if (error instanceof FileLockTimeout || error instanceof FileLockError) {
-      handleLockError(error, res);
-    } else {
-      res.status(400).json({
-        success: false,
-        message: 'Failed to save pools configuration',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
+    res.status(400).json({
+      success: false,
+      message: 'Failed to save pools configuration',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 
@@ -163,17 +125,11 @@ router.post('/', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error adding pool:', error);
-    
-    // Handle lock errors with appropriate status codes
-    if (error instanceof FileLockTimeout || error instanceof FileLockError) {
-      handleLockError(error, res);
-    } else {
-      res.status(400).json({
-        success: false,
-        message: 'Failed to add pool',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
+    res.status(400).json({
+      success: false,
+      message: 'Failed to add pool',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 
@@ -208,17 +164,11 @@ router.put('/:url', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error updating pool:', error);
-    
-    // Handle lock errors with appropriate status codes
-    if (error instanceof FileLockTimeout || error instanceof FileLockError) {
-      handleLockError(error, res);
-    } else {
-      res.status(400).json({
-        success: false,
-        message: 'Failed to update pool',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
+    res.status(400).json({
+      success: false,
+      message: 'Failed to update pool',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 
@@ -267,10 +217,7 @@ router.delete('/:url', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error deleting pool:', error);
     
-    // Handle lock errors with appropriate status codes
-    if (error instanceof FileLockTimeout || error instanceof FileLockError) {
-      handleLockError(error, res);
-    } else if (error instanceof Error && error.message.includes('currently in use')) {
+    if (error instanceof Error && error.message.includes('currently in use')) {
       // Pool is in use - return 409 Conflict
       res.status(409).json({
         success: false,
@@ -374,6 +321,27 @@ router.post('/collect', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to trigger pool collection',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * POST /api/pools/sync-from-miners
+ * Sync pool configuration from all miners
+ * Returns the actual pools each miner is using
+ */
+router.post('/sync-from-miners', async (req: Request, res: Response) => {
+  try {
+    const { syncPoolsFromMiners } = require('../services/pools-config.service');
+    const result = await syncPoolsFromMiners();
+
+    res.json(result);
+  } catch (error) {
+    logger.error('Error syncing pools from miners:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to sync pools from miners',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }

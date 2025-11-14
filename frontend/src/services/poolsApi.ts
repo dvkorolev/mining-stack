@@ -95,3 +95,24 @@ export const triggerPoolCollection = async (): Promise<{ success: boolean; messa
   const response = await api.post('/pools/collect');
   return response.data;
 };
+
+/**
+ * Sync pools from all miners
+ * Queries each miner to get its actual pool configuration
+ */
+export interface MinerPoolSyncResult {
+  minerName: string;
+  minerIp: string;
+  success: boolean;
+  pools?: Array<{ url: string; user: string }>;
+  error?: string;
+}
+
+export const syncPoolsFromMiners = async (): Promise<{
+  success: boolean;
+  message: string;
+  results: MinerPoolSyncResult[];
+}> => {
+  const response = await api.post('/pools/sync-from-miners');
+  return response.data;
+};

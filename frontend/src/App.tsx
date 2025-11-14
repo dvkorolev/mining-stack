@@ -23,6 +23,7 @@ const Alerts = lazy(() => import('./pages/Alerts'));
 const AlertRulesManagement = lazy(() => import('./pages/AlertRulesManagement'));
 const Settings = lazy(() => import('./pages/Settings'));
 const PoolsManagement = lazy(() => import('./pages/PoolsManagement'));
+const Pools = lazy(() => import('./pages/Pools'));
 const Login = lazy(() => import('./pages/Login'));
 
 const theme = createTheme({
@@ -112,6 +113,7 @@ const App: React.FC = () => {
                       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                       <Route path="/miners" element={<ProtectedRoute><Miners /></ProtectedRoute>} />
                       <Route path="/pools" element={<ProtectedRoute><AdminRoute><PoolsManagement /></AdminRoute></ProtectedRoute>} />
+                      <Route path="/pool-monitoring" element={<ProtectedRoute><Pools /></ProtectedRoute>} />
                       <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
                       <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
                       <Route path="/alert-rules" element={<ProtectedRoute><AdminRoute><AlertRulesManagement /></AdminRoute></ProtectedRoute>} />

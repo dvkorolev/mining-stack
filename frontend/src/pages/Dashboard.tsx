@@ -92,51 +92,56 @@ const Dashboard: React.FC = () => {
 
   const filteredHistory = getFilteredHistory();
 
-  // Hashrate chart
-  const hashrateChartData = {
+  // SHA-256 Hashrate chart
+  const sha256ChartData = {
     labels: filteredHistory.map((item) =>
       new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     ),
     datasets: [
       {
-        label: 'SHA-256 Hashrate (TH/s)',
+        label: 'SHA-256 Hashrate',
         data: filteredHistory.map((item) => item.hashrateSha256),
         borderColor: 'rgb(75, 192, 192)',
         backgroundColor: 'rgba(75, 192, 192, 0.1)',
         fill: true,
         tension: 0.4,
         pointRadius: 2,
-        yAxisID: 'ySha256',
       },
       {
-        label: 'SCRYPT Hashrate (GH/s)',
-        data: filteredHistory.map((item) => item.hashrateScrypt * 1000),
-        borderColor: 'rgb(255, 99, 132)',
-        backgroundColor: 'rgba(255, 99, 132, 0.1)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 2,
-        yAxisID: 'yScrypt',
-      },
-      {
-        label: 'SHA-256 24h Average',
+        label: '24h Average',
         data: filteredHistory.map(() => stats?.averageHashrate24hSha256 || 0),
         borderColor: 'rgb(75, 192, 192)',
         backgroundColor: 'transparent',
         borderDash: [5, 5],
         pointRadius: 0,
         tension: 0,
-        yAxisID: 'ySha256',
+      },
+    ],
+  };
+
+  // SCRYPT Hashrate chart
+  const scryptChartData = {
+    labels: filteredHistory.map((item) =>
+      new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    ),
+    datasets: [
+      {
+        label: 'SCRYPT Hashrate',
+        data: filteredHistory.map((item) => item.hashrateScrypt * 1000),
+        borderColor: 'rgb(255, 99, 132)',
+        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 2,
       },
       {
-        label: 'SCRYPT 24h Average',
+        label: '24h Average',
         data: filteredHistory.map(() => (stats?.averageHashrate24hScrypt || 0) * 1000),
         borderColor: 'rgb(255, 99, 132)',
         backgroundColor: 'transparent',
         borderDash: [5, 5],
         pointRadius: 0,
         tension: 0,
-        yAxisID: 'yScrypt',
       },
     ],
   };
@@ -170,7 +175,7 @@ const Dashboard: React.FC = () => {
   //   ],
   // };
 
-  const hashrateChartOptions = {
+  const sha256ChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -179,7 +184,7 @@ const Dashboard: React.FC = () => {
       },
       title: {
         display: true,
-        text: 'Hashrate Over Time',
+        text: 'SHA-256 Hashrate Over Time',
         font: { size: 16 },
       },
       tooltip: {
@@ -188,27 +193,50 @@ const Dashboard: React.FC = () => {
       },
     },
     scales: {
-      ySha256: {
-        type: 'linear' as const,
-        display: true,
-        position: 'left' as const,
+      y: {
         beginAtZero: true,
         title: {
           display: true,
-          text: 'SHA-256 (TH/s)',
+          text: 'TH/s',
         },
       },
-      yScrypt: {
-        type: 'linear' as const,
+      x: {
+        ticks: {
+          maxRotation: 45,
+          minRotation: 45,
+        },
+      },
+    },
+    interaction: {
+      mode: 'nearest' as const,
+      axis: 'x' as const,
+      intersect: false,
+    },
+  };
+
+  const scryptChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+      },
+      title: {
         display: true,
-        position: 'right' as const,
+        text: 'SCRYPT Hashrate Over Time',
+        font: { size: 16 },
+      },
+      tooltip: {
+        mode: 'index' as const,
+        intersect: false,
+      },
+    },
+    scales: {
+      y: {
         beginAtZero: true,
         title: {
           display: true,
-          text: 'SCRYPT (GH/s)',
-        },
-        grid: {
-          drawOnChartArea: false, // only show the grid for the primary axis
+          text: 'GH/s',
         },
       },
       x: {
@@ -409,34 +437,42 @@ const Dashboard: React.FC = () => {
           </Paper>
         </Grid>
 
-        {/* Active Miners Card */}
+        {/* Active Miners SHA-256 Card */}
         <Grid item xs={12} md={3}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" color="textSecondary" gutterBottom>
-                Active Miners
+                Active SHA-256
               </Typography>
               <Typography variant="h4" sx={{ mb: 1 }}>
-                {stats?.activeMiners !== undefined ? stats.activeMiners : 'N/A'}
+                {stats?.activeMinersSha256 !== undefined ? stats.activeMinersSha256 : 'N/A'}
                 <Typography component="span" variant="body2" color="textSecondary" sx={{ ml: 1 }}>
-                  / {stats?.miners?.length || 0}
+                  / {stats?.miners?.filter(m => m.algorithm === 'sha256').length || 0}
                 </Typography>
               </Typography>
-              {previousStats && (
-                <Box display="flex" alignItems="center" gap={0.5}>
-                  {minersTrend.isPositive ? (
-                    <TrendingUpIcon color="success" fontSize="small" />
-                  ) : (
-                    <TrendingDownIcon color="error" fontSize="small" />
-                  )}
-                  <Typography 
-                    variant="body2" 
-                    color={minersTrend.isPositive ? 'success.main' : 'error.main'}
-                  >
-                    {minersTrend.value.toFixed(0)}%
-                  </Typography>
-                </Box>
-              )}
+              <Typography variant="caption" color="textSecondary">
+                SHA-256 Miners
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Active Miners SCRYPT Card */}
+        <Grid item xs={12} md={3}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="h6" color="textSecondary" gutterBottom>
+                Active SCRYPT
+              </Typography>
+              <Typography variant="h4" sx={{ mb: 1 }}>
+                {stats?.activeMinersScrypt !== undefined ? stats.activeMinersScrypt : 'N/A'}
+                <Typography component="span" variant="body2" color="textSecondary" sx={{ ml: 1 }}>
+                  / {stats?.miners?.filter(m => m.algorithm === 'scrypt').length || 0}
+                </Typography>
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                SCRYPT Miners
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -469,73 +505,97 @@ const Dashboard: React.FC = () => {
           </Box>
         </Grid>
 
-        {/* Hashrate Chart */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
-            <Box sx={{ height: '350px' }}>
-              <Line data={hashrateChartData} options={hashrateChartOptions} />
-            </Box>
-          </Paper>
-        </Grid>
+        {/* SHA-256 Hashrate Chart */}
+        {(stats?.activeMinersSha256 || 0) > 0 && (
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 2 }}>
+              <Box sx={{ height: '350px' }}>
+                <Line data={sha256ChartData} options={sha256ChartOptions} />
+              </Box>
+            </Paper>
+          </Grid>
+        )}
 
-        {/* BTC Earnings Chart - Removed (not useful for monitoring) */}
-        {/* <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
-            <Box sx={{ height: '350px' }}>
-              <Line data={btcChartData} options={btcChartOptions} />
-            </Box>
-          </Paper>
-        </Grid> */}
+        {/* SCRYPT Hashrate Chart */}
+        {(stats?.activeMinersScrypt || 0) > 0 && (
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 2 }}>
+              <Box sx={{ height: '350px' }}>
+                <Line data={scryptChartData} options={scryptChartOptions} />
+              </Box>
+            </Paper>
+          </Grid>
+        )}
 
         {/* Performance Metrics */}
         <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Performance Metrics
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6} md={3}>
-                <Box>
-                  <Typography variant="body2" color="textSecondary">
-                    Avg Efficiency
-                  </Typography>
-                  <Typography variant="h6">
-                    {stats?.aggregates?.avgEfficiency?.toFixed(2) || 'N/A'} GH/W
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Box>
-                  <Typography variant="body2" color="textSecondary">
-                    Total Power
-                  </Typography>
-                  <Typography variant="h6">
-                    {stats?.aggregates?.totalPower?.toFixed(0) || 'N/A'} W
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Box>
-                  <Typography variant="body2" color="textSecondary">
-                    Avg Temperature
-                  </Typography>
-                  <Typography variant="h6">
-                    {stats?.aggregates?.avgTemperature?.toFixed(1) || 'N/A'}°C
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Box>
-                  <Typography variant="body2" color="textSecondary">
-                    Rejection Rate
-                  </Typography>
-                  <Typography variant="h6">
-                    {stats?.aggregates?.rejectionRate?.toFixed(2) || 'N/A'}%
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
-          </Paper>
+          <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
+            Performance Metrics
+          </Typography>
+        </Grid>
+        
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                Avg Efficiency
+              </Typography>
+              <Typography variant="h5">
+                {stats?.aggregates?.avgEfficiency?.toFixed(2) || 'N/A'}
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                GH/W (SHA-256)
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                Total Power
+              </Typography>
+              <Typography variant="h5">
+                {stats?.aggregates?.totalPower?.toFixed(0) || 'N/A'}
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                Watts
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                Avg Temperature
+              </Typography>
+              <Typography variant="h5">
+                {stats?.aggregates?.avgTemperature?.toFixed(1) || 'N/A'}
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                °C
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                Rejection Rate
+              </Typography>
+              <Typography variant="h5">
+                {stats?.aggregates?.rejectionRate?.toFixed(2) || 'N/A'}
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                %
+              </Typography>
+            </CardContent>
+          </Card>
         </Grid>
       </Grid>
     </Box>

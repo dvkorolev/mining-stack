@@ -8,6 +8,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import RuleIcon from '@mui/icons-material/Rule';
 import PoolIcon from '@mui/icons-material/Pool';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -32,6 +33,7 @@ const Sidebar: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClo
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', adminOnly: false },
     { text: 'Miners', icon: <PeopleIcon />, path: '/miners', adminOnly: false },
     { text: 'Pools', icon: <PoolIcon />, path: '/pools', adminOnly: true },
+    { text: 'Pool Monitoring', icon: <AccountBalanceWalletIcon />, path: '/pool-monitoring', adminOnly: false },
     { text: 'Analytics', icon: <BarChartIcon />, path: '/analytics', adminOnly: false },
     { text: 'Alerts', icon: <NotificationsIcon />, path: '/alerts', adminOnly: false },
     { text: 'Alert Rules', icon: <RuleIcon />, path: '/alert-rules', adminOnly: true },

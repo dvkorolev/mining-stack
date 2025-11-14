@@ -7,6 +7,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import miningRoutes from './routes/mining.routes';
 import poolsRoutes from './routes/pools.routes';
+import poolApiRoutes from './routes/pool.routes';
 import logsRoutes from './routes/logs.routes';
 import telegramRoutes from './routes/telegram.routes';
 import authRoutes from './routes/auth.routes';
@@ -59,7 +60,8 @@ app.use('/api', optionalAuth);
 // API Routes
 app.use('/api', authRoutes); // Auth routes (no authentication required)
 app.use('/api', miningRoutes);
-app.use('/api/pools', poolsRoutes);
+app.use('/api/pools', poolsRoutes); // Pool configuration (stratum)
+app.use('/api', poolApiRoutes); // Pool API monitoring (EMCD, etc.)
 app.use('/api/logs', logsRoutes);
 app.use('/api/telegram', telegramRoutes);
 

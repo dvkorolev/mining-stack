@@ -42,7 +42,7 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import ClearIcon from '@mui/icons-material/Clear';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectMiners, setMinerRebooting } from '../features/mining/miningSlice';
-import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools } from '../services/api';
+import { fetchMiningStats, addMiner as addMinerAPI, updateMiner as updateMinerAPI, deleteMiner as deleteMinerAPI, rebootMiner as rebootMinerAPI, bulkRebootMiners, rebootAllMiners, getMinerPools, getPoolAccounts, PoolAccount } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -123,12 +123,14 @@ const Miners: React.FC = () => {
   const [modelFilter, setModelFilter] = useState<string>('all');
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [minerToTransfer, setMinerToTransfer] = useState<Miner | null>(null);
+  const [poolAccounts, setPoolAccounts] = useState<PoolAccount[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     ip: '',
     model: '',
     alias: '',
     owner: '',
+    pool_account_id: null as number | null,
   });
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -168,7 +170,15 @@ const Miners: React.FC = () => {
   };
 
   // Open add/edit dialog
-  const handleOpenDialog = (miner?: Miner) => {
+  const handleOpenDialog = async (miner?: Miner) => {
+    // Load pool accounts
+    try {
+      const accounts = await getPoolAccounts();
+      setPoolAccounts(accounts);
+    } catch (error) {
+      console.error('Error loading pool accounts:', error);
+    }
+
     if (miner) {
       setEditingMiner(miner);
       setFormData({
@@ -177,6 +187,7 @@ const Miners: React.FC = () => {
         model: miner.model,
         alias: miner.alias || '',
         owner: miner.owner || '',
+        pool_account_id: (miner as any).pool_account_id || null,
       });
     } else {
       setEditingMiner(null);
@@ -186,6 +197,7 @@ const Miners: React.FC = () => {
         model: '',
         alias: '',
         owner: '',
+        pool_account_id: null,
       });
     }
     setOpenDialog(true);
@@ -201,11 +213,12 @@ const Miners: React.FC = () => {
       model: '',
       alias: '',
       owner: '',
+      pool_account_id: null,
     });
   };
 
   // Handle form input changes
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: string | number | null) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -869,6 +882,23 @@ const Miners: React.FC = () => {
                 placeholder="EN"
                 helperText="Owner identifier (optional)"
               />
+            </Grid>
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel>Pool Account</InputLabel>
+                <Select
+                  value={formData.pool_account_id || ''}
+                  label="Pool Account"
+                  onChange={(e) => handleInputChange('pool_account_id', e.target.value === '' ? null : e.target.value)}
+                >
+                  <MenuItem value="">None</MenuItem>
+                  {poolAccounts.map((account) => (
+                    <MenuItem key={account.id} value={account.id}>
+                      {account.account_name} ({account.pool_name})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Grid>
           </Grid>
         </DialogContent>

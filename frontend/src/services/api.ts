@@ -451,4 +451,152 @@ export const regeneratePrometheusYAML = async () => {
   }
 };
 
+// ==================== POOL API MONITORING ====================
+
+export interface PoolApi {
+  id: number;
+  name: string;
+  api_base_url: string;
+}
+
+export interface PoolAccount {
+  id: number;
+  pool_api_id: number;
+  pool_name: string;
+  account_name: string;
+  // api_key is never sent to frontend
+}
+
+export interface PoolUserInfo {
+  username?: string;
+  balance?: number;
+  totalPaid?: number;
+  minPayout?: number;
+  payoutAddress?: string;
+  coin?: string;
+  [key: string]: any;
+}
+
+export interface PoolReward {
+  timestamp: number;
+  datetime?: string;
+  income: number;
+  hashrate?: number;
+  rewardType?: string;
+  coin?: string;
+  [key: string]: any;
+}
+
+export interface PoolPayout {
+  timestamp: number;
+  datetime?: string;
+  amount: number;
+  txid?: string;
+  coin?: string;
+  [key: string]: any;
+}
+
+// Get all pool APIs
+export const getPoolApis = async (): Promise<PoolApi[]> => {
+  try {
+    const response = await api.get('/pool-apis');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching pool APIs:', error);
+    throw error;
+  }
+};
+
+// Get all pool accounts
+export const getPoolAccounts = async (): Promise<PoolAccount[]> => {
+  try {
+    const response = await api.get('/pool-accounts');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching pool accounts:', error);
+    throw error;
+  }
+};
+
+// Create pool account
+export const createPoolAccount = async (account: {
+  pool_api_id: number;
+  account_name: string;
+  api_key: string;
+}): Promise<{ id: number; pool_api_id: number; account_name: string; message: string }> => {
+  try {
+    const response = await api.post('/pool-accounts', account);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating pool account:', error);
+    throw error;
+  }
+};
+
+// Update pool account
+export const updatePoolAccount = async (
+  id: number,
+  account: {
+    pool_api_id: number;
+    account_name: string;
+    api_key?: string; // Optional - only if changing
+  }
+): Promise<{ id: number; pool_api_id: number; account_name: string; message: string }> => {
+  try {
+    const response = await api.put(`/pool-accounts/${id}`, account);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating pool account:', error);
+    throw error;
+  }
+};
+
+// Delete pool account
+export const deletePoolAccount = async (id: number): Promise<{ success: boolean; message: string }> => {
+  try {
+    const response = await api.delete(`/pool-accounts/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting pool account:', error);
+    throw error;
+  }
+};
+
+// Get pool user info
+export const getPoolUserInfo = async (accountId: number): Promise<PoolUserInfo> => {
+  try {
+    const response = await api.get(`/pool-data/${accountId}/info`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching pool user info:', error);
+    throw error;
+  }
+};
+
+// Get pool rewards
+export const getPoolRewards = async (accountId: number, coin: string = 'btc'): Promise<PoolReward[]> => {
+  try {
+    const response = await api.get(`/pool-data/${accountId}/rewards`, {
+      params: { coin },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching pool rewards:', error);
+    throw error;
+  }
+};
+
+// Get pool payouts
+export const getPoolPayouts = async (accountId: number, coin: string = 'btc'): Promise<PoolPayout[]> => {
+  try {
+    const response = await api.get(`/pool-data/${accountId}/payouts`, {
+      params: { coin },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching pool payouts:', error);
+    throw error;
+  }
+};
+
 export default api;

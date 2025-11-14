@@ -500,11 +500,14 @@ async def collect_all_metrics():
                         
                         # Update miners_data with merged result
                         hashrate_val = _safe_float(fallback_data.get('hashrate', 0))
+                        is_mining = fallback_data.get('is_mining', True)
                         miner_data['hashrate'] = hashrate_val
                         miner_data['power'] = _safe_float(fallback_data.get('power', 0))
                         miner_data['temp_max'] = _safe_float(fallback_data.get('temp_max', fallback_data.get('temperature', 0)))
-                        miner_data['is_mining'] = 1 if fallback_data.get('is_mining', False) else 0
-                        miner_data['state'] = 2 if hashrate_val > 0 else 0
+                        miner_data['is_mining'] = 1 if is_mining else 0
+                        # State calculation should match primary collection logic
+                        # state: 2=mining (hashrate>0), 1=idle (hashrate=0, not mining), 0=faulty (hashrate=0, should be mining)
+                        miner_data['state'] = 2 if hashrate_val > 0 else (1 if not is_mining else 0)
                         
                         # Explicitly set state metric (in case _update_metrics didn't)
                         model_normalized = miner['model'].replace(" ", "_")

@@ -1185,20 +1185,29 @@ const updateMetricsFromScheduler = async (
       }
       
       // Determine status from scheduler data using new scrape_status field
-      // Status codes: 2=success, 1=partial, 0=timeout, -1=refused, -2=error
+      // scrape_status: 2=success, 1=partial, 0.4-0.6=fallback, 0=timeout, -1=refused, -2=error
+      // state: 2=mining, 1=idle, 0=faulty
       let status: 'online' | 'offline' | 'error' = 'offline';
-      if (m.scrape_status !== undefined && m.scrape_status >= 0) {
-        // Positive status means data was collected
-        if (m.scrape_status > 0 && m.state === 2) {
-          status = 'online';  // Mining
-        } else if (m.scrape_status > 0 && m.state === 1) {
-          status = 'offline'; // Idle
+      
+      if (m.scrape_status !== undefined) {
+        if (m.scrape_status > 0) {
+          // Data was successfully collected (primary or fallback)
+          if (m.state === 2) {
+            status = 'online';  // Mining with hashrate
+          } else if (m.state === 1) {
+            status = 'offline'; // Idle (not mining intentionally)
+          } else if (m.state === 0) {
+            status = 'offline'; // Faulty but reachable (treat as offline, not error)
+          } else {
+            status = 'offline'; // Unknown state, default to offline
+          }
+        } else if (m.scrape_status === 0) {
+          // Connection timeout - miner is unreachable
+          status = 'error';
         } else {
-          status = 'error';   // Timeout or other issue
+          // Negative status means connection/API error
+          status = 'error';
         }
-      } else if (m.scrape_status < 0) {
-        // Negative status means connection/API error
-        status = 'error';
       }
       
       // Build error list
