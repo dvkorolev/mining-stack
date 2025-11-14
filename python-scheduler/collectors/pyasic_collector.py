@@ -677,8 +677,13 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             else:
                 scrape_status = -2
             
-            miner_scrape_status.labels(ip=miner_ip, name=miner_name, model=miner_model).set(scrape_status)
-            miner_state.labels(ip=miner_ip, name=miner_name, model=miner_model).set(0)
+            # Detect algorithm for error case metrics
+            model_normalized = miner_model.replace(" ", "_")
+            is_scrypt = _is_scrypt_miner(miner_model, miner.get('algorithm'))
+            algorithm = 'scrypt' if is_scrypt else 'sha256'
+            
+            miner_scrape_status.labels(ip=miner_ip, name=miner_name, model=model_normalized, algorithm=algorithm).set(scrape_status)
+            miner_state.labels(ip=miner_ip, name=miner_name, model=model_normalized, algorithm=algorithm).set(0)
             
             miners_data.append({
                 'ip': miner_ip,
