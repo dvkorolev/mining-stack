@@ -548,20 +548,18 @@ export const importMinersFromYAML = (): { imported: number; skipped: number; err
 
         // Import pool assignments if present
         if (miner.pools && miner.pools.length > 0) {
-          for (let i = 0; i < miner.pools.length; i++) {
-            const pool = miner.pools[i];
-            try {
-              // Find pool by URL in database
-              const dbPool = db.getPoolByUrl(pool.url);
-              if (dbPool) {
-                db.assignPoolToMiner(miner.ip, dbPool.id, i, pool.user, pool.password);
-                logger.info(`Assigned pool ${dbPool.name} to miner ${miner.name}`);
-              } else {
-                logger.warn(`Pool ${pool.url} not found in database, skipping assignment for ${miner.name}`);
-              }
-            } catch (poolError) {
-              logger.error(`Failed to assign pool to miner ${miner.name}:`, poolError);
-            }
+          try {
+            // Set all pools for this miner
+            const poolsData = miner.pools.map((pool, index) => ({
+              url: pool.url,
+              user: pool.user,
+              password: pool.password,
+              priority: index
+            }));
+            db.setMinerPools(miner.ip, poolsData);
+            logger.info(`Assigned ${poolsData.length} pool(s) to miner ${miner.name}`);
+          } catch (poolError) {
+            logger.error(`Failed to assign pools to miner ${miner.name}:`, poolError);
           }
         }
       } catch (error) {
@@ -608,9 +606,9 @@ export const exportMinersToYAML = (owner?: string): string => {
         algorithm: miner.algorithm,
         thresholds: miner.thresholds,
         pools: pools.map(p => ({
-          url: p.pool_url,
-          user: p.pool_user,
-          password: p.pool_password || undefined,
+          url: p.url,
+          user: p.user,
+          password: p.password || undefined,
         })),
       };
     });

@@ -393,50 +393,8 @@ router.get('/mining/miners/:minerIp/pool-assignments', async (req, res, next) =>
   }
 });
 
-// Assign pool to miner in database
-router.post('/mining/miners/:minerIp/pool-assignments', async (req, res, next) => {
-  try {
-    const { minerIp } = req.params;
-    const { pool_id, priority, user, password } = req.body;
-    
-    if (!pool_id) {
-      return res.status(400).json({ error: 'pool_id is required' });
-    }
-    
-    const db = getDatabase();
-    db.assignPoolToMiner(minerIp, pool_id, priority || 0, user, password);
-    
-    res.json({
-      success: true,
-      message: 'Pool assigned to miner',
-      miner_ip: minerIp,
-      pool_id,
-    });
-  } catch (error) {
-    logger.error('Error assigning pool to miner:', error);
-    next(error);
-  }
-});
-
-// Remove pool assignment from miner in database
-router.delete('/mining/miners/:minerIp/pool-assignments/:poolId', async (req, res, next) => {
-  try {
-    const { minerIp, poolId } = req.params;
-    
-    const db = getDatabase();
-    db.removePoolFromMiner(minerIp, parseInt(poolId));
-    
-    res.json({
-      success: true,
-      message: 'Pool assignment removed',
-      miner_ip: minerIp,
-      pool_id: poolId,
-    });
-  } catch (error) {
-    logger.error('Error removing pool assignment:', error);
-    next(error);
-  }
-});
+// Note: Individual pool assignment endpoints removed.
+// Use PUT /mining/miners/:minerIp/pool-assignments or sync from hardware instead.
 
 // Update all pool assignments for a miner in database
 router.put('/mining/miners/:minerIp/pool-assignments', async (req, res, next) => {
@@ -448,27 +406,30 @@ router.put('/mining/miners/:minerIp/pool-assignments', async (req, res, next) =>
       return res.status(400).json({ error: 'pools array is required' });
     }
     
+    // Validate pool format
+    for (const pool of pools) {
+      if (!pool.url || !pool.user) {
+        return res.status(400).json({ error: 'Each pool must have url and user fields' });
+      }
+    }
+    
     const db = getDatabase();
     
-    // Remove all existing assignments
-    db.removeAllPoolsFromMiner(minerIp);
+    // Set all pools at once
+    const poolsData = pools.map((pool, index) => ({
+      url: pool.url,
+      user: pool.user,
+      password: pool.password || '',
+      priority: pool.priority !== undefined ? pool.priority : index
+    }));
     
-    // Add new assignments
-    for (const pool of pools) {
-      db.assignPoolToMiner(
-        minerIp,
-        pool.pool_id,
-        pool.priority || 0,
-        pool.user,
-        pool.password
-      );
-    }
+    db.setMinerPools(minerIp, poolsData);
     
     res.json({
       success: true,
       message: 'Pool assignments updated',
       miner_ip: minerIp,
-      pools_assigned: pools.length,
+      pools_assigned: poolsData.length,
     });
   } catch (error) {
     logger.error('Error updating pool assignments:', error);
@@ -493,54 +454,25 @@ router.post('/mining/miners/:minerIp/pool-assignments/sync', async (req, res, ne
     
     const db = getDatabase();
     
-    // Get all pools from database to match URLs
-    const allPools = db.getAllPools();
+    // Prepare pools data for database
+    const poolsData = hardwarePools.pools.map((hwPool: any, index: number) => ({
+      url: hwPool.url.replace(/^stratum\+tcp:\/\//, ''), // Clean URL
+      user: hwPool.user || '',
+      password: hwPool.password || '',
+      priority: index
+    }));
     
-    // Remove existing assignments
-    db.removeAllPoolsFromMiner(minerIp);
-    
-    let synced = 0;
-    let skipped = 0;
-    const errors: string[] = [];
-    
-    // Sync each hardware pool
-    for (let i = 0; i < hardwarePools.pools.length; i++) {
-      const hwPool = hardwarePools.pools[i];
-      try {
-        // Extract pool URL (remove stratum+tcp:// prefix if present)
-        const poolUrl = hwPool.url.replace(/^stratum\+tcp:\/\//, '');
-        
-        // Find matching pool in database by URL
-        const dbPool = allPools.find(p => p.url === poolUrl || p.url.includes(poolUrl));
-        
-        if (dbPool) {
-          // Assign pool to miner with priority based on pool index (0=Pool 1, 1=Pool 2, etc.)
-          db.assignPoolToMiner(
-            minerIp,
-            dbPool.id,
-            i, // Use index as priority
-            (hwPool as any).user || '',
-            (hwPool as any).password || 'x'
-          );
-          synced++;
-        } else {
-          skipped++;
-          errors.push(`Pool ${poolUrl} not found in database - please add it to Pools Management first`);
-        }
-      } catch (err) {
-        skipped++;
-        errors.push(`Failed to sync pool ${hwPool.url}: ${err}`);
-      }
-    }
+    // Save pools to database
+    db.setMinerPools(minerIp, poolsData);
     
     res.json({
       success: true,
-      message: `Synced ${synced} pools from hardware to database`,
+      message: `Synced ${poolsData.length} pools from hardware to database`,
       miner_ip: minerIp,
-      synced,
-      skipped,
+      synced: poolsData.length,
+      skipped: 0,
       total: hardwarePools.pools.length,
-      errors: errors.length > 0 ? errors : undefined,
+      pools: poolsData,
     });
   } catch (error) {
     logger.error('Error syncing hardware pools:', error);
