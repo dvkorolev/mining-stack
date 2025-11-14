@@ -1,7 +1,82 @@
 # Fixes Implemented - November 14, 2025
 
 ## Summary
-Fixed critical bugs in metrics collection, status determination, and frontend validation.
+Fixed critical bugs in metrics collection, status determination, frontend validation, algorithm detection, and pool sync.
+
+---
+
+## Latest Fixes - November 14, 2025 (Session 2)
+
+### 10. SCRYPT Miner Detection Fix
+
+**Issue:** Dashboard sometimes shows 2 SCRYPT miners instead of 1
+
+**Root Cause:**
+- Backend algorithm detection was checking if `hashrate_mhs` field exists and > 0
+- This could incorrectly classify SHA-256 miners as SCRYPT if they had stale/small `hashrate_mhs` values
+- Detection logic: `(m.hashrate_mhs !== undefined && m.hashrate_mhs > 0) || isScryptByModel`
+
+**Fix Applied:**
+- Prioritized model-based detection (DG1/L3/L7 in model name)
+- Changed hashrate_mhs threshold from > 0 to > 1000 MH/s (1 GH/s)
+- Only use hashrate_mhs for unknown models: `isScryptByModel || (!modelLower && hasScryptHashrate)`
+
+**Files Modified:**
+- `backend/src/services/mining.service.ts` - Lines 1236-1246
+
+**Impact:**
+- ✅ Accurate SCRYPT miner count (should show exactly 1: DG1+)
+- ✅ No false positives from stale hashrate_mhs data
+- ✅ More reliable algorithm classification
+
+---
+
+### 11. CGMiner API Pool Parsing Fix
+
+**Issue:** Pool sync failing with JSON parse error at position 2054
+
+**Root Cause:**
+- CGMiner API responses contain null bytes (`\0`) and control characters
+- Direct JSON parsing was failing on malformed responses
+
+**Fix Applied:**
+- Clean CGMiner response by removing null bytes and control characters
+- Extract valid JSON from responses with trailing garbage
+- Added better error messages showing raw response length
+
+**Files Modified:**
+- `backend/src/services/miner-control.service.ts` - Lines 323-352
+
+**Impact:**
+- ✅ Pool sync now works via CGMiner API (Method 3)
+- ✅ More robust handling of malformed API responses
+- ✅ Better error diagnostics
+
+---
+
+### 12. Algorithm Label Fix for Error Cases
+
+**Issue:** `ValueError: Incorrect label names` in Python scheduler
+
+**Root Cause:**
+- Error case metrics were missing the `algorithm` label
+- Prometheus metrics require consistent labels across all metric sets
+
+**Fix Applied:**
+- Added algorithm detection in error cases
+- Ensured `miner_scrape_status` and `miner_state` metrics include algorithm label
+
+**Files Modified:**
+- `python-scheduler/collectors/pyasic_collector.py` - Lines 680-686
+
+**Impact:**
+- ✅ No more label mismatch errors
+- ✅ Consistent metric labeling
+- ✅ Proper error tracking by algorithm
+
+---
+
+## Earlier Fixes - November 14, 2025 (Session 1)
 
 ---
 
