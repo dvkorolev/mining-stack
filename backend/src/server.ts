@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import miningRoutes from './routes/mining.routes';
 import poolApiRoutes from './routes/pool.routes';
 import logsRoutes from './routes/logs.routes';
@@ -43,8 +44,12 @@ const strictLimiter = rateLimit({
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: config.corsOrigin || true,
+  credentials: true,
+}));
 app.use(compression()); // Compress responses
+app.use(cookieParser());
 app.use(express.json());
 app.use(morgan('dev'));
 

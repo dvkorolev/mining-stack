@@ -22,11 +22,13 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import SendIcon from '@mui/icons-material/Send';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 
 const Settings: React.FC = () => {
+  const { user, isAdmin } = useAuth();
   const [botToken, setBotToken] = useState('');
   const [chatIds, setChatIds] = useState('');
-  const [adminChatId, setAdminChatId] = useState(localStorage.getItem('adminChatId') || '');
   const [showToken, setShowToken] = useState(false);
   const [botStatus, setBotStatus] = useState<{ enabled: boolean; chatIds: string[] } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -41,17 +43,10 @@ const Settings: React.FC = () => {
 
   const loadBotStatus = async () => {
     try {
-      const headers: HeadersInit = {};
-      const storedAdminChatId = localStorage.getItem('adminChatId');
-      if (storedAdminChatId) {
-        headers['X-Telegram-Chat-ID'] = storedAdminChatId;
-      }
-
-      const response = await fetch('/api/telegram/status', { headers });
-      const data = await response.json();
-      setBotStatus(data);
-      if (data.chatIds && data.chatIds.length > 0) {
-        setChatIds(data.chatIds.join(', '));
+      const response = await api.get('/telegram/status');
+      setBotStatus(response.data);
+      if (response.data.chatIds && response.data.chatIds.length > 0) {
+        setChatIds(response.data.chatIds.join(', '));
       }
     } catch (error) {
       console.error('Error loading bot status:', error);
@@ -64,9 +59,8 @@ const Settings: React.FC = () => {
       return;
     }
 
-    const storedAdminChatId = localStorage.getItem('adminChatId');
-    if (!storedAdminChatId) {
-      setMessage({ type: 'error', text: 'Please set your Admin Chat ID first in the Admin Settings section above' });
+    if (!isAdmin) {
+      setMessage({ type: 'error', text: 'Admin access required to configure Telegram bot' });
       return;
     }
 
@@ -74,36 +68,23 @@ const Settings: React.FC = () => {
     setMessage(null);
 
     try {
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'X-Telegram-Chat-ID': storedAdminChatId,
-      };
-
-      const response = await fetch('/api/telegram/init', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ token: botToken, chatId: chatIds }),
+      const response = await api.post('/telegram/init', {
+        token: botToken,
+        chatId: chatIds,
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        setMessage({ type: 'success', text: 'Telegram bot initialized successfully!' });
-        await loadBotStatus();
-      } else {
-        setMessage({ type: 'error', text: data.error || data.message || 'Failed to initialize bot' });
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Error connecting to server' });
+      setMessage({ type: 'success', text: 'Telegram bot initialized successfully!' });
+      await loadBotStatus();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.response?.data?.error || error.response?.data?.message || 'Failed to initialize bot' });
     } finally {
       setLoading(false);
     }
   };
 
   const handleTest = async () => {
-    const storedAdminChatId = localStorage.getItem('adminChatId');
-    if (!storedAdminChatId) {
-      setTestMessage({ type: 'error', text: 'Please set your Admin Chat ID first in the Admin Settings section above' });
+    if (!isAdmin) {
+      setTestMessage({ type: 'error', text: 'Admin access required to test Telegram bot' });
       return;
     }
 
@@ -111,24 +92,15 @@ const Settings: React.FC = () => {
     setTestMessage(null);
 
     try {
-      const headers: HeadersInit = {
-        'X-Telegram-Chat-ID': storedAdminChatId,
-      };
+      const response = await api.post('/telegram/test');
 
-      const response = await fetch('/api/telegram/test', {
-        method: 'POST',
-        headers,
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setTestMessage({ type: 'success', text: `✅ ${data.message}` });
+      if (response.data.success) {
+        setTestMessage({ type: 'success', text: `✅ ${response.data.message}` });
       } else {
-        setTestMessage({ type: 'error', text: `❌ ${data.message}` });
+        setTestMessage({ type: 'error', text: `❌ ${response.data.message}` });
       }
-    } catch (error) {
-      setTestMessage({ type: 'error', text: 'Error testing connection' });
+    } catch (error: any) {
+      setTestMessage({ type: 'error', text: error.response?.data?.message || 'Error testing connection' });
     } finally {
       setTestLoading(false);
     }
@@ -140,42 +112,31 @@ const Settings: React.FC = () => {
         Settings
       </Typography>
 
-      {/* Admin Settings Section - MUST BE SET FIRST */}
+      {/* User Info Section */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
-          ⚙️ Admin Settings (Set This First!)
+          👤 Account Information
         </Typography>
         <Divider sx={{ mb: 3 }} />
         
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          <Typography variant="body2" gutterBottom>
-            <strong>⚠️ Required:</strong> You must set your Admin Chat ID before configuring Telegram bot settings.
-          </Typography>
-          <Typography variant="body2">
-            Send <code>/whoami</code> to your Telegram bot to get your Chat ID.
-          </Typography>
-        </Alert>
-
-        <TextField
-          fullWidth
-          label="Admin Telegram Chat ID"
-          value={adminChatId}
-          onChange={(e) => setAdminChatId(e.target.value)}
-          placeholder="e.g., 49268211"
-          helperText="Your Telegram Chat ID for admin operations and bot configuration"
-          sx={{ mb: 2 }}
-        />
-
-        <Button
-          variant="contained"
-          onClick={() => {
-            localStorage.setItem('adminChatId', adminChatId);
-            setMessage({ type: 'success', text: 'Admin Chat ID saved successfully! You can now configure Telegram bot settings below.' });
-          }}
-          disabled={!adminChatId.trim()}
-        >
-          Save Admin Chat ID
-        </Button>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6}>
+            <Typography variant="body2" color="text.secondary">Chat ID</Typography>
+            <Typography variant="body1">{user?.chatId || 'N/A'}</Typography>
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Typography variant="body2" color="text.secondary">Role</Typography>
+            <Typography variant="body1" sx={{ textTransform: 'capitalize' }}>
+              {user?.role || 'N/A'} {isAdmin && '(Admin)'}
+            </Typography>
+          </Grid>
+          {user?.displayName && (
+            <Grid item xs={12} sm={6}>
+              <Typography variant="body2" color="text.secondary">Display Name</Typography>
+              <Typography variant="body1">{user.displayName}</Typography>
+            </Grid>
+          )}
+        </Grid>
       </Paper>
 
       {/* Telegram Configuration Section */}

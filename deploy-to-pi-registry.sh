@@ -52,14 +52,14 @@ echo -e "\n${YELLOW}Syncing configuration files...${NC}"
 ssh ${PI_REMOTE} "mkdir -p ${REMOTE_DIR}"
 
 # Copy pi-deploy.sh script
-rsync -avz --info=progress2 pi-deploy.sh ${PI_REMOTE}:${REMOTE_DIR}/
+rsync -avz pi-deploy.sh ${PI_REMOTE}:${REMOTE_DIR}/
 ssh ${PI_REMOTE} "chmod +x ${REMOTE_DIR}/pi-deploy.sh"
 
-rsync -avz --progress docker-compose.prod.yml ${PI_REMOTE}:${REMOTE_DIR}/
-rsync -avz --progress docker-compose.logging.yml ${PI_REMOTE}:${REMOTE_DIR}/
-rsync -avz --progress --delete etc/ ${PI_REMOTE}:${REMOTE_DIR}/etc/ 2>/dev/null || echo "etc directory not found, skipping..."
-rsync -avz --progress --delete docker/ ${PI_REMOTE}:${REMOTE_DIR}/docker/ 2>/dev/null || echo "docker directory not found, skipping..."
-rsync -avz --progress .env ${PI_REMOTE}:${REMOTE_DIR}/ 2>/dev/null || echo ".env file not found, skipping..."
+rsync -avz docker-compose.prod.yml ${PI_REMOTE}:${REMOTE_DIR}/
+rsync -avz docker-compose.logging.yml ${PI_REMOTE}:${REMOTE_DIR}/
+rsync -avz --delete etc/ ${PI_REMOTE}:${REMOTE_DIR}/etc/ 2>/dev/null || echo "etc directory not found, skipping..."
+rsync -avz --delete docker/ ${PI_REMOTE}:${REMOTE_DIR}/docker/ 2>/dev/null || echo "docker directory not found, skipping..."
+rsync -avz .env ${PI_REMOTE}:${REMOTE_DIR}/ 2>/dev/null || echo ".env file not found, skipping..."
 
 echo -e "${GREEN}✓ Configuration files synchronized${NC}"
 

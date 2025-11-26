@@ -36,13 +36,16 @@ const Login: React.FC = () => {
 
     const pollInterval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/auth/verify-status/${chatId}`);
+        const response = await fetch(`/api/auth/verify-status/${chatId}`, {
+          credentials: 'include', // Include cookies
+        });
         const data = await response.json();
 
         if (data.verified) {
-          // Verification successful!
+          // Verification successful - JWT cookies are now set
           clearInterval(pollInterval);
-          login(chatId.trim()); // Use AuthContext login
+          // Pass user data from response to login
+          login(data.user);
           navigate('/');
         } else if (data.expired) {
           // Verification expired
@@ -58,7 +61,7 @@ const Login: React.FC = () => {
 
     // Cleanup on unmount
     return () => clearInterval(pollInterval);
-  }, [verifying, chatId, navigate]);
+  }, [verifying, chatId, login, navigate]);
 
   const handleLogin = async () => {
     if (!chatId.trim()) {

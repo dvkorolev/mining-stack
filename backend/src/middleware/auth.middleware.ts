@@ -14,6 +14,9 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
+import { config } from '../config/config';
+import { getDatabase, UserRecord } from '../services/database.service';
+import { verifyAccessToken } from '../services/auth.service';
 
 // Extend Express Request to include user context
 declare global {
@@ -23,6 +26,7 @@ declare global {
         chatId: string;
         role: 'admin' | 'user';
         isSystem: boolean;
+        userId?: number;
       };
     }
   }
@@ -31,84 +35,159 @@ declare global {
 const SYSTEM_API_KEY = process.env.SYSTEM_API_KEY || '';
 const ADMIN_TELEGRAM_CHAT_ID = process.env.ADMIN_TELEGRAM_CHAT_ID || '';
 
+const getAccessTokenFromRequest = (req: Request): string | null => {
+  const cookieToken = req.cookies?.[config.auth.accessCookieName];
+  if (cookieToken) {
+    return cookieToken;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    return authHeader.slice(7);
+  }
+
+  return null;
+};
+
+const setUserContextFromRecord = (req: Request, user: UserRecord): void => {
+  req.user = {
+    chatId: user.telegram_chat_id,
+    role: user.role,
+    isSystem: false,
+    userId: user.id,
+  };
+};
+
+const tryJwtAuth = (req: Request, requireActiveUser: boolean = true): boolean => {
+  const token = getAccessTokenFromRequest(req);
+  if (!token) {
+    return false;
+  }
+
+  try {
+    const payload = verifyAccessToken(token);
+    const db = getDatabase();
+    const user = payload.userId
+      ? db.getUserById(payload.userId)
+      : db.getUserByChatId(payload.chatId);
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (requireActiveUser && user.status === 'suspended') {
+      throw new Error('User suspended');
+    }
+
+    setUserContextFromRecord(req, user);
+    return true;
+  } catch (error) {
+    logger.warn('JWT authentication failed', {
+      path: req.path,
+      method: req.method,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+};
+
+const tryLegacyChatHeader = (req: Request): boolean => {
+  const chatId = req.headers['x-telegram-chat-id'] as string | undefined;
+  if (!chatId) {
+    return false;
+  }
+
+  const role = chatId === ADMIN_TELEGRAM_CHAT_ID ? 'admin' : 'user';
+  req.user = {
+    chatId,
+    role,
+    isSystem: false,
+  };
+
+  logger.warn('Legacy X-Telegram-Chat-ID authentication used. Please migrate to JWT.', {
+    path: req.path,
+    method: req.method,
+  });
+
+  return true;
+};
+
+const applySystemAuth = (req: Request, apiKey?: string): boolean => {
+  if (!apiKey) {
+    return false;
+  }
+
+  if (!SYSTEM_API_KEY) {
+    logger.warn('System API key provided but SYSTEM_API_KEY env not configured');
+    return false;
+  }
+
+  if (apiKey !== SYSTEM_API_KEY) {
+    logger.warn('Invalid system API key attempted', {
+      path: req.path,
+      method: req.method,
+      ip: req.ip,
+    });
+    return false;
+  }
+
+  req.user = {
+    chatId: 'system',
+    role: 'admin',
+    isSystem: true,
+  };
+  logger.debug('System API authenticated', {
+    path: req.path,
+    method: req.method,
+  });
+  return true;
+};
+
+const ensureAuthenticated = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  required: boolean
+): void => {
+  const apiKey = req.headers['x-api-key'] as string | undefined;
+
+  if (applySystemAuth(req, apiKey)) {
+    next();
+    return;
+  }
+
+  if (tryJwtAuth(req)) {
+    next();
+    return;
+  }
+
+  if (tryLegacyChatHeader(req)) {
+    next();
+    return;
+  }
+
+  if (required) {
+    logger.warn('Unauthenticated request', {
+      path: req.path,
+      method: req.method,
+      ip: req.ip,
+    });
+    res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Authentication required',
+    });
+    return;
+  }
+
+  next();
+};
+
 /**
  * Authentication middleware
  * Checks for either X-API-Key (system) or X-Telegram-Chat-ID (user)
  */
 export const authenticate = (req: Request, res: Response, next: NextFunction): void => {
-  const apiKey = req.headers['x-api-key'] as string | undefined;
-  const chatId = req.headers['x-telegram-chat-id'] as string | undefined;
-
-  // Check for system API key (highest priority)
-  if (apiKey) {
-    if (!SYSTEM_API_KEY) {
-      logger.warn('System API key authentication attempted but SYSTEM_API_KEY not configured');
-      res.status(500).json({ 
-        error: 'Server configuration error',
-        message: 'System authentication not configured'
-      });
-      return;
-    }
-
-    if (apiKey === SYSTEM_API_KEY) {
-      // System authentication successful
-      req.user = {
-        chatId: 'system',
-        role: 'admin',
-        isSystem: true,
-      };
-      logger.debug('System API authenticated', { 
-        path: req.path,
-        method: req.method 
-      });
-      next();
-      return;
-    } else {
-      // Invalid API key
-      logger.warn('Invalid system API key attempted', {
-        path: req.path,
-        method: req.method,
-        ip: req.ip,
-      });
-      res.status(401).json({ 
-        error: 'Unauthorized',
-        message: 'Invalid API key'
-      });
-      return;
-    }
-  }
-
-  // Check for Telegram chat ID
-  if (chatId) {
-    // Determine user role
-    const role = chatId === ADMIN_TELEGRAM_CHAT_ID ? 'admin' : 'user';
-
-    req.user = {
-      chatId,
-      role,
-      isSystem: false,
-    };
-
-    logger.debug('Telegram user authenticated', {
-      chatId: chatId.substring(0, 4) + '***',
-      role,
-      path: req.path,
-      method: req.method,
-    });
-    next();
-    return;
-  }
-
-  // No authentication provided
-  logger.warn('Unauthenticated request', {
-    path: req.path,
-    method: req.method,
-    ip: req.ip,
-  });
-  res.status(401).json({ 
-    error: 'Unauthorized',
-    message: 'Authentication required. Provide X-API-Key or X-Telegram-Chat-ID header.'
-  });
+  ensureAuthenticated(req, res, next, true);
 };
 
 /**
@@ -145,27 +224,5 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction): v
  * Attaches user context if credentials provided, but doesn't require it
  */
 export const optionalAuth = (req: Request, res: Response, next: NextFunction): void => {
-  const apiKey = req.headers['x-api-key'] as string | undefined;
-  const chatId = req.headers['x-telegram-chat-id'] as string | undefined;
-
-  // Try system API key
-  if (apiKey && SYSTEM_API_KEY && apiKey === SYSTEM_API_KEY) {
-    req.user = {
-      chatId: 'system',
-      role: 'admin',
-      isSystem: true,
-    };
-  }
-  // Try Telegram chat ID
-  else if (chatId) {
-    const role = chatId === ADMIN_TELEGRAM_CHAT_ID ? 'admin' : 'user';
-    req.user = {
-      chatId,
-      role,
-      isSystem: false,
-    };
-  }
-
-  // Continue regardless of authentication status
-  next();
+  ensureAuthenticated(req, res, next, false);
 };

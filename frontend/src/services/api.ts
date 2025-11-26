@@ -7,23 +7,40 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Send cookies with every request
 });
 
-// Add request interceptor to inject Telegram Chat ID header
-api.interceptors.request.use((config) => {
-  // Try to get user Chat ID first, fallback to admin Chat ID
-  const userChatId = localStorage.getItem('userChatId');
-  const adminChatId = localStorage.getItem('adminChatId');
-  const chatId = userChatId || adminChatId;
-  
-  if (chatId) {
-    config.headers['X-Telegram-Chat-ID'] = chatId;
+// Response interceptor to handle token refresh on 401
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // If 401 and not already retrying, attempt token refresh
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes('/auth/refresh') &&
+      !originalRequest.url?.includes('/auth/logout')
+    ) {
+      originalRequest._retry = true;
+
+      try {
+        // Attempt to refresh the token
+        await api.post('/auth/refresh');
+        // Retry the original request
+        return api(originalRequest);
+      } catch (refreshError) {
+        // Refresh failed - user needs to re-login
+        // Dispatch a custom event so AuthContext can handle logout
+        window.dispatchEvent(new CustomEvent('auth:session-expired'));
+        return Promise.reject(refreshError);
+      }
+    }
+
+    return Promise.reject(error);
   }
-  
-  return config;
-}, (error) => {
-  return Promise.reject(error);
-});
+);
 
 export interface MinerError {
   code: string;

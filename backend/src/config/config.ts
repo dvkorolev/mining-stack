@@ -9,6 +9,16 @@ const config = {
   port: process.env.PORT ? parseInt(process.env.PORT, 10) : 5000,
   corsOrigin: process.env.CORS_ORIGIN || '*',
   logLevel: process.env.LOG_LEVEL || 'info',
+  auth: {
+    jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'dev-access-secret',
+    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret',
+    accessTokenTtl: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
+    refreshTokenTtl: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+    cookieDomain: process.env.AUTH_COOKIE_DOMAIN,
+    secureCookies: process.env.NODE_ENV === 'production',
+    accessCookieName: process.env.AUTH_ACCESS_COOKIE_NAME || 'ms_access_token',
+    refreshCookieName: process.env.AUTH_REFRESH_COOKIE_NAME || 'ms_refresh_token',
+  },
   
   // WebSocket configuration
   websocket: {

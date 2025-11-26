@@ -48,6 +48,7 @@ export interface MinerRecord {
   model: string;
   alias?: string;
   owner: string;
+  owner_user_id?: number | null;
   status?: string;
   credentials?: string; // JSON string: {username, password}
   thresholds?: string; // JSON string: {hashrate: {expected}, power: {expected}}
@@ -56,6 +57,31 @@ export interface MinerRecord {
   api_port?: number;
   created_at?: number;
   updated_at?: number;
+}
+
+export interface UserRecord {
+  id?: number;
+  telegram_chat_id: string;
+  display_name?: string | null;
+  role: 'admin' | 'user';
+  status?: 'active' | 'suspended';
+  metadata?: string | null;
+  created_at?: number;
+  updated_at?: number;
+  last_login_at?: number | null;
+}
+
+export interface AuditLogRecord {
+  id?: number;
+  timestamp?: number;
+  user_id?: number | null;
+  action: string;
+  resource_type?: string | null;
+  resource_id?: string | null;
+  details?: string | null;
+  result?: string;
+  ip_address?: string | null;
+  user_agent?: string | null;
 }
 
 export interface AlertRuleRecord {
@@ -208,6 +234,7 @@ class DatabaseService {
         model TEXT NOT NULL,
         alias TEXT,
         owner TEXT NOT NULL,
+        owner_user_id INTEGER,
         status TEXT DEFAULT 'active',
         credentials TEXT,
         thresholds TEXT,
@@ -215,12 +242,53 @@ class DatabaseService {
         static_power INTEGER,
         api_port INTEGER,
         created_at INTEGER DEFAULT (strftime('%s', 'now')),
-        updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+        updated_at INTEGER DEFAULT (strftime('%s', 'now')),
+        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL
       );
       
       CREATE INDEX IF NOT EXISTS idx_miners_owner ON miners(owner);
+      CREATE INDEX IF NOT EXISTS idx_miners_owner_user ON miners(owner_user_id);
       CREATE INDEX IF NOT EXISTS idx_miners_status ON miners(status);
       CREATE INDEX IF NOT EXISTS idx_miners_name ON miners(name);
+    `);
+
+    // Users table for RBAC foundation
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_chat_id TEXT UNIQUE NOT NULL,
+        display_name TEXT,
+        role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+        metadata TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now')),
+        updated_at INTEGER DEFAULT (strftime('%s','now')),
+        last_login_at INTEGER
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_users_chat_id ON users(telegram_chat_id);
+      CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+    `);
+
+    // Audit logs table for sensitive action tracking
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        user_id INTEGER,
+        action TEXT NOT NULL,
+        resource_type TEXT,
+        resource_id TEXT,
+        details TEXT,
+        result TEXT DEFAULT 'success',
+        ip_address TEXT,
+        user_agent TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
     `);
 
     // Miner-Pools join table (many-to-many relationship)
@@ -298,6 +366,17 @@ class DatabaseService {
       // Column already exists, ignore error
       if (!error.message.includes('duplicate column')) {
         logger.warn('Could not add thresholds column:', error.message);
+      }
+    }
+
+    // Add owner_user_id column if it doesn't exist (migration)
+    try {
+      this.db.exec(`ALTER TABLE miners ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_miners_owner_user ON miners(owner_user_id)`);
+      logger.info('Added owner_user_id column to miners table');
+    } catch (error: any) {
+      if (!error.message.includes('duplicate column')) {
+        logger.warn('Could not add owner_user_id column:', error.message);
       }
     }
 
@@ -662,14 +741,15 @@ class DatabaseService {
   upsertMiner(miner: MinerRecord): void {
     const stmt = this.db.prepare(`
       INSERT INTO miners (
-        ip, name, model, alias, owner, status, credentials, thresholds,
+        ip, name, model, alias, owner, owner_user_id, status, credentials, thresholds,
         use_https, static_power, api_port, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
       ON CONFLICT(ip) DO UPDATE SET 
         name = excluded.name,
         model = excluded.model,
         alias = excluded.alias,
         owner = excluded.owner,
+        owner_user_id = excluded.owner_user_id,
         status = excluded.status,
         credentials = excluded.credentials,
         thresholds = excluded.thresholds,
@@ -686,6 +766,7 @@ class DatabaseService {
         miner.model,
         miner.alias || null,
         miner.owner,
+        miner.owner_user_id || null,
         miner.status || 'active',
         miner.credentials || null,
         miner.thresholds || null,
@@ -703,13 +784,14 @@ class DatabaseService {
   /**
    * Get all miners for a specific owner
    */
-  getMinersByOwner(owner: string): MinerRecord[] {
+  getMinersByOwner(ownerChatId: string): MinerRecord[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM miners 
-      WHERE owner = ? 
-      ORDER BY name ASC
+      SELECT m.* FROM miners m
+      LEFT JOIN users u ON m.owner_user_id = u.id
+      WHERE m.owner = ? OR u.telegram_chat_id = ?
+      ORDER BY m.name ASC
     `);
-    return stmt.all(owner) as MinerRecord[];
+    return stmt.all(ownerChatId, ownerChatId) as MinerRecord[];
   }
 
   /**
@@ -717,8 +799,9 @@ class DatabaseService {
    */
   getAllMiners(): MinerRecord[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM miners 
-      ORDER BY owner ASC, name ASC
+      SELECT m.* FROM miners m
+      LEFT JOIN users u ON m.owner_user_id = u.id
+      ORDER BY COALESCE(u.telegram_chat_id, m.owner) ASC, m.name ASC
     `);
     return stmt.all() as MinerRecord[];
   }
@@ -1225,20 +1308,124 @@ class DatabaseService {
     return stmt.all() as (PoolAccountRecord & { pool_name: string })[];
   }
 
-  getPoolAccountById(id: number): (PoolAccountRecord & { pool_name: string; api_base_url: string }) | null {
+  getPoolAccountById(id: number): (PoolAccountRecord & { pool_name: string }) | null {
     const stmt = this.db.prepare(`
-      SELECT pa.*, p.name as pool_name, p.api_base_url
+      SELECT pa.*, p.name as pool_name
       FROM pool_accounts pa
       JOIN pool_apis p ON pa.pool_api_id = p.id
       WHERE pa.id = ?
     `);
-    return stmt.get(id) as (PoolAccountRecord & { pool_name: string; api_base_url: string }) | null;
+    const result = stmt.get(id) as (PoolAccountRecord & { pool_name: string }) | undefined;
+    return result || null;
+  }
+
+  // ==================== USER MANAGEMENT ====================
+
+  getUserByChatId(chatId: string): UserRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM users WHERE telegram_chat_id = ?');
+    const result = stmt.get(chatId) as UserRecord | undefined;
+    return result || null;
+  }
+
+  getUserById(id: number): UserRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM users WHERE id = ?');
+    const result = stmt.get(id) as UserRecord | undefined;
+    return result || null;
+  }
+
+  upsertUser(user: UserRecord): number {
+    if (user.id) {
+      const stmt = this.db.prepare(`
+        UPDATE users
+        SET telegram_chat_id = ?,
+            display_name = ?,
+            role = ?,
+            status = ?,
+            metadata = ?,
+            updated_at = strftime('%s','now'),
+            last_login_at = COALESCE(?, last_login_at)
+        WHERE id = ?
+      `);
+      stmt.run(
+        user.telegram_chat_id,
+        user.display_name || null,
+        user.role,
+        user.status || 'active',
+        user.metadata || null,
+        user.last_login_at || null,
+        user.id
+      );
+      return user.id;
+    }
+
+    const insert = this.db.prepare(`
+      INSERT INTO users (
+        telegram_chat_id, display_name, role, status, metadata, created_at, updated_at, last_login_at
+      ) VALUES (?, ?, ?, ?, ?, strftime('%s','now'), strftime('%s','now'), ?)
+    `);
+
+    const result = insert.run(
+      user.telegram_chat_id,
+      user.display_name || null,
+      user.role,
+      user.status || 'active',
+      user.metadata || null,
+      user.last_login_at || null
+    );
+
+    return result.lastInsertRowid as number;
+  }
+
+  getOrCreateUserByChatId(chatId: string, role: 'admin' | 'user' = 'user'): UserRecord {
+    let existing = this.getUserByChatId(chatId);
+    if (existing) {
+      return existing;
+    }
+
+    const id = this.upsertUser({ telegram_chat_id: chatId, role });
+    return this.getUserById(id)!;
+  }
+
+  updateUserLastLogin(userId: number): void {
+    const stmt = this.db.prepare(`
+      UPDATE users
+      SET last_login_at = strftime('%s','now'),
+          updated_at = strftime('%s','now')
+      WHERE id = ?
+    `);
+    stmt.run(userId);
+  }
+
+  // ==================== AUDIT LOGGING ====================
+
+  insertAuditLog(entry: AuditLogRecord): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO audit_logs (
+        timestamp, user_id, action, resource_type, resource_id,
+        details, result, ip_address, user_agent
+      ) VALUES (
+        COALESCE(?, strftime('%s','now')),
+        ?, ?, ?, ?, ?, ?, ?, ?
+      )
+    `);
+
+    stmt.run(
+      entry.timestamp || null,
+      entry.user_id || null,
+      entry.action,
+      entry.resource_type || null,
+      entry.resource_id || null,
+      entry.details || null,
+      entry.result || 'success',
+      entry.ip_address || null,
+      entry.user_agent || null
+    );
   }
 
   insertPoolAccount(account: Omit<PoolAccountRecord, 'id'>): number {
     const stmt = this.db.prepare(`
-      INSERT INTO pool_accounts (pool_api_id, account_name, usernames, api_key, coin, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+      INSERT INTO pool_accounts (pool_api_id, account_name, usernames, api_key, coin, notes, created_at, updated_at, owner_user_id)
+      VALUES (?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'), ?)
     `);
     const result = stmt.run(
       account.pool_api_id,

@@ -6,6 +6,9 @@ FROM --platform=${PLATFORM} node:18.18.2-alpine AS builder
 
 WORKDIR /app
 
+# Install build dependencies for native modules (better-sqlite3)
+RUN apk add --no-cache python3 make g++
+
 # Copy package files
 COPY package*.json ./
 
@@ -23,11 +26,17 @@ FROM node:18.18.2-alpine
 
 WORKDIR /app
 
+# Install build dependencies for native modules (better-sqlite3)
+RUN apk add --no-cache python3 make g++
+
 # Copy package files
 COPY package*.json ./
 
 # Install only production dependencies
 RUN npm install --only=production
+
+# Remove build dependencies to reduce image size
+RUN apk del python3 make g++
 
 # Copy built files from builder (includes compiled migration scripts)
 COPY --from=builder /app/dist ./dist

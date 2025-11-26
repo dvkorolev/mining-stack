@@ -12,6 +12,8 @@ import {
   Box,
 } from '@mui/material';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 
 interface TransferOwnershipDialogProps {
   open: boolean;
@@ -31,6 +33,7 @@ const TransferOwnershipDialog: React.FC<TransferOwnershipDialogProps> = ({
   miner,
   onTransferSuccess,
 }) => {
+  const { isAdmin } = useAuth();
   const [newOwner, setNewOwner] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,49 +44,34 @@ const TransferOwnershipDialog: React.FC<TransferOwnershipDialogProps> = ({
       return;
     }
 
+    if (!isAdmin) {
+      setError('Admin access required to transfer ownership');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      // Get admin chat ID from localStorage or environment
-      const adminChatId = localStorage.getItem('adminChatId') || '';
-      
-      if (!adminChatId) {
-        setError('Admin Chat ID not configured. Please set it in Settings.');
-        setLoading(false);
-        return;
-      }
-
       // Use IP for transfer to avoid URL encoding issues with Cyrillic names/aliases
       const minerIdentifier = miner.ip || miner.name;
-      const response = await fetch(`/api/mining/miners/${encodeURIComponent(minerIdentifier)}/transfer`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Telegram-Chat-ID': adminChatId,
-        },
-        body: JSON.stringify({ newOwner: newOwner.trim() }),
+      await api.post(`/mining/miners/${encodeURIComponent(minerIdentifier)}/transfer`, {
+        newOwner: newOwner.trim(),
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        // Close dialog first to prevent error display
-        handleClose();
-        // Call success callback outside try-catch to avoid catching its errors
-        setTimeout(() => {
-          try {
-            onTransferSuccess();
-          } catch (callbackErr) {
-            console.error('Success callback error:', callbackErr);
-          }
-        }, 0);
-      } else {
-        setError(data.error || data.message || 'Failed to transfer ownership');
-      }
-    } catch (err) {
+      // Close dialog first to prevent error display
+      handleClose();
+      // Call success callback outside try-catch to avoid catching its errors
+      setTimeout(() => {
+        try {
+          onTransferSuccess();
+        } catch (callbackErr) {
+          console.error('Success callback error:', callbackErr);
+        }
+      }, 0);
+    } catch (err: any) {
       console.error('Transfer error:', err);
-      setError('Error connecting to server');
+      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to transfer ownership');
     } finally {
       setLoading(false);
     }
@@ -149,7 +137,6 @@ const TransferOwnershipDialog: React.FC<TransferOwnershipDialogProps> = ({
         <Alert severity="warning" sx={{ mt: 2 }}>
           <Typography variant="body2">
             <strong>Admin Only:</strong> This action requires administrator privileges.
-            Make sure you have set your Admin Chat ID in Settings.
           </Typography>
         </Alert>
       </DialogContent>
