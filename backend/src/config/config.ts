@@ -18,6 +18,7 @@ const config = {
     secureCookies: process.env.NODE_ENV === 'production',
     accessCookieName: process.env.AUTH_ACCESS_COOKIE_NAME || 'ms_access_token',
     refreshCookieName: process.env.AUTH_REFRESH_COOKIE_NAME || 'ms_refresh_token',
+    internalMetricsToken: process.env.INTERNAL_METRICS_TOKEN,
   },
   
   // WebSocket configuration

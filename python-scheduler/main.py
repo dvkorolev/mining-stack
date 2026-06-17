@@ -30,7 +30,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 # Import our modules
 from config import (
     MINERS_CONFIG, POOLS_CONFIG, COLLECTION_INTERVAL, POOL_TEST_INTERVAL, ENABLE_ICMP_PING,
-    BACKEND_URL, PUSH_TO_BACKEND,
+    BACKEND_URL, PUSH_TO_BACKEND, INTERNAL_METRICS_TOKEN,
     load_miners_config, load_pools_config, invalidate_config_cache,
     miners_config_cache
 )
@@ -287,10 +287,15 @@ async def push_metrics_to_backend(miners_data: List[Dict], collection_info: Dict
             'collection_info': collection_info if isinstance(collection_info, dict) else {}
         }
         
+        headers = {}
+        if INTERNAL_METRICS_TOKEN:
+            headers['X-Internal-Token'] = INTERNAL_METRICS_TOKEN
+
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{BACKEND_URL}/api/internal/metrics",
                 json=payload,
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=5)
             ) as response:
                 if response.status == 200:
