@@ -19,6 +19,7 @@ MAX_CONCURRENT_REQUESTS = 5
 BACKEND_URL = os.getenv('BACKEND_URL', 'http://backend:5000')
 PUSH_TO_BACKEND = os.getenv('PUSH_TO_BACKEND', 'true').lower() == 'true'
 SYSTEM_API_KEY = os.getenv('SYSTEM_API_KEY', '')  # For authenticating with backend
+INTERNAL_METRICS_TOKEN = os.getenv('INTERNAL_METRICS_TOKEN', '')  # For authenticating metrics push to backend
 USE_DATABASE_CONFIG = os.getenv('USE_DATABASE_CONFIG', 'true').lower() == 'true'  # Use database instead of YAML
 
 # Cache miners config at startup

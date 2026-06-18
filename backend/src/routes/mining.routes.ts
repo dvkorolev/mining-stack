@@ -751,6 +751,22 @@ router.get('/miners/:minerId/stats', async (req, res, next) => {
 // Receive metrics push from python-scheduler
 router.post('/internal/metrics', async (req, res, next) => {
   try {
+    const { config } = require('../config/config');
+    const internalToken = config.auth.internalMetricsToken;
+    const requestToken = req.header('X-Internal-Token');
+
+    if (internalToken) {
+      if (requestToken !== internalToken) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+    } else {
+      if (config.env === 'production') {
+        logger.error('INTERNAL_METRICS_TOKEN is required in production');
+        return res.status(503).json({ error: 'INTERNAL_METRICS_TOKEN is required in production' });
+      }
+      logger.warn('WARNING: /api/internal/metrics is unauthenticated. Set INTERNAL_METRICS_TOKEN to secure this endpoint.');
+    }
+
     const { miners, timestamp, collection_info } = req.body;
     
     if (!miners || !Array.isArray(miners)) {
