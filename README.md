@@ -83,7 +83,7 @@ docker compose -f docker-compose.dev.yml up --build
 - 🌐 **Frontend**: http://localhost:3000
 - ⚙️ **Backend API**: http://localhost:5000
 - 📊 **Prometheus**: http://localhost:9090
-- 📈 **Grafana**: http://localhost:3001 (admin/mining123)
+- 📈 **Grafana**: http://localhost:3001 (admin / <your GF_SECURITY_ADMIN_PASSWORD>)
 - 🔔 **Alertmanager**: http://localhost:9093
 
 **Optional: Set up Telegram Bot** (see [TELEGRAM_SETUP.md](./TELEGRAM_SETUP.md))
