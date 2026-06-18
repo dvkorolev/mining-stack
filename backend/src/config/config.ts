@@ -36,6 +36,8 @@ const config = {
     updateInterval: parseInt(process.env.MINING_UPDATE_INTERVAL || '30000', 10), // 30 seconds
     maxHistoryPoints: parseInt(process.env.MINING_MAX_HISTORY || '60', 10), // 60 data points
     useRealData: process.env.USE_REAL_DATA !== 'false', // Use real Prometheus data by default
+    simulationMode: process.env.SIMULATION_MODE === 'true',
+    metricsSource: process.env.METRICS_SOURCE || 'prometheus',
   },
   
   // Prometheus configuration

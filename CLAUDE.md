@@ -119,6 +119,21 @@ The backend normalizes `currentHashrate` and `averageHashrate` to TH/s internall
 See:
 - `ALGORITHM_SEPARATION.md`
 
+## Data sources & metrics
+
+### Two metric namespaces (distinct — do not conflate)
+- `miner_*` — per-miner metrics the **python-scheduler** exposes on its `/metrics` for Prometheus to scrape (`miner_hashrate_ths`, `miner_power_watts`, `miner_state`, etc.). This is the fleet data.
+- `mining_*` / `alert_queue_*` — aggregate/operational metrics the **backend** exposes on its own `/metrics` (`server.ts`), e.g. `mining_hashrate_total`, `mining_active_miners`, alert-queue gauges. These are about the backend itself, not individual miners.
+
+### Live-stats source of truth (`METRICS_SOURCE`)
+The backend has two ways miner data can reach the live `miningStats`: reading Prometheus on an interval, and the scheduler push to `/api/internal/metrics`. Exactly one is authoritative, selected by `METRICS_SOURCE`:
+- `prometheus` (default) — the interval reads Prometheus (`getRealMiningStats`) and is the only writer; the push endpoint still returns 200 but does **not** overwrite live stats.
+- `push` — `updateMetricsFromScheduler` is authoritative; the interval does not overwrite.
+Do not let both write `miningStats` again — that reintroduces the clobber this flag fixed.
+
+### Simulation (`SIMULATION_MODE`)
+Simulated/fake data is served **only** when `SIMULATION_MODE=true` (default false). It is never a silent fallback: on a Prometheus read error the backend keeps last-known real stats and logs the error; boot does not seed fake data. Do not reintroduce a `simulateMiningStats()` fallback into the real path.
+
 ## Miner configuration
 
 Miners historically lived in `etc/miners.yaml`.

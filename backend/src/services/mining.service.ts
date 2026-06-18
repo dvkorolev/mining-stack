@@ -860,8 +860,8 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
     return stats;
   } catch (error) {
     logger.error('Error fetching real mining stats:', error);
-    // Fall back to simulation if Prometheus is unavailable
-    return simulateMiningStats();
+    // Keep last-known-good stats instead of silently falling back to simulated data
+    return miningStats;
   }
 };
 
@@ -931,8 +931,10 @@ const getMiningStats = (owner?: string): MiningStats => {
 // Start the mining process
 const startMining = async (minerConfig: any = {}) => {
   try {
-    const useRealData = config.mining.useRealData && config.prometheus.enabled;
-    logger.info(`Starting mining ${useRealData ? 'with real Prometheus data' : 'simulation'}`);
+    if (config.mining.simulationMode) {
+      logger.warn('SIMULATION_MODE is enabled: serving SIMULATED (fake) mining data, not real metrics.');
+    }
+    logger.info(`Starting mining in ${config.mining.simulationMode ? 'SIMULATION' : (config.mining.metricsSource === 'push' ? 'real-data (scheduler push)' : 'real-data (Prometheus)')} mode`);
     
     // Clear any existing intervals
     if (simulationInterval) {
@@ -948,9 +950,17 @@ const startMining = async (minerConfig: any = {}) => {
     // Start stats update interval (real data or simulation)
     simulationInterval = setInterval(async () => {
       try {
-        const stats = useRealData ? await getRealMiningStats() : simulateMiningStats();
-        miningStats = stats; // Update in-memory stats
-        broadcast({ type: 'mining-stats', data: stats });
+        if (config.mining.simulationMode) {
+          const stats = simulateMiningStats();
+          miningStats = stats; // Update in-memory stats
+          broadcast({ type: 'mining-stats', data: stats });
+        } else if (config.mining.metricsSource === 'push') {
+          // push path is authoritative; the interval must not overwrite live stats
+        } else {
+          const stats = await getRealMiningStats();
+          miningStats = stats; // Update in-memory stats
+          broadcast({ type: 'mining-stats', data: stats });
+        }
       } catch (error) {
         logger.error('Error updating mining stats:', error);
       }
@@ -979,8 +989,11 @@ const startMining = async (minerConfig: any = {}) => {
     }, 6 * 60 * 60 * 1000); // 6 hours
 
     // Initial stats update
-    const initialStats = simulateMiningStats();
-    miningStats = initialStats;
+    let initialStats = miningStats;
+    if (config.mining.simulationMode) {
+      initialStats = simulateMiningStats();
+      miningStats = initialStats;
+    }
     
     // Run initial aggregation
     db.aggregateHourly();
@@ -1171,7 +1184,12 @@ const updateMetricsFromScheduler = async (
 ): Promise<void> => {
   try {
     logger.info(`Processing metrics push: ${miners.length} miners`);
-    
+
+    if (config.mining.metricsSource !== 'push') {
+      logger.debug(`METRICS_SOURCE=${config.mining.metricsSource}; ignoring scheduler push for live stats (Prometheus is source of truth)`);
+      return;
+    }
+
     // Get miner ownership from database
     const db = getDatabase();
     const allMinersFromDb = db.getAllMiners();
