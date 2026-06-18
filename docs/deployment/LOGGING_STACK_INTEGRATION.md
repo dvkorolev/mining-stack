@@ -70,7 +70,7 @@ Added monitoring for:
 Dashboard:    http://[IP]:3000
 API:          http://[IP]:5000
 Prometheus:   http://[IP]:9090
-Grafana:      http://[IP]:3001 (admin/mining123)
+Grafana:      http://[IP]:3001 (admin/<GF_SECURITY_ADMIN_PASSWORD>)
 Loki:         http://[IP]:3100
 Alertmanager: http://[IP]:9093
 ```
@@ -170,7 +170,7 @@ curl -G -s "http://localhost:3100/loki/api/v1/query_range" \
 
 **Via Grafana:**
 1. Open http://[IP]:3001
-2. Login: admin/mining123
+2. Login: admin/<GF_SECURITY_ADMIN_PASSWORD>
 3. Go to Explore
 4. Select Loki data source
 5. Use LogQL queries

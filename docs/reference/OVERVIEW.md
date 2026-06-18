@@ -119,7 +119,7 @@
 
 ### 📊 Grafana (Advanced Analytics)
 **URL**: http://raspberrypi:3001 or http://192.168.1.66:3001
-**Login**: admin / mining123
+**Login**: admin / <GF_SECURITY_ADMIN_PASSWORD>
 
 **Features**:
 - Mining Farm Overview dashboard

@@ -112,7 +112,7 @@ Access: http://192.168.1.66:3001
 ### **Creating Custom Dashboards**
 
 1. Open Grafana: http://192.168.1.66:3001
-2. Login: `admin` / `mining123`
+2. Login: `admin` / `<GF_SECURITY_ADMIN_PASSWORD>`
 3. Click **+** → **Dashboard**
 4. Add panels with PromQL queries
 
@@ -365,7 +365,7 @@ docker exec prometheus promtool check rules /etc/prometheus/rules/*.yml
 curl 'http://localhost:9090/api/v1/query?query=sum(miner_hashrate_ths)'
 
 # Export dashboard
-curl -u admin:mining123 http://localhost:3001/api/dashboards/uid/mining-overview
+curl -u admin:<GF_SECURITY_ADMIN_PASSWORD> http://localhost:3001/api/dashboards/uid/mining-overview
 
 # View active alerts
 curl http://localhost:9090/api/v1/alerts | jq '.data.alerts[] | select(.state=="firing")'

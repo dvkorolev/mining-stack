@@ -73,7 +73,7 @@ chmod +x *.sh
 ### Access Services
 
 - **Dashboard**: http://raspberrypi:3000
-- **Grafana**: http://raspberrypi:3001 (admin/mining123)
+- **Grafana**: http://raspberrypi:3001 (admin/<GF_SECURITY_ADMIN_PASSWORD>)
 - **Prometheus**: http://raspberrypi:9090
 - **Backend API**: http://raspberrypi:5000
 
@@ -208,7 +208,7 @@ Access Prometheus at http://raspberrypi:9090
 ### Grafana Dashboards
 
 1. Login to Grafana (http://raspberrypi:3001)
-2. Default credentials: admin/mining123
+2. Default credentials: admin/<GF_SECURITY_ADMIN_PASSWORD>
 3. Navigate to Dashboards
 4. Pre-configured dashboard shows:
    - Total hashrate

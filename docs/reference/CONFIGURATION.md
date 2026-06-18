@@ -175,7 +175,7 @@ grafana:
   volumes:
     - grafana-storage:/var/lib/grafana
   environment:
-    - GF_SECURITY_ADMIN_PASSWORD=mining123
+    - GF_SECURITY_ADMIN_PASSWORD=<your-strong-password>
     - GF_USERS_ALLOW_SIGN_UP=false
 ```
 
