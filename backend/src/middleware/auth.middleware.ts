@@ -35,6 +35,10 @@ declare global {
 const SYSTEM_API_KEY = process.env.SYSTEM_API_KEY || '';
 const ADMIN_TELEGRAM_CHAT_ID = process.env.ADMIN_TELEGRAM_CHAT_ID || '';
 
+if (config.auth.allowLegacyHeaderAuth) {
+  logger.warn('ALLOW_LEGACY_HEADER_AUTH is enabled. Legacy X-Telegram-Chat-ID authentication is active and insecure.');
+}
+
 const getAccessTokenFromRequest = (req: Request): string | null => {
   const cookieToken = req.cookies?.[config.auth.accessCookieName];
   if (cookieToken) {
@@ -161,7 +165,7 @@ const ensureAuthenticated = (
     return;
   }
 
-  if (tryLegacyChatHeader(req)) {
+  if (config.auth.allowLegacyHeaderAuth && tryLegacyChatHeader(req)) {
     next();
     return;
   }

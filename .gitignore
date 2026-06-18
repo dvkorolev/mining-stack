@@ -4,6 +4,15 @@ node_modules/
 # Environment variables
 .env
 
+# Local, machine-specific Claude notes (hosts, Tailscale, secrets)
+CLAUDE.local.md
+
+# Local CLAUDE.md backups
+CLAUDE_backup_*.md
+
+# Runtime SQLite data (created when running the backend locally)
+backend/data/
+
 # Configuration files (user-specific)
 etc/miners.yaml
 *.backup
