@@ -44,10 +44,31 @@ const strictLimiter = rateLimit({
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: config.corsOrigin || true,
-  credentials: true,
-}));
+
+// CORS: explicit comma-separated allowlist required for credentialed cross-origin requests
+const allowlist = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+const hasExplicitAllowlist = allowlist.length > 0 && !allowlist.includes('*');
+
+let corsOptions: cors.CorsOptions;
+if (hasExplicitAllowlist) {
+  corsOptions = { origin: allowlist, credentials: true };
+} else if (config.env === 'production') {
+  logger.warn(
+    'CORS_ORIGIN is unset or "*": credentialed CORS disabled in production. ' +
+      'Set CORS_ORIGIN to an explicit comma-separated allowlist to enable cookie auth cross-origin.'
+  );
+  corsOptions = { origin: '*', credentials: false };
+} else {
+  logger.warn(
+    'CORS_ORIGIN is unset or "*": reflecting request origin with credentials (development only).'
+  );
+  corsOptions = { origin: true, credentials: true };
+}
+app.use(cors(corsOptions));
+
 app.use(compression()); // Compress responses
 app.use(cookieParser());
 app.use(express.json());
