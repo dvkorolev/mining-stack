@@ -205,10 +205,12 @@ def _merge_data(pyasic_data: Dict, cgminer_data: Dict, gaps: Dict[str, bool], cg
 
 def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: int = 2, algorithm: str = None):
     """Update Prometheus metrics"""
-    # Ensure model is a string
-    model = str(model) if model else "Unknown"
-    is_scrypt = _is_scrypt_miner(model, algorithm)
+    # Ensure model is a plain string; a tuple here means a stale failure_streak key
+    # leaked through state_manager deserialization — replace with "Unknown"
+    if not isinstance(model, str):
+        model = "Unknown"
     model = model.replace(" ", "_")
+    is_scrypt = _is_scrypt_miner(model, algorithm)
     
     hashrate_raw = data.get('hashrate', 0) or 0
     hashrate = float(hashrate_raw) if hashrate_raw else 0.0

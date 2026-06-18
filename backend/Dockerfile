@@ -1,7 +1,7 @@
 # Build argument for platform flexibility
 ARG PLATFORM=linux/amd64
 
-# Use platform-specific base image with specific version
+# ========== BUILDER STAGE ==========
 FROM --platform=${PLATFORM} node:18.18.2-alpine AS builder
 
 WORKDIR /app
@@ -9,11 +9,11 @@ WORKDIR /app
 # Install build dependencies for native modules (better-sqlite3)
 RUN apk add --no-cache python3 make g++
 
-# Copy package files
+# Copy package files first for better caching
 COPY package*.json ./
 
-# Install all dependencies including devDependencies
-RUN npm install
+# Install all dependencies
+RUN npm ci --include=dev
 
 # Copy source code
 COPY . .
@@ -21,39 +21,43 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Production image
-FROM node:18.18.2-alpine
+# ========== DEPS STAGE - Production dependencies only ==========
+FROM --platform=${PLATFORM} node:18.18.2-alpine AS deps
 
 WORKDIR /app
 
-# Install build dependencies for native modules (better-sqlite3)
+# Install build dependencies for native modules
 RUN apk add --no-cache python3 make g++
 
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
-RUN npm install --only=production
+# Install production dependencies only
+RUN npm ci --only=production && \
+    npm cache clean --force
 
-# Remove build dependencies to reduce image size
-RUN apk del python3 make g++
+# ========== PRODUCTION STAGE ==========
+FROM --platform=${PLATFORM} node:18.18.2-alpine AS production
 
-# Copy built files from builder (includes compiled migration scripts)
+WORKDIR /app
+
+# Copy production node_modules from deps stage (already compiled)
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy built files from builder
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./
 
 # Copy necessary non-compiled files
-COPY --from=builder /app/src/config ./dist/config
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/init.sh /app/init.sh
-COPY --from=builder /app/scripts ./scripts
+COPY src/config ./dist/config
+COPY init.sh ./init.sh
+COPY scripts ./scripts
 
-# Ensure migration script is executable
-RUN test -f /app/dist/scripts/migrate-yaml-to-db.js || echo "Warning: Migration script not found"
-
-# Create logs directory and set permissions
+# Create logs directory and set permissions in single layer
 RUN mkdir -p /app/logs && \
     chown -R node:node /app && \
-    chmod +x /app/init.sh
+    chmod +x /app/init.sh && \
+    (test -f /app/dist/scripts/migrate-yaml-to-db.js || echo "Warning: Migration script not found")
 
 # Switch to non-root user
 USER node
@@ -65,5 +69,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
 
-# Start the application using the init script
+# Start the application
 CMD ["/app/init.sh", "node", "dist/server.js"]

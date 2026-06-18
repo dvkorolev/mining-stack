@@ -17,6 +17,7 @@ import { errorHandler } from './middleware/error.middleware';
 import { authenticate, optionalAuth } from './middleware/auth.middleware';
 import { config, DEV_ACCESS_SECRET, DEV_REFRESH_SECRET } from './config/config';
 import { logger } from './utils/logger';
+import { initAlertDatabase } from './services/alert.service';
 
 // Initialize express app
 const app = express();
@@ -243,6 +244,15 @@ server.listen(PORT, async () => {
     initializeMinersFromYAML();
   } catch (error) {
     logger.error('Failed to initialize miners from YAML:', error);
+  }
+
+
+  // Initialize alert database (must run after data volume is mounted)
+  try {
+    initAlertDatabase();
+    logger.info('Alert database initialized');
+  } catch (error) {
+    logger.error('Failed to initialize alert database:', error);
   }
 
   // Auto-start mining simulation

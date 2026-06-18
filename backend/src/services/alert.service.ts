@@ -110,8 +110,10 @@ const initDatabase = (): void => {
 /**
  * Save alert to database
  */
+
 const enqueueAlertPersistence = (alert: Alert): void => {
   if (!db) {
+    logger.error('Alert DB not initialized — alert persistence skipped', { alertId: alert.id });
     queueMetrics.failedWrites += 1;
     return;
   }
@@ -232,9 +234,14 @@ const loadAlertsFromDb = (): void => {
   }
 };
 
-// Initialize database on module load
-initDatabase();
-loadAlertsFromDb();
+/**
+ * Initialize the alert database and load recent alerts.
+ * Must be called explicitly during server startup after the data volume is mounted.
+ */
+export const initAlertDatabase = (): void => {
+  initDatabase();
+  loadAlertsFromDb();
+};
 
 /**
  * Process incoming alert webhook from Alertmanager
@@ -275,21 +282,28 @@ export const processAlertWebhook = async (payload: any): Promise<void> => {
       };
 
       if (status === 'firing') {
+        // Guard against duplicate Telegram sends when Alertmanager re-delivers
+        // the same webhook for an already-tracked firing (same startsAt -> same ID).
+        const isNewFiring = !activeAlerts.has(alertId);
         activeAlerts.set(alertId, alertData);
         
-        // Send to Telegram with smart routing
-        const { sendSmartAlert } = require('./telegram.service');
-        await sendSmartAlert({
-          severity: alertData.severity,
-          title: alertData.summary,
-          description: alertData.description,
-          miner: alertData.miner,
-          recipients: alertData.recipients,
-          isFarmWide: alertData.isFarmWide,
-        });
-        
-        const recipientInfo = alertData.isFarmWide ? 'all users' : `${alertData.recipients?.length || 0} owner(s)`;
-        logger.info(`Alert fired: ${alertData.name} - ${alertData.summary} (sent to ${recipientInfo})`);
+        if (isNewFiring) {
+          // Send to Telegram with smart routing
+          const { sendSmartAlert } = require('./telegram.service');
+          await sendSmartAlert({
+            severity: alertData.severity,
+            title: alertData.summary,
+            description: alertData.description,
+            miner: alertData.miner,
+            recipients: alertData.recipients,
+            isFarmWide: alertData.isFarmWide,
+          });
+          
+          const recipientInfo = alertData.isFarmWide ? 'all users' : `${alertData.recipients?.length || 0} owner(s)`;
+          logger.info(`Alert fired: ${alertData.name} - ${alertData.summary} (sent to ${recipientInfo})`);
+        } else {
+          logger.debug(`Duplicate webhook delivery ignored for alert: ${alertId}`);
+        }
       } else if (status === 'resolved') {
         activeAlerts.delete(alertId);
         alertData.resolvedAt = Date.now();
@@ -455,7 +469,8 @@ const determineAlertRecipients = async (minerIp?: string, isFarmWide?: boolean):
 const generateAlertId = (alert: any): string => {
   const labels = alert.labels || {};
   const key = `${labels.alertname}_${labels.miner || labels.instance || 'unknown'}`;
-  return key;
+  const ts = alert.startsAt ? new Date(alert.startsAt).getTime() : Date.now();
+  return `${key}_${ts}`;
 };
 
 /**

@@ -10,7 +10,6 @@ import logging
 import asyncio
 import time
 import json
-import socket
 import subprocess
 import re
 from datetime import datetime
@@ -76,6 +75,68 @@ FAILURE_THRESHOLD = 5
 # POOL NETWORK METRICS COLLECTION
 # ============================================================================
 
+async def _test_pool_connectivity(hostname: str, port: int) -> None:
+    """Test pool connectivity and update Prometheus metrics.
+
+    P2.1: DNS resolution is performed implicitly by asyncio.open_connection,
+    which avoids the blocking socket.gethostbyname call.  An OSError from
+    open_connection (which covers DNS failures such as socket.gaierror) maps
+    to dns_resolved=0 / reachable=0 so metric coverage is preserved.
+    """
+    if ENABLE_ICMP_PING:
+        try:
+            result = subprocess.run(
+                ['ping', '-c', '5', '-W', '2', hostname],
+                capture_output=True, text=True, timeout=15)
+            output = result.stdout
+            packet_loss = 100.0
+            loss_match = re.search(r'(\d+)% packet loss', output)
+            if loss_match:
+                packet_loss = float(loss_match.group(1))
+            ping_avg = ping_min = ping_max = 0.0
+            rtt_match = re.search(r'rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)', output)
+            if rtt_match:
+                ping_min = float(rtt_match.group(1))
+                ping_avg = float(rtt_match.group(2))
+                ping_max = float(rtt_match.group(3))
+            pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(ping_avg)
+            pool_network_ping_min.labels(pool=hostname, port=str(port)).set(ping_min)
+            pool_network_ping_max.labels(pool=hostname, port=str(port)).set(ping_max)
+            pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(packet_loss)
+        except Exception as e:
+            logger.debug(f"Ping failed for {hostname}: {e}")
+            pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(100.0)
+    else:
+        pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(0.0)
+        pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(0.0)
+        pool_network_ping_min.labels(pool=hostname, port=str(port)).set(0.0)
+        pool_network_ping_max.labels(pool=hostname, port=str(port)).set(0.0)
+
+    # asyncio.open_connection performs DNS resolution internally; no separate
+    # blocking lookup is needed.  DNS success is inferred from a successful
+    # connection; OSError (including name-resolution failure) sets dns=0.
+    start = time.time()
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(hostname, port), timeout=5.0)
+        connect_time = (time.time() - start) * 1000
+        writer.close()
+        await writer.wait_closed()
+        pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(1)
+        pool_network_reachable.labels(pool=hostname, port=str(port)).set(1)
+        pool_network_connect_time.labels(pool=hostname, port=str(port)).set(connect_time)
+    except asyncio.TimeoutError:
+        pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(0)
+        pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
+        pool_network_connect_time.labels(pool=hostname, port=str(port)).set(5000.0)
+    except OSError as e:
+        # Covers socket.gaierror (DNS failure) and connection-refused errors
+        logger.debug(f"Connection failed for {hostname}:{port}: {e}")
+        pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(0)
+        pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
+        pool_network_connect_time.labels(pool=hostname, port=str(port)).set(0)
+
+
 async def collect_pool_network_metrics_from_config() -> Dict[str, Any]:
     """Collect pool network quality metrics from pools.yaml configuration"""
     logger.info("Starting pool network collection from configuration...")
@@ -91,64 +152,8 @@ async def collect_pool_network_metrics_from_config() -> Dict[str, Any]:
     pools = [(p['hostname'], p['port']) for p in pools_config]
     logger.info(f"Testing {len(pools)} configured pools")
     
-    async def test_pool(hostname: str, port: int):
-        if ENABLE_ICMP_PING:
-            try:
-                result = subprocess.run(
-                    ['ping', '-c', '5', '-W', '2', hostname],
-                    capture_output=True, text=True, timeout=15)
-                output = result.stdout
-                packet_loss = 100.0
-                loss_match = re.search(r'(\d+)% packet loss', output)
-                if loss_match:
-                    packet_loss = float(loss_match.group(1))
-                ping_avg = ping_min = ping_max = 0.0
-                rtt_match = re.search(r'rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)', output)
-                if rtt_match:
-                    ping_min = float(rtt_match.group(1))
-                    ping_avg = float(rtt_match.group(2))
-                    ping_max = float(rtt_match.group(3))
-                pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(ping_avg)
-                pool_network_ping_min.labels(pool=hostname, port=str(port)).set(ping_min)
-                pool_network_ping_max.labels(pool=hostname, port=str(port)).set(ping_max)
-                pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(packet_loss)
-            except Exception as e:
-                logger.debug(f"Ping failed for {hostname}: {e}")
-                pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(100.0)
-        else:
-            pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(0.0)
-            pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(0.0)
-            pool_network_ping_min.labels(pool=hostname, port=str(port)).set(0.0)
-            pool_network_ping_max.labels(pool=hostname, port=str(port)).set(0.0)
-        
-        try:
-            start = time.time()
-            try:
-                socket.gethostbyname(hostname)
-                pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(1)
-            except socket.gaierror:
-                pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(0)
-                pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
-                pool_network_connect_time.labels(pool=hostname, port=str(port)).set(0)
-                return
-            
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(hostname, port), timeout=5.0)
-            connect_time = (time.time() - start) * 1000
-            writer.close()
-            await writer.wait_closed()
-            pool_network_reachable.labels(pool=hostname, port=str(port)).set(1)
-            pool_network_connect_time.labels(pool=hostname, port=str(port)).set(connect_time)
-        except asyncio.TimeoutError:
-            pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
-            pool_network_connect_time.labels(pool=hostname, port=str(port)).set(5000.0)
-        except Exception as e:
-            logger.debug(f"Connection failed for {hostname}:{port}: {e}")
-            pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
-            pool_network_connect_time.labels(pool=hostname, port=str(port)).set(0)
-    
     if pools:
-        tasks = [test_pool(hostname, port) for hostname, port in pools]
+        tasks = [_test_pool_connectivity(hostname, port) for hostname, port in pools]
         await asyncio.gather(*tasks, return_exceptions=True)
     
     duration = time.time() - start_time
@@ -202,64 +207,8 @@ async def collect_pool_network_metrics(miners: List[Dict]) -> Dict[str, Any]:
     
     logger.info(f"Discovered {len(pools)} unique pools")
     
-    async def test_pool(hostname: str, port: int):
-        if ENABLE_ICMP_PING:
-            try:
-                result = subprocess.run(
-                    ['ping', '-c', '5', '-W', '2', hostname],
-                    capture_output=True, text=True, timeout=15)
-                output = result.stdout
-                packet_loss = 100.0
-                loss_match = re.search(r'(\d+)% packet loss', output)
-                if loss_match:
-                    packet_loss = float(loss_match.group(1))
-                ping_avg = ping_min = ping_max = 0.0
-                rtt_match = re.search(r'rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)', output)
-                if rtt_match:
-                    ping_min = float(rtt_match.group(1))
-                    ping_avg = float(rtt_match.group(2))
-                    ping_max = float(rtt_match.group(3))
-                pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(ping_avg)
-                pool_network_ping_min.labels(pool=hostname, port=str(port)).set(ping_min)
-                pool_network_ping_max.labels(pool=hostname, port=str(port)).set(ping_max)
-                pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(packet_loss)
-            except Exception as e:
-                logger.debug(f"Ping failed for {hostname}: {e}")
-                pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(100.0)
-        else:
-            pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(0.0)
-            pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(0.0)
-            pool_network_ping_min.labels(pool=hostname, port=str(port)).set(0.0)
-            pool_network_ping_max.labels(pool=hostname, port=str(port)).set(0.0)
-        
-        try:
-            start = time.time()
-            try:
-                socket.gethostbyname(hostname)
-                pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(1)
-            except socket.gaierror:
-                pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(0)
-                pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
-                pool_network_connect_time.labels(pool=hostname, port=str(port)).set(0)
-                return
-            
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(hostname, port), timeout=5.0)
-            connect_time = (time.time() - start) * 1000
-            writer.close()
-            await writer.wait_closed()
-            pool_network_reachable.labels(pool=hostname, port=str(port)).set(1)
-            pool_network_connect_time.labels(pool=hostname, port=str(port)).set(connect_time)
-        except asyncio.TimeoutError:
-            pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
-            pool_network_connect_time.labels(pool=hostname, port=str(port)).set(5000.0)
-        except Exception as e:
-            logger.debug(f"Connection failed for {hostname}:{port}: {e}")
-            pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
-            pool_network_connect_time.labels(pool=hostname, port=str(port)).set(0)
-    
     if pools:
-        tasks = [test_pool(hostname, port) for hostname, port in pools]
+        tasks = [_test_pool_connectivity(hostname, port) for hostname, port in pools]
         await asyncio.gather(*tasks, return_exceptions=True)
     
     duration = time.time() - start_time
