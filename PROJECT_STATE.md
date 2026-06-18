@@ -65,7 +65,7 @@ Ordered by severity. File:line references included.
 
 ### Security
 - **S1 — `/api/internal/metrics` is unauthenticated** — ✅ **DONE** (branch `feat/internal-metrics-auth`, commit `05971be`, verified live). Now requires `X-Internal-Token` = `INTERNAL_METRICS_TOKEN`; unset token fails closed (503) in production, warns+allows in dev.
-- **S5 — Legacy `X-Telegram-Chat-ID` header grants admin without a token** 🔴 (`auth.middleware.ts:94` `tryLegacyChatHeader`, reached from `ensureAuthenticated` at lines 154-164, after system-key and JWT). It sets `role: 'admin'` whenever the plaintext header equals `ADMIN_TELEGRAM_CHAT_ID` (line 100). A Telegram chat ID is not a secret, so anyone reaching the backend can send `X-Telegram-Chat-ID: <admin id>` and obtain full admin — this **defeats the JWT auth added in `9205646`**. Highest severity of the remaining items. *Fix:* gate the legacy path behind an opt-in env flag (default off) or remove it now that JWT exists.
+- **S5 — Legacy `X-Telegram-Chat-ID` header grants admin without a token** — ✅ **DONE** (branch `feat/disable-legacy-header-auth`, commit `e41fd54`, verified live). Legacy path now gated behind `ALLOW_LEGACY_HEADER_AUTH` (default false) with a startup warning when enabled; JWT and system-API-key paths unchanged. Verified: default → legacy admin header rejected (401); flag on → admin 200 / non-admin 403 + warning.
 - **S2 — Hardcoded fallback JWT secrets** (`config.ts:13-14`: `'dev-access-secret'` / `'dev-refresh-secret'`). Confirmed there is **no** startup guard — the only `process.exit` calls in `server.ts` are in the shutdown handler. If the env vars are unset in production, tokens are forgeable. *Fix:* at boot, if `NODE_ENV==='production'` and either secret is unset or equals the dev default → log error + `process.exit(1)` (mirror S1's prod-fail-closed).
 - **S3 — Permissive CORS with credentials** (`server.ts:47-50`): `origin: config.corsOrigin || true` + `credentials: true`, and `corsOrigin` defaults to `'*'` (`config.ts:10`). `origin: true` reflects any requesting origin, effectively allowing all origins to send credentialed requests. *Fix:* require an explicit allowlist (comma-split `CORS_ORIGIN`) whenever `credentials:true`; never fall back to `true`.
 - **S4 — Weak default Grafana password** `mining123` — present in **three committed files**, not one: `docker-compose.prod.yml:225`, `.env.example:87`, `README.md:86` (plus `docker/grafana/README.md` ×3). Risky if it survives onto a Pi exposed on LAN/Tailscale. *Fix:* require `GF_SECURITY_ADMIN_PASSWORD` (drop the inline default), set it in `.env`, scrub the value from docs.
@@ -104,10 +104,10 @@ Designed so each phase is independently shippable and reversible. Earlier phases
 - *Goal: make every later change verifiable.*
 
 ### Phase 1 — Security hardening (highest value)
-Recommended order: **S5 → S2 → S3 → S4** (S5/S2 both harden auth; do them first).
+Order: S1 ✅ → S5 ✅ → **S2 (next)** → S3 → S4.
 - **S1**: authenticate `/api/internal/metrics` — ✅ DONE (commit `05971be`, verified).
-- **S5**: disable the legacy `X-Telegram-Chat-ID` admin path by default (opt-in env flag, or remove). **Next up.**
-- **S2**: refuse to boot in production with default/unset JWT secrets; require them via env.
+- **S5**: disable the legacy `X-Telegram-Chat-ID` admin path by default — ✅ DONE (commit `e41fd54`, verified).
+- **S2**: refuse to boot in production with default/unset JWT secrets; require them via env. **Next up.**
 - **S3**: tighten CORS — explicit allowlist when `credentials: true`; never reflect arbitrary origins.
 - **S4**: force Grafana admin password via required env, drop the `mining123` default from committed files.
 
@@ -127,7 +127,8 @@ Recommended order: **S5 → S2 → S3 → S4** (S5/S2 both harden auth; do them 
 
 ## Implementation steps (for Kimi)
 
-**Next up: Phase 1 / S5 — disable the legacy header admin path.** Brief in `KIMI_TASK.md`.
+**Next up: Phase 1 / S2 — refuse to boot in production with default/unset JWT secrets.** Brief in `KIMI_TASK.md`.
+Completed: S1 (`05971be`), S5 (`e41fd54`).
 
 ---
 
