@@ -66,8 +66,8 @@ Ordered by severity. File:line references included.
 ### Security
 - **S1 — `/api/internal/metrics` is unauthenticated** — ✅ **DONE** (branch `feat/internal-metrics-auth`, commit `05971be`, verified live). Now requires `X-Internal-Token` = `INTERNAL_METRICS_TOKEN`; unset token fails closed (503) in production, warns+allows in dev.
 - **S5 — Legacy `X-Telegram-Chat-ID` header grants admin without a token** — ✅ **DONE** (branch `feat/disable-legacy-header-auth`, commit `e41fd54`, verified live). Legacy path now gated behind `ALLOW_LEGACY_HEADER_AUTH` (default false) with a startup warning when enabled; JWT and system-API-key paths unchanged. Verified: default → legacy admin header rejected (401); flag on → admin 200 / non-admin 403 + warning.
-- **S2 — Hardcoded fallback JWT secrets** (`config.ts:13-14`: `'dev-access-secret'` / `'dev-refresh-secret'`). Confirmed there is **no** startup guard — the only `process.exit` calls in `server.ts` are in the shutdown handler. If the env vars are unset in production, tokens are forgeable. *Fix:* at boot, if `NODE_ENV==='production'` and either secret is unset or equals the dev default → log error + `process.exit(1)` (mirror S1's prod-fail-closed).
-- **S3 — Permissive CORS with credentials** (`server.ts:47-50`): `origin: config.corsOrigin || true` + `credentials: true`, and `corsOrigin` defaults to `'*'` (`config.ts:10`). `origin: true` reflects any requesting origin, effectively allowing all origins to send credentialed requests. *Fix:* require an explicit allowlist (comma-split `CORS_ORIGIN`) whenever `credentials:true`; never fall back to `true`.
+- **S2 — Hardcoded fallback JWT secrets** — ✅ **DONE** (branch `feat/require-jwt-secrets-in-prod`, commit `fe157fa`, verified live). `validateJwtSecrets()` startup guard: prod + unset/dev-default `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET` → error + `exit(1)`; dev → warn. Dev defaults exported as constants from `config.ts`.
+- **S3 — Permissive CORS with credentials** (`server.ts:47-50`): `origin: config.corsOrigin || true` + `credentials: true`, and `corsOrigin` defaults to `'*'` (`config.ts:10`). `origin: true` reflects any requesting origin, effectively allowing all origins to send credentialed requests. **Next up.** *Fix (decided):* use an explicit comma-split `CORS_ORIGIN` allowlist with `credentials:true`; when `CORS_ORIGIN` is unset/`*` → **production warns and drops credentials** (origin `*`, `credentials:false`), **development keeps reflect-origin+credentials** to preserve local cross-origin cookie auth.
 - **S4 — Weak default Grafana password** `mining123` — present in **three committed files**, not one: `docker-compose.prod.yml:225`, `.env.example:87`, `README.md:86` (plus `docker/grafana/README.md` ×3). Risky if it survives onto a Pi exposed on LAN/Tailscale. *Fix:* require `GF_SECURITY_ADMIN_PASSWORD` (drop the inline default), set it in `.env`, scrub the value from docs.
 
 ### Correctness / consistency
@@ -104,11 +104,11 @@ Designed so each phase is independently shippable and reversible. Earlier phases
 - *Goal: make every later change verifiable.*
 
 ### Phase 1 — Security hardening (highest value)
-Order: S1 ✅ → S5 ✅ → **S2 (next)** → S3 → S4.
+Order: S1 ✅ → S5 ✅ → S2 ✅ → **S3 (next)** → S4.
 - **S1**: authenticate `/api/internal/metrics` — ✅ DONE (commit `05971be`, verified).
 - **S5**: disable the legacy `X-Telegram-Chat-ID` admin path by default — ✅ DONE (commit `e41fd54`, verified).
-- **S2**: refuse to boot in production with default/unset JWT secrets; require them via env. **Next up.**
-- **S3**: tighten CORS — explicit allowlist when `credentials: true`; never reflect arbitrary origins.
+- **S2**: refuse to boot in production with default/unset JWT secrets — ✅ DONE (commit `fe157fa`, verified).
+- **S3**: tighten CORS — explicit allowlist when `credentials: true`; never reflect arbitrary origins. **Next up.**
 - **S4**: force Grafana admin password via required env, drop the `mining123` default from committed files.
 
 ### Phase 2 — Data-path clarity
@@ -127,8 +127,8 @@ Order: S1 ✅ → S5 ✅ → **S2 (next)** → S3 → S4.
 
 ## Implementation steps (for Kimi)
 
-**Next up: Phase 1 / S2 — refuse to boot in production with default/unset JWT secrets.** Brief in `KIMI_TASK.md`.
-Completed: S1 (`05971be`), S5 (`e41fd54`).
+**Next up: Phase 1 / S3 — tighten CORS (explicit allowlist; no reflect-any with credentials).** Brief in `KIMI_TASK.md`.
+Completed: S1 (`05971be`), S5 (`e41fd54`), S2 (`fe157fa`).
 
 ---
 

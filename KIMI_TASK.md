@@ -11,72 +11,105 @@ This is a self-contained task for the implementing agent (Kimi). Full context is
 
 ## Ground rules
 
-- Never work directly on `main`. Branch from `main`: `git checkout main && git checkout -b feat/require-jwt-secrets-in-prod`.
+- Never work directly on `main`. Branch from `main`: `git checkout main && git checkout -b feat/cors-allowlist`.
 - Start from a **clean working tree**. Run `git status` first; if there are unrelated
-  changes (e.g. stray untracked scripts, `S5_OUTPUT.md`), do NOT stage them. Only ever
+  changes (stray untracked scripts, `S2_OUTPUT.md`, etc.), do NOT stage them. Only ever
   `git add` the specific files this task touches — never `git add -A` / `git add .`
-  (the repo working copy contains `CLAUDE.local.md` with secrets; `main`'s `.gitignore`
-  may not protect it on a branch cut from `main`).
-- `CLAUDE.md` does NOT exist on `main` (it rides in a separate pending PR). **Do not create
-  or edit `CLAUDE.md`.** Put any doc note in `.env.example` comments instead.
+  (the working copy contains `CLAUDE.local.md` with secrets; `main`'s `.gitignore` does not
+  protect it on a branch cut from `main`).
+- `CLAUDE.md` does NOT exist on `main`. **Do not create or edit `CLAUDE.md`.** Put any doc
+  note in `.env.example` comments instead.
 - Make the smallest change that satisfies the task. No drive-by refactors. No commit/push.
 - Do not print, log, or commit any secret.
 
 ---
 
-## Task: S2 — Refuse to boot in production with default/unset JWT secrets
+## Task: S3 — Replace reflect-any CORS with an explicit allowlist
 
 ### The problem
-`backend/src/config/config.ts` (lines ~13-14) falls back to hardcoded secrets:
+`backend/src/server.ts` (~lines 47-50):
 ```ts
-jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'dev-access-secret',
-jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret',
+app.use(cors({
+  origin: config.corsOrigin || true,   // `true` reflects ANY request Origin
+  credentials: true,
+}));
 ```
-There is **no startup guard** (the only `process.exit` calls in `server.ts` are in the
-shutdown handler). If `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` are unset in production,
-the app boots with publicly-known secrets and all JWTs become forgeable.
+`config.corsOrigin` defaults to `'*'` (`config.ts:10`). With `credentials: true`, reflecting
+an arbitrary origin lets any website make credentialed (cookie-bearing) cross-origin requests
+to the API. The fix is to allow credentials only for an explicit allowlist.
 
-### Goal
-In production, **fail fast at startup** if either JWT secret is unset or still equals the
-`dev-*` default. In development, keep the current behavior (allow defaults) but log a warning.
-This mirrors the established pattern (`secureCookies = NODE_ENV === 'production'`, and the
-S1 fail-closed-in-prod logic).
+### Goal / decided behavior
+Parse `CORS_ORIGIN` as a comma-separated allowlist and configure CORS so that:
+1. **Explicit allowlist set** (`CORS_ORIGIN` is one or more origins, no `*`): use it as the
+   `origin` allowlist with `credentials: true`. The `cors` package will echo the matched
+   origin and deny non-listed ones.
+2. **`CORS_ORIGIN` unset or `*`:**
+   - **production** → log a warning and **drop credentials**: `origin: '*'`, `credentials: false`.
+     (Closes the credentialed-reflection hole without hard-breaking same-origin/nginx-proxied
+     deployments.)
+   - **development** → keep the current convenience: reflect the request origin with
+     credentials (`origin: true`, `credentials: true`) so local cross-origin cookie auth
+     (frontend :3000 → backend :5000) still works. Log an info/warn that this is dev-only.
 
-### Steps
-1. **Keep the dev defaults** in `config.ts` as-is (do not remove them — dev relies on them),
-   but make the two literals referenceable so the guard can compare against them. Either:
-   - export the default strings as named constants (e.g. `DEV_ACCESS_SECRET`,
-     `DEV_REFRESH_SECRET`) and use them both in the config fallback and the guard, OR
-   - re-derive "is default/unset" from `process.env.*` directly in the guard.
-2. **Add a startup guard.** In `backend/src/server.ts`, early in the `server.listen`
-   callback (before mining/Telegram init), call a small `validateProductionConfig()`:
-   - When `config.env === 'production'`: if `JWT_ACCESS_SECRET` or `JWT_REFRESH_SECRET` is
-     unset/empty OR equals its `dev-*` default → `logger.error(...)` a clear message naming
-     the missing/insecure var(s), then `process.exit(1)`.
-   - When not production: if either secret is unset/default → `logger.warn(...)` once that
-     insecure dev secrets are in use, and continue.
-   - Place the helper either in `config.ts` (exported) or `server.ts`; keep it small.
-3. **Docs/env.** Ensure `.env.example` documents `JWT_ACCESS_SECRET` and
-   `JWT_REFRESH_SECRET` as **required in production** (add a one-line comment if not already
-   clear). Do not put real secret values anywhere.
+### Suggested implementation (adapt as needed)
+In `server.ts`, before `app.use(cors(...))`, build the options:
+```ts
+const allowlist = (process.env.CORS_ORIGIN || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const hasExplicitAllowlist = allowlist.length > 0 && !allowlist.includes('*');
+
+let corsOptions: cors.CorsOptions;
+if (hasExplicitAllowlist) {
+  corsOptions = { origin: allowlist, credentials: true };
+} else if (config.env === 'production') {
+  logger.warn('CORS_ORIGIN is unset or "*": credentialed CORS disabled in production. ' +
+              'Set CORS_ORIGIN to an explicit comma-separated allowlist to enable cookie auth cross-origin.');
+  corsOptions = { origin: '*', credentials: false };
+} else {
+  logger.warn('CORS_ORIGIN is unset or "*": reflecting request origin with credentials (development only).');
+  corsOptions = { origin: true, credentials: true };
+}
+app.use(cors(corsOptions));
+```
+You may keep using `config.corsOrigin` instead of `process.env.CORS_ORIGIN` if you prefer,
+as long as the parsing/behaviour above is preserved.
+
+### Docs/env
+Update `.env.example` so `CORS_ORIGIN` documents the allowlist format, e.g.:
+```
+# Comma-separated allowlist of browser origins permitted to send credentialed (cookie) requests.
+# Example: CORS_ORIGIN=http://localhost:3000,http://192.168.1.66:3000
+# Unset or "*" -> dev reflects origin with credentials; production disables credentialed CORS.
+CORS_ORIGIN=*
+```
 
 ### Constraints
-- Do NOT change token signing/verification logic (`auth.service.ts`), cookie handling, or
-  any route.
-- Do NOT alter dev behavior beyond adding a warning log.
-- The guard must run at startup, not per-request.
+- Touch only `backend/src/server.ts` and `.env.example` (and `config.ts` only if you choose
+  to parse there). Do NOT change auth, routes, helmet, or other middleware.
+- Keep `helmet()` and the middleware order unchanged.
+- Do NOT remove the `credentials` capability for the explicit-allowlist case.
 
 ### Acceptance criteria (verify locally; see CLAUDE.local.md for the run recipe)
-Build: `cd backend && npm run build` passes.
-Run with `PORT=5055 USE_REAL_DATA=false PROMETHEUS_ENABLED=false`:
-- **`NODE_ENV=production` + no JWT secrets set** → process logs an error naming the vars and
-  **exits with code 1** (server does NOT stay up; `curl /health` fails to connect).
-- **`NODE_ENV=production` + `JWT_ACCESS_SECRET=x JWT_REFRESH_SECRET=y` (non-default)** →
-  server boots normally, `/health` returns 200.
-- **`NODE_ENV=development` + no secrets** → server boots, logs a warning about insecure dev
-  secrets, `/health` returns 200.
+Build: `cd backend && npm run build` passes. Inspect CORS response headers with curl
+(`-H 'Origin: ...'` and read `Access-Control-Allow-Origin` / `Access-Control-Allow-Credentials`):
+
+1. **Explicit allowlist** — run with `CORS_ORIGIN=http://localhost:3000`:
+   - Request with `Origin: http://localhost:3000` → `Access-Control-Allow-Origin: http://localhost:3000`
+     and `Access-Control-Allow-Credentials: true`.
+   - Request with `Origin: http://evil.com` → response does NOT allow that origin (no ACAO for it).
+2. **Production + wildcard** — `NODE_ENV=production CORS_ORIGIN=*`:
+   - Startup logs the CORS warning.
+   - Request with `Origin: http://evil.com` → `Access-Control-Allow-Credentials` is NOT `true`
+     (credentials disabled).
+3. **Development + wildcard** — `NODE_ENV=development` (no `CORS_ORIGIN`):
+   - Request with `Origin: http://localhost:3000` → origin reflected and
+     `Access-Control-Allow-Credentials: true` (dev DX preserved).
+
+Use the `PORT=5055 USE_REAL_DATA=false PROMETHEUS_ENABLED=false` run recipe. Note: CORS
+headers appear on actual responses to requests that include an `Origin` header; you can hit
+`/health` with `-H 'Origin: ...'` and inspect with `curl -i`.
 
 ### When done
-- Summarize the diff (files + key lines) and the acceptance results (the three runs above).
-- Write the summary to `S2_OUTPUT.md` (do not commit it).
+- Summarize the diff (files + key lines) and the acceptance results (the three cases above).
+- Write the summary to `S3_OUTPUT.md` (do not commit it).
 - Do NOT commit. Leave the branch for review.
