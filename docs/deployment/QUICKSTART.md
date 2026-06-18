@@ -25,7 +25,7 @@ docker compose -f docker-compose.dev.yml up --build
 - 🌐 **Frontend Dashboard**: http://localhost:3000
 - ⚙️ **Backend API**: http://localhost:5000
 - 📊 **Prometheus**: http://localhost:9090
-- 📈 **Grafana**: http://localhost:3001 (admin/mining123)
+- 📈 **Grafana**: http://localhost:3001 (admin/<GF_SECURITY_ADMIN_PASSWORD>)
 
 ## Option 2: Production Deployment (Raspberry Pi)
 

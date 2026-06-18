@@ -225,7 +225,7 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{
 ```bash
 open http://localhost:3001
 
-# Login: admin / mining123
+# Login: admin / <GF_SECURITY_ADMIN_PASSWORD>
 # Go to Dashboards → Browse
 # Import recommended dashboards (see dashboard README)
 ```

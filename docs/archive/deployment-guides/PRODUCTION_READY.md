@@ -71,7 +71,7 @@ nano .env
 
 ### Access Services:
 - Dashboard: http://raspberrypi:3000
-- Grafana: http://raspberrypi:3001 (admin/mining123)
+- Grafana: http://raspberrypi:3001 (admin/<GF_SECURITY_ADMIN_PASSWORD>)
 - Prometheus: http://raspberrypi:9090
 
 ## ✨ Production Features

@@ -75,7 +75,7 @@ curl http://localhost:5001/v2/_catalog | jq .
 
 - Frontend: http://192.168.1.66:3000
 - Backend: http://192.168.1.66:5000
-- Grafana: http://192.168.1.66:3001 (admin/mining123)
+- Grafana: http://192.168.1.66:3001 (admin/<GF_SECURITY_ADMIN_PASSWORD>)
 - Prometheus: http://192.168.1.66:9090
 - Registry: http://192.168.88.10:5001
 

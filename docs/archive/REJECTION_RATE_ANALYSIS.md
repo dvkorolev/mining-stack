@@ -354,7 +354,7 @@ curl http://localhost:5000/api/mining/stats | jq '.miners[] | {
 curl -s 'http://localhost:9090/api/v1/query?query=100*(miner_pool_rejected_total/(miner_pool_accepted_total%2Bminer_pool_rejected_total))' | jq '.data.result[] | {name: .metric.name, rejection: .value[1]}'
 
 # Via Grafana API
-curl -s 'http://admin:mining123@192.168.1.66:3001/api/datasources/proxy/1/api/v1/query?query=100*(miner_pool_rejected_total/(miner_pool_accepted_total%2Bminer_pool_rejected_total))' | jq .
+curl -s 'http://admin:<GF_SECURITY_ADMIN_PASSWORD>@192.168.1.66:3001/api/datasources/proxy/1/api/v1/query?query=100*(miner_pool_rejected_total/(miner_pool_accepted_total%2Bminer_pool_rejected_total))' | jq .
 ```
 
 ### Test Pool Connection:

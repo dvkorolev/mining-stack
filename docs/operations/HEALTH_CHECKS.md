@@ -140,7 +140,7 @@ Service URLs:
   Dashboard:  http://192.168.1.66:3000
   API:        http://192.168.1.66:5000
   Prometheus: http://192.168.1.66:9090
-  Grafana:    http://192.168.1.66:3001 (admin/mining123)
+  Grafana:    http://192.168.1.66:3001 (admin/<GF_SECURITY_ADMIN_PASSWORD>)
 
 ✓ All checks passed!
   Your mining stack is healthy and ready to use

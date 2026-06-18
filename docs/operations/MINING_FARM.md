@@ -97,7 +97,7 @@ docker compose -f docker-compose.prod.yml restart backend
 
 Open in browser:
 - **Dashboard**: http://raspberrypi.local:3000
-- **Grafana**: http://raspberrypi.local:3001 (admin/mining123)
+- **Grafana**: http://raspberrypi.local:3001 (admin/<GF_SECURITY_ADMIN_PASSWORD>)
 
 ---
 
@@ -194,7 +194,7 @@ backend  | Mining simulation started automatically
 ### Check Grafana
 
 1. Open http://raspberrypi.local:3001
-2. Login: admin/mining123
+2. Login: admin/<GF_SECURITY_ADMIN_PASSWORD>
 3. Import mining dashboard
 4. Verify metrics are being collected
 

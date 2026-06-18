@@ -142,7 +142,7 @@ docker inspect backend | grep -A5 '"logging"'
 # Open in browser
 http://192.168.1.66:3001
 
-# Login: admin / mining123
+# Login: admin / <GF_SECURITY_ADMIN_PASSWORD>
 ```
 
 #### Step 8: Configure Loki in Grafana

@@ -504,7 +504,7 @@ curl -s http://localhost:3001/api/health | jq '.database'
 
 # Manual tests:
 # 1. Open http://localhost:3001
-# 2. Login: admin / mining123
+# 2. Login: admin / <GF_SECURITY_ADMIN_PASSWORD>
 # 3. Check dashboards exist
 ```
 

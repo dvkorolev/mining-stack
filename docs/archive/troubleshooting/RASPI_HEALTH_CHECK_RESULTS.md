@@ -163,7 +163,7 @@ for miner in config['miners']:
 
 ### Grafana
 - ✅ Accessible: `http://192.168.1.66:3001`
-- ✅ Login: admin/mining123
+- ✅ Login: admin/<GF_SECURITY_ADMIN_PASSWORD>
 - ✅ Dashboards provisioned
 
 ---
