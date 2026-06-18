@@ -242,3 +242,14 @@ When starting work on this repository:
 3. identify risk areas
 4. propose a phased plan
 5. only then start implementation
+
+## Implementation workflow
+
+Code changes may be produced by a separate code-generation agent rather than written by hand. Regardless of who authored a change, the same discipline applies before anything is committed:
+- work on a dedicated branch off `main`, scoped to the smallest change that fits the task
+- review the full diff for scope and correctness
+- validate with the smallest sufficient command (`npm run build` for the backend, plus the relevant runtime/acceptance check)
+- stage only the intended files — never blanket-add the working tree (local/untracked and machine-specific files must not be committed)
+- commit only after the change is reviewed and verified; do not commit or push without approval
+
+Machine-specific tooling and local setup notes live in `CLAUDE.local.md` (git-ignored), not here.
