@@ -146,7 +146,7 @@ http://localhost:3001
 ### Default Credentials
 
 - **Username**: `admin`
-- **Password**: `mining123` (production) or `admin` (development)
+- **Password**: set via the `GF_SECURITY_ADMIN_PASSWORD` environment variable (production) or `admin` (development)
 
 **⚠️ Change password on first login!**
 
@@ -175,7 +175,7 @@ grafana:
 
 ```yaml
 environment:
-  - GF_SECURITY_ADMIN_PASSWORD=mining123
+  - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:?GF_SECURITY_ADMIN_PASSWORD must be set in .env}
   - GF_USERS_ALLOW_SIGN_UP=false
   - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/mining-overview.json
 ```
