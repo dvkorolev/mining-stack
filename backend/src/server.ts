@@ -15,7 +15,7 @@ import { setupWebSocket } from './services/websocket.service';
 import { startMining } from './services/mining.service';
 import { errorHandler } from './middleware/error.middleware';
 import { authenticate, optionalAuth } from './middleware/auth.middleware';
-import { config } from './config/config';
+import { config, DEV_ACCESS_SECRET, DEV_REFRESH_SECRET } from './config/config';
 import { logger } from './utils/logger';
 
 // Initialize express app
@@ -184,12 +184,36 @@ app.get('/metrics', (req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
+// Validate JWT secrets before accepting traffic
+const validateJwtSecrets = (): void => {
+  const accessSecret = process.env.JWT_ACCESS_SECRET;
+  const refreshSecret = process.env.JWT_REFRESH_SECRET;
+
+  const accessInvalid = !accessSecret || accessSecret === DEV_ACCESS_SECRET;
+  const refreshInvalid = !refreshSecret || refreshSecret === DEV_REFRESH_SECRET;
+
+  if (accessInvalid || refreshInvalid) {
+    const invalidVars: string[] = [];
+    if (accessInvalid) invalidVars.push('JWT_ACCESS_SECRET');
+    if (refreshInvalid) invalidVars.push('JWT_REFRESH_SECRET');
+
+    if (config.env === 'production') {
+      logger.error(`JWT secrets are required in production and must not use the dev defaults. Set ${invalidVars.join(' and ')}.`);
+      process.exit(1);
+    }
+
+    logger.warn(`JWT secrets are unset or using dev defaults (${invalidVars.join(' and ')}). JWT tokens are forgeable in this environment.`);
+  }
+};
+
 // Start server
 const PORT = config.port || 5000;
 server.listen(PORT, async () => {
+  validateJwtSecrets();
+
   logger.info(`Server is running on port ${PORT}`);
   console.log(`Server is running on http://localhost:${PORT}`);
-  
+
   // Pool configuration removed - miners store their own pool settings
 
   // Initialize miners from YAML if database is empty

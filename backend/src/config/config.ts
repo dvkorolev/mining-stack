@@ -4,14 +4,17 @@ import path from 'path';
 // Load environment variables from .env file
 dotenv.config();
 
+export const DEV_ACCESS_SECRET = 'dev-access-secret';
+export const DEV_REFRESH_SECRET = 'dev-refresh-secret';
+
 const config = {
   env: process.env.NODE_ENV || 'development',
   port: process.env.PORT ? parseInt(process.env.PORT, 10) : 5000,
   corsOrigin: process.env.CORS_ORIGIN || '*',
   logLevel: process.env.LOG_LEVEL || 'info',
   auth: {
-    jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'dev-access-secret',
-    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret',
+    jwtAccessSecret: process.env.JWT_ACCESS_SECRET || DEV_ACCESS_SECRET,
+    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || DEV_REFRESH_SECRET,
     accessTokenTtl: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
     refreshTokenTtl: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
     cookieDomain: process.env.AUTH_COOKIE_DOMAIN,
