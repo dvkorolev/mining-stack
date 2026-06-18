@@ -37,6 +37,7 @@ const config = {
     maxHistoryPoints: parseInt(process.env.MINING_MAX_HISTORY || '60', 10), // 60 data points
     useRealData: process.env.USE_REAL_DATA !== 'false', // Use real Prometheus data by default
     simulationMode: process.env.SIMULATION_MODE === 'true',
+    metricsSource: process.env.METRICS_SOURCE || 'prometheus',
   },
   
   // Prometheus configuration
