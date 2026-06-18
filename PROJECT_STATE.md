@@ -98,6 +98,13 @@ Low-risk, high-signal. None of these change behavior.
 
 Designed so each phase is independently shippable and reversible. Earlier phases unblock later ones.
 
+### Phase P0 — Pi drift backport ⏰ URGENT (do before the next Pi deploy)
+Source: `PI_DRIFT_FINDINGS.md` + branch `backport/pi-local-fixes` (`e5ad63d`). The Pi had ~6 days of **uncommitted** working-tree bug fixes that exist nowhere in version control. A fresh deploy from `main` would silently revert them (duplicate Telegram alerts, broken `MinerOffline`/`MinerNotMining` rules using the non-existent `miner_scrape_success`, a `pyasic_collector` crash path). Verified: backport touches exactly the 7 reported files, the technical claims hold (`miner_scrape_success` is dead `backup/` code; `miner_scrape_status` is the real metric; `load_*config` are sync `def`), and the **unsafe async change was correctly excluded** (no `await load_miners_config` in the branch).
+- **Blocker / decision:** `backport/pi-local-fixes` and the parked `feat/per-miner-history` **overlap on `python-scheduler/main.py`, `backend/Dockerfile`, `backend/src/server.ts`** and take *different* approaches to the same pool/DNS code (backport drops `socket.gethostbyname`; per-miner-history wraps it in `asyncio.to_thread`). Pick ONE canonical version and reconcile before merging either — they will conflict.
+- Review + merge the reconciled backport to `main` so a redeploy can't revert the Pi.
+- Commit `PI_DRIFT_FINDINGS.md` as the record.
+- Deferred: the async `config.py` conversion (the WIP `config.py.new` on the Pi) — finish and test as its own change; do NOT ship the half-done version.
+
 ### Phase 0 — Safety net (prerequisite)
 - Add a minimal test harness: backend (Jest or node:test) with one smoke test that boots the app and hits `/health`; wire `npm test` for real.
 - Add a typecheck/lint CI step (`npm run build` on backend + frontend) so regressions are caught.
@@ -108,13 +115,15 @@ Order: S1 ✅ → S5 ✅ → S2 ✅ → **S3 (next)** → S4.
 - **S1**: authenticate `/api/internal/metrics` — ✅ DONE (commit `05971be`, verified).
 - **S5**: disable the legacy `X-Telegram-Chat-ID` admin path by default — ✅ DONE (commit `e41fd54`, verified).
 - **S2**: refuse to boot in production with default/unset JWT secrets — ✅ DONE (commit `fe157fa`, verified).
-- **S3**: tighten CORS — explicit allowlist when `credentials: true`; never reflect arbitrary origins. **Next up.**
-- **S4**: force Grafana admin password via required env, drop the `mining123` default from committed files.
+- **S3**: tighten CORS — explicit allowlist when `credentials: true`; never reflect arbitrary origins. — ✅ DONE (commit `369cfd4`, verified).
+- **S4**: force Grafana admin password via required env, drop the `mining123` default. — ✅ DONE (commit `93fbdfb`, verified).
+- **Phase 1 fully merged to `main`.**
 
-### Phase 2 — Data-path clarity
-- Decide and document the single source of truth (Prometheus read **or** push), make precedence explicit, and gate/remove the unused path.
-- Make the simulation path opt-in and loudly logged so it can never be mistaken for real data (R3).
-- Document the two metric namespaces or unify them (C5).
+### Phase 2 — Data-path clarity — ✅ DONE & merged to `main` (`9a9d94f`)
+- P2.1 `SIMULATION_MODE` (opt-in, no silent fallback) — `5203334`.
+- P2.2 `METRICS_SOURCE` single source of truth; fixes the `miningStats` dual-write — `a3b72ea`.
+- P2.3 CLAUDE.md namespaces/data-path docs — `0b3ef19`.
+- Verified safe against the live Pi (`.env` takes new defaults; Prometheus holds 22 miner series).
 
 ### Phase 3 — Maintainability
 - Decompose the largest modules (`telegram.service.ts`, `database.service.ts`, `mining.service.ts`) along clear seams (command handlers, schema/migrations, stats vs. control). Add unit tests as each seam is extracted.
@@ -127,8 +136,8 @@ Order: S1 ✅ → S5 ✅ → S2 ✅ → **S3 (next)** → S4.
 
 ## Implementation steps (for Kimi)
 
-**Next up: Phase 1 / S3 — tighten CORS (explicit allowlist; no reflect-any with credentials).** Brief in `KIMI_TASK.md`.
-Completed: S1 (`05971be`), S5 (`e41fd54`), S2 (`fe157fa`).
+**Next up: Phase P0 — reconcile + merge the Pi-drift backport before the next Pi deploy** (see Phase P0 above; decision needed: `backport/pi-local-fixes` vs `feat/per-miner-history` overlap).
+Completed & merged to main: Phase 1 (S1–S5) and Phase 2 (P2.1–P2.3).
 
 ---
 
