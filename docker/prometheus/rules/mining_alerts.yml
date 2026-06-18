@@ -4,7 +4,7 @@ groups:
     rules:
       # Critical: Miner is offline
       - alert: MinerOffline
-        expr: miner_scrape_success == 0
+        expr: miner_scrape_status <= 0
         for: 5m
         labels:
           severity: critical
@@ -26,7 +26,7 @@ groups:
           
       # Critical: Miner stopped mining
       - alert: MinerNotMining
-        expr: miner_is_mining == 0 and miner_scrape_success == 1
+        expr: miner_is_mining == 0 and miner_scrape_status == 2
         for: 5m
         labels:
           severity: critical
@@ -258,7 +258,7 @@ groups:
     rules:
       # Farm-wide: Multiple miners offline
       - alert: FarmMultipleMinersOffline
-        expr: count(miner_scrape_success == 0) > 3
+        expr: count(miner_scrape_status <= 0) > 3
         for: 5m
         labels:
           severity: critical
