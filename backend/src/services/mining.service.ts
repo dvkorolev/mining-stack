@@ -853,6 +853,20 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
         rejectionRate: 0, // Would need pool data
       };
       db.insertStats(dbRecord);
+
+      // Save per-miner stats history (for Worker Details graphs)
+      for (const miner of minerStats) {
+        db.insertMinerStatsHistory({
+          miner_ip: miner.ip,
+          timestamp: stats.timestamp,
+          hashrate: miner.currentHashrate,
+          temperature: miner.hardware?.temperature || 0,
+          fan_speed: miner.hardware?.fanSpeed || 0,
+          power_usage: miner.hardware?.powerUsage || 0,
+          rejection_rate: miner.shares?.rejectionRate || 0,
+          uptime: miner.uptime || 0,
+        });
+      }
     } catch (error) {
       logger.error('Error saving stats to database:', error);
     }
@@ -983,6 +997,7 @@ const startMining = async (minerConfig: any = {}) => {
         logger.info('Running data cleanup');
         db.cleanupOldRawData();
         db.cleanupOldHourlyData();
+        db.cleanupOldMinerStatsHistory(); // 30-day retention for per-miner history
       } catch (error) {
         logger.error('Error in cleanup:', error);
       }

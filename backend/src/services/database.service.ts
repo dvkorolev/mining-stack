@@ -134,6 +134,21 @@ export interface AlertRuleHistoryRecord {
   timestamp?: number;
 }
 
+/**
+ * Per-miner historical stats record for Worker Details graphs
+ */
+export interface MinerStatsHistoryRecord {
+  id?: number;
+  miner_ip: string;
+  timestamp: number;
+  hashrate: number;
+  temperature: number;
+  fan_speed: number;
+  power_usage: number;
+  rejection_rate: number;
+  uptime?: number;
+}
+
 class DatabaseService {
   private db: Database.Database;
   private dbPath: string;
@@ -356,6 +371,26 @@ class DatabaseService {
 
       CREATE INDEX IF NOT EXISTS idx_alert_rule_history_rule ON alert_rule_history(rule_id);
       CREATE INDEX IF NOT EXISTS idx_alert_rule_history_timestamp ON alert_rule_history(timestamp DESC);
+    `);
+
+    // Per-miner historical stats for Worker Details graphs (Strata OS)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS miner_stats_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        miner_ip TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        hashrate REAL NOT NULL DEFAULT 0,
+        temperature REAL NOT NULL DEFAULT 0,
+        fan_speed INTEGER NOT NULL DEFAULT 0,
+        power_usage INTEGER NOT NULL DEFAULT 0,
+        rejection_rate REAL NOT NULL DEFAULT 0,
+        uptime INTEGER DEFAULT 0,
+        FOREIGN KEY (miner_ip) REFERENCES miners(ip) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_miner_stats_history_ip ON miner_stats_history(miner_ip);
+      CREATE INDEX IF NOT EXISTS idx_miner_stats_history_timestamp ON miner_stats_history(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_miner_stats_history_ip_time ON miner_stats_history(miner_ip, timestamp);
     `);
     
     // Add thresholds column if it doesn't exist (migration for existing databases)
@@ -960,6 +995,72 @@ class DatabaseService {
     } catch (error) {
       logger.error('Error cleaning up invalid stats:', error);
       throw error;
+    }
+  }
+
+  // ==================== MINER STATS HISTORY (30-day retention) ====================
+
+  /**
+   * Insert a miner stats history record
+   */
+  insertMinerStatsHistory(record: Omit<MinerStatsHistoryRecord, 'id'>): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO miner_stats_history (miner_ip, timestamp, hashrate, temperature, fan_speed, power_usage, rejection_rate, uptime)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    try {
+      stmt.run(
+        record.miner_ip,
+        record.timestamp,
+        record.hashrate,
+        record.temperature,
+        record.fan_speed,
+        record.power_usage,
+        record.rejection_rate,
+        record.uptime || 0
+      );
+    } catch (error) {
+      logger.error(`Error inserting miner stats history for ${record.miner_ip}:`, error);
+    }
+  }
+
+  /**
+   * Get miner stats history for a specific miner
+   * @param minerIp Miner IP address
+   * @param startTime Start timestamp (ms)
+   * @param endTime End timestamp (ms)
+   */
+  getMinerStatsHistory(minerIp: string, startTime: number, endTime: number): MinerStatsHistoryRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM miner_stats_history
+      WHERE miner_ip = ? AND timestamp >= ? AND timestamp <= ?
+      ORDER BY timestamp ASC
+    `);
+
+    return stmt.all(minerIp, startTime, endTime) as MinerStatsHistoryRecord[];
+  }
+
+  /**
+   * Clean up old miner stats history (keep last 30 days)
+   * Since we have Grafana/Prometheus for long-term data
+   */
+  cleanupOldMinerStatsHistory(): number {
+    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+
+    const stmt = this.db.prepare(`
+      DELETE FROM miner_stats_history WHERE timestamp < ?
+    `);
+
+    try {
+      const result = stmt.run(thirtyDaysAgo);
+      if (result.changes > 0) {
+        logger.info(`Cleaned up ${result.changes} old miner stats history records (>30 days)`);
+      }
+      return result.changes;
+    } catch (error) {
+      logger.error('Error cleaning up miner stats history:', error);
+      return 0;
     }
   }
 
