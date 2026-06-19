@@ -62,3 +62,9 @@ Thumbs.db
 # TELEGRAM_SETUP.md
 # IMPLEMENTATION_SUMMARY.md
 # DOCS_INDEX.md
+
+# Local-only operational scripts (one-shot fixups / personal diagnostics;
+# carry hardcoded hosts and miner-specific data — not for the public repo)
+scripts/extract-miner-pool-usernames.py
+scripts/fix-all-miner-names.sh
+scripts/fix-miner-name-53.sh
