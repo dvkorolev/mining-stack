@@ -155,6 +155,31 @@ router.get('/mining/history', async (req, res, next) => {
   }
 });
 
+// Get per-miner historical stats (30-day retention)
+router.get('/mining/miners/:minerId/history', async (req, res, next) => {
+  try {
+    const { minerId } = req.params;
+    const { start, end } = req.query;
+    
+    // Default to last 24 hours if not specified
+    const endTime = end ? parseInt(end as string, 10) : Date.now();
+    const startTime = start ? parseInt(start as string, 10) : endTime - (24 * 60 * 60 * 1000);
+    
+    const db = getDatabase();
+    const history = db.getMinerStatsHistory(minerId, startTime, endTime);
+    
+    res.json({
+      minerId,
+      startTime,
+      endTime,
+      dataPoints: history.length,
+      history,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get database info
 router.get('/mining/database/info', async (req, res, next) => {
   try {
