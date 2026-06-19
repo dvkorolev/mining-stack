@@ -53,6 +53,10 @@ miner_hashrate_mhs = Gauge('miner_hashrate_mhs', 'Miner hashrate in MH/s (SCRYPT
 # Gap-filling observability
 miner_gaps_filled_total = Counter('miner_gaps_filled_total', 'Count of gaps filled by CGMiner', ['type'])
 
+# Fallback-collector observability
+miner_fallback_trigger_total = Counter('miner_fallback_trigger_total', 'Count of fallback triggers by reason category', ['reason'])
+miner_fallback_total = Counter('miner_fallback_total', 'Count of fallback collector attempts by method and result', ['method', 'result'])
+
 # ============================================================================
 # METRIC CLEANUP HELPERS
 # ============================================================================

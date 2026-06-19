@@ -41,7 +41,8 @@ from metrics import (
     pool_network_ping_min, pool_network_ping_max,
     pool_network_packet_loss, collection_duration,
     collection_success, collection_timestamp,
-    miner_scrape_status, miner_state
+    miner_scrape_status, miner_state,
+    miner_fallback_trigger_total, miner_fallback_total
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
 from collectors.antminer_cgi_collector import collect_antminer_cgi
@@ -389,6 +390,9 @@ async def collect_all_metrics():
                         logger.warning(f"  ⚠ Fan count mismatch on {miner['name']}: {actual_fans} found, {expected_fans} expected")
                 
                 if needs_fallback:
+                    # Bucket reason to a bounded category (strip any parenthetical detail like "(2/3)")
+                    _reason_category = fallback_reason.split()[0] if fallback_reason else 'unknown'
+                    miner_fallback_trigger_total.labels(reason=_reason_category).inc()
                     logger.info(f"  → Fallback triggered for {miner['name']}: {fallback_reason}")
                     fallback_data = None
                     fallback_method = None
@@ -448,6 +452,13 @@ async def collect_all_metrics():
                             fallback_data = await collect_dg1_http(miner)
                             fallback_method = 'dg1_http'
                     
+                    # Record the fallback attempt outcome (method is None only if no driver matched the model)
+                    if fallback_method is not None:
+                        miner_fallback_total.labels(
+                            method=fallback_method,
+                            result='success' if fallback_data else 'failure'
+                        ).inc()
+
                     # If fallback succeeded, merge and update metrics
                     if fallback_data:
                         fallback_successes += 1
