@@ -287,6 +287,11 @@ async def collect_all_metrics():
             
             pyasic_result = await collect_pyasic_metrics(miners)
             miners_data = pyasic_result.get('miners_data', [])
+            miners_data_by_ip = {
+                m.get('ip'): m
+                for m in miners_data
+                if isinstance(m, dict) and m.get('ip')
+            }
             
             # Multi-layered probing: Try fallback drivers for failed miners using profile library
             logger.info("Checking for failed miners to retry with fallback drivers...")
@@ -302,7 +307,30 @@ async def collect_all_metrics():
                     logger.warning(f"Skipping miner with missing IP or name: {miner}")
                     continue
                     
-                miner_data = miners_data[i]
+                miner_data = miners_data_by_ip.get(miner['ip'])
+                if miner_data is None:
+                    miner_data = {
+                        'ip': miner['ip'],
+                        'name': miner['name'],
+                        'model': miner.get('model') or 'Unknown',
+                        'hashrate': 0,
+                        'power': 0,
+                        'temp_max': 0,
+                        'is_mining': 0,
+                        'uptime': 0,
+                        'efficiency': 0,
+                        'fault_light': 0,
+                        'errors_count': 0,
+                        'scrape_status': -2,
+                        'state': 0,
+                        'pool_accepted': 0,
+                        'pool_rejected': 0,
+                        'pools': [],
+                        'hashboards': [],
+                        'fans': [],
+                    }
+                    miners_data.append(miner_data)
+                    miners_data_by_ip[miner['ip']] = miner_data
                 scrape_status = miner_data.get('scrape_status', -2)
                 hashrate = miner_data.get('hashrate', 0)
                 
@@ -493,7 +521,7 @@ async def collect_all_metrics():
             
             # Update failure streaks and remove stale metrics
             for miner in miners:
-                miner_data = next((m for m in miners_data if m['ip'] == miner['ip']), None)
+                miner_data = miners_data_by_ip.get(miner['ip'])
                 
                 # Reset failure streak if any data was collected (scrape_status >= 0)
                 # This includes fallback successes (0.4-0.6) and primary successes (1-2)
@@ -605,7 +633,9 @@ async def lifespan(app_instance: FastAPI):
         id='miner_collection',
         name='Miner Metrics Collection',
         replace_existing=True,
-        max_instances=1  # Prevent concurrent runs
+        max_instances=1,  # Prevent concurrent runs
+        coalesce=True,
+        misfire_grace_time=60
     )
     
     # Add pool collection job (every POOL_TEST_INTERVAL minutes)
@@ -615,7 +645,9 @@ async def lifespan(app_instance: FastAPI):
         id='pool_collection',
         name='Pool Network Testing',
         replace_existing=True,
-        max_instances=1
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=60
     )
     
     # Start scheduler
