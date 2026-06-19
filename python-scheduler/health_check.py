@@ -5,11 +5,12 @@ Checks internal state and dependencies to provide meaningful health status
 
 import time
 import logging
+import requests
 from pathlib import Path
 from typing import Dict, List, Tuple
 from datetime import datetime, timedelta
 
-from config import MINERS_CONFIG
+from config import MINERS_CONFIG, USE_DATABASE_CONFIG, SYSTEM_API_KEY, BACKEND_URL
 
 logger = logging.getLogger(__name__)
 
@@ -160,9 +161,34 @@ class HealthCheck:
         Returns:
             (status, message, details)
         """
+        if USE_DATABASE_CONFIG and SYSTEM_API_KEY:
+            try:
+                response = requests.get(
+                    f"{BACKEND_URL}/api/mining/miners",
+                    headers={'X-API-Key': SYSTEM_API_KEY},
+                    timeout=2
+                )
+                if response.status_code == 200:
+                    return (
+                        HealthStatus.HEALTHY,
+                        "Config loaded from database API",
+                        {
+                            "source": "database_api",
+                            "backend_url": BACKEND_URL,
+                        }
+                    )
+            except Exception as e:
+                pass
+
         config_path = Path(MINERS_CONFIG)
         
         if not config_path.exists():
+            if USE_DATABASE_CONFIG and SYSTEM_API_KEY:
+                return (
+                    HealthStatus.DEGRADED,
+                    f"Database config unavailable and YAML config not found: {MINERS_CONFIG}",
+                    {"config_path": str(config_path), "source": "database_api"}
+                )
             return (
                 HealthStatus.UNHEALTHY,
                 f"Config file not found: {MINERS_CONFIG}",
