@@ -68,7 +68,7 @@ Ordered by severity. File:line references included.
 - **S5 — Legacy `X-Telegram-Chat-ID` header grants admin without a token** — ✅ **DONE** (branch `feat/disable-legacy-header-auth`, commit `e41fd54`, verified live). Legacy path now gated behind `ALLOW_LEGACY_HEADER_AUTH` (default false) with a startup warning when enabled; JWT and system-API-key paths unchanged. Verified: default → legacy admin header rejected (401); flag on → admin 200 / non-admin 403 + warning.
 - **S2 — Hardcoded fallback JWT secrets** — ✅ **DONE** (branch `feat/require-jwt-secrets-in-prod`, commit `fe157fa`, verified live). `validateJwtSecrets()` startup guard: prod + unset/dev-default `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET` → error + `exit(1)`; dev → warn. Dev defaults exported as constants from `config.ts`.
 - **S3 — Permissive CORS with credentials** (`server.ts:47-50`): `origin: config.corsOrigin || true` + `credentials: true`, and `corsOrigin` defaults to `'*'` (`config.ts:10`). `origin: true` reflects any requesting origin, effectively allowing all origins to send credentialed requests. **Next up.** *Fix (decided):* use an explicit comma-split `CORS_ORIGIN` allowlist with `credentials:true`; when `CORS_ORIGIN` is unset/`*` → **production warns and drops credentials** (origin `*`, `credentials:false`), **development keeps reflect-origin+credentials** to preserve local cross-origin cookie auth.
-- **S4 — Weak default Grafana password** `mining123` — present in **three committed files**, not one: `docker-compose.prod.yml:225`, `.env.example:87`, `README.md:86` (plus `docker/grafana/README.md` ×3). Risky if it survives onto a Pi exposed on LAN/Tailscale. *Fix:* require `GF_SECURITY_ADMIN_PASSWORD` (drop the inline default), set it in `.env`, scrub the value from docs.
+- **S4 — Weak default Grafana password** (the old committed default) — present in **three committed files**, not one: `docker-compose.prod.yml:225`, `.env.example:87`, `README.md:86` (plus `docker/grafana/README.md` ×3). Risky if it survives onto a Pi exposed on LAN/Tailscale. *Fix:* require `GF_SECURITY_ADMIN_PASSWORD` (drop the inline default), set it in `.env`, scrub the value from docs.
 
 ### Correctness / consistency
 - **R1 — Dual ingestion paths** (Prometheus read vs. `/internal/metrics` push) can disagree and there is no documented "source of truth" precedence. Increases the chance of stale or conflicting stats depending on deployment config.
@@ -116,7 +116,7 @@ Order: S1 ✅ → S5 ✅ → S2 ✅ → **S3 (next)** → S4.
 - **S5**: disable the legacy `X-Telegram-Chat-ID` admin path by default — ✅ DONE (commit `e41fd54`, verified).
 - **S2**: refuse to boot in production with default/unset JWT secrets — ✅ DONE (commit `fe157fa`, verified).
 - **S3**: tighten CORS — explicit allowlist when `credentials: true`; never reflect arbitrary origins. — ✅ DONE (commit `369cfd4`, verified).
-- **S4**: force Grafana admin password via required env, drop the `mining123` default. — ✅ DONE (commit `93fbdfb`, verified).
+- **S4**: force Grafana admin password via required env, drop the weak committed default. — ✅ DONE (commit `93fbdfb`, verified).
 - **Phase 1 fully merged to `main`.**
 
 ### Phase 2 — Data-path clarity — ✅ DONE & merged to `main` (`9a9d94f`)
