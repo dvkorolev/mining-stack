@@ -9,7 +9,7 @@
 
 A comprehensive monitoring and control system for cryptocurrency mining operations. Monitor 20+ miners from a single interface, get instant alerts, analyze performance trends, and control everything remotely. Built with React, Node.js, and Docker. Designed to run on a Raspberry Pi.
 
-**📖 [Read the Complete Overview](docs/OVERVIEW.md)** - Understand the full system architecture and capabilities
+**📖 [Read the Complete Overview](docs/reference/OVERVIEW.md)** - Understand the full system architecture and capabilities
 
 ## ✨ Features
 
@@ -41,19 +41,27 @@ A comprehensive monitoring and control system for cryptocurrency mining operatio
 
 ## 📚 Documentation
 
-### 🚀 New: Smart CI/CD
-- **[⚡ Smart CI/CD Guide](docs/deployment/SMART_CICD.md)** - Build only what changed (60% faster!)
-- **[🔄 CI/CD Workflow](CICD_WORKFLOW.md)** - Quick reference guide
+**[📖 Complete Documentation Index](docs/README.md)**
 
-### Core Documentation
-- **[📖 Complete Documentation](docs/README.md)** - Full documentation index
-- **[🚀 Quick Start Guide](docs/deployment/QUICKSTART.md)** - Get started in 5 minutes
-- **[📦 Deployment Guide](docs/deployment/DEPLOYMENT.md)** - Production deployment
-- **[🔧 Configuration](docs/reference/CONFIGURATION.md)** - System configuration
+### Getting Started
+- **[🚀 Quick Start](docs/deployment/QUICKSTART.md)** - Get running in 5 minutes
+- **[📦 Deployment Guide](docs/deployment/DEPLOYMENT.md)** - Production deployment to Raspberry Pi
+- **[⚡ Smart CI/CD](docs/deployment/SMART_CICD.md)** - Build only what changed (60% faster!)
+- **[🔧 Configuration](docs/reference/CONFIGURATION.md)** - Miners, monitoring, and alerts
+
+### Operations
 - **[🔍 Troubleshooting](docs/operations/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[🏥 Health Checks](docs/operations/HEALTH_CHECKS.md)** - Monitor system health
+- **[📊 Monitoring](docs/operations/MONITORING.md)** - Prometheus, Grafana, and metrics
+- **[🤖 Telegram Bot](docs/operations/TELEGRAM_BOT.md)** - Setup and commands
+
+### Reference & Development
+- **[📖 System Overview](docs/reference/OVERVIEW.md)** - Architecture and capabilities
+- **[🔌 API Reference](docs/api/API.md)** - Backend API documentation
+- **[🏗️ CI/CD Setup](docs/deployment/CI_CD.md)** - GitHub Actions and automated deployment
+- **[📝 Changelog](docs/changelog/CHANGELOG.md)** - Version history and updates
 
 ### Component Documentation
-
 - **[Backend Service](backend/README.md)** - Node.js/Express API server
 - **[Frontend Service](frontend/README.md)** - React web interface
 - **[Python Scheduler](python-scheduler/README.md)** - Metrics collection service
@@ -68,16 +76,19 @@ A comprehensive monitoring and control system for cryptocurrency mining operatio
 
 ## 🚀 Quick Start
 
-### Development with Docker
+### Run the Full Stack (Docker)
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/dvkorolev/mining-stack.git
 cd mining-stack
 
-# 2. Start development environment
-docker compose -f docker-compose.dev.yml up --build
+# 2. Start all services (uses docker-compose.prod.yml)
+make up
 ```
+
+> For local per-service development (hot reload), see the per-service commands in
+> [CLAUDE.md](CLAUDE.md#commands) (`npm run dev`, `npm start`, `python main.py`).
 
 **Access the services:**
 - 🌐 **Frontend**: http://localhost:3000
@@ -86,7 +97,7 @@ docker compose -f docker-compose.dev.yml up --build
 - 📈 **Grafana**: http://localhost:3001 (admin / <your GF_SECURITY_ADMIN_PASSWORD>)
 - 🔔 **Alertmanager**: http://localhost:9093
 
-**Optional: Set up Telegram Bot** (see [TELEGRAM_SETUP.md](./TELEGRAM_SETUP.md))
+**Optional: Set up Telegram Bot** (see [Telegram Configuration](./TELEGRAM_CONFIGURATION.md))
 ```bash
 # Add to .env file
 TELEGRAM_BOT_TOKEN=your_bot_token
@@ -109,7 +120,7 @@ cd mining-stack
 
 **Access the dashboard:** http://192.168.1.66:3000
 
-📖 See **[Local Build Guide](./LOCAL_BUILD.md)** for detailed instructions.
+📖 See the **[Deployment Guide](./DEPLOYMENT.md)** for detailed instructions.
 
 ## 🏗️ Architecture
 
@@ -142,33 +153,11 @@ cd mining-stack
 - **Deployment**: Docker, Docker Compose, GitHub Actions
 - **Hardware Integration**: pyasic for ASIC miner discovery
 
-## 📚 Documentation
-
-### Getting Started
-- **[🚀 Quick Start](./docs/QUICKSTART.md)** - Get up and running in 5 minutes
-- **[📖 Deployment Guide](./docs/DEPLOYMENT.md)** - Production deployment to Raspberry Pi
-- **[⚙️ Configuration](./docs/CONFIGURATION.md)** - Configure miners, monitoring, and alerts
-- **[🤖 Telegram Bot Setup](./TELEGRAM_SETUP.md)** - Quick guide to enable Telegram bot
-
-### Operations
-- **[🔍 Troubleshooting](./docs/TROUBLESHOOTING.md)** - Common issues and solutions
-- **[🏥 Health Checks](./docs/HEALTH_CHECKS.md)** - Monitor system health
-- **[📊 Monitoring](./docs/MONITORING.md)** - Prometheus, Grafana, and metrics
-- **[🤖 Telegram Bot Guide](./docs/TELEGRAM_BOT.md)** - Complete Telegram bot documentation
-
-### Development
-- **[🔌 API Reference](./docs/API.md)** - Backend API documentation
-- **[🏗️ CI/CD Setup](./docs/CI_CD.md)** - GitHub Actions and automated deployment
-- **[📝 Changelog](./CHANGELOG.md)** - Version history and updates
-
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](./CONTRIBUTING.md) for details on:
-
-- Code style guidelines
-- Development workflow
-- Pull request process
-- Issue reporting
+Contributions are welcome — please open an issue or a pull request on
+[GitHub](https://github.com/dvkorolev/mining-stack). Work on a dedicated branch off `main`
+and keep changes small and reversible (see [CLAUDE.md](CLAUDE.md) for the working conventions).
 
 ## License
 
