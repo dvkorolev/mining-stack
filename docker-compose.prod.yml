@@ -55,7 +55,8 @@ services:
       - mining-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      # 127.0.0.1 not localhost: localhost resolves to IPv6 ::1 but nginx is IPv4-only (DMI-17)
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
       interval: 30s
       timeout: 10s
       retries: 3
