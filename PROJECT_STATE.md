@@ -1,11 +1,16 @@
 # PROJECT_STATE.md
 
-Repository review and improvement plan. **Analysis only — no code changed.**
-Prepared as input for implementation (Kimi will implement the steps below, one at a time).
+Repository review and improvement plan. Originally analysis-only; now also the
+living roadmap, kept in sync with shipped work and the Linear "Mining Stack" project.
 
-Date: 2026-06-17
+Date: 2026-06-17 (original review) · **Last refreshed: 2026-06-20**
 Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
+
+> **Status at a glance (main `c396230`)**
+> - ✅ **Done & merged:** P0 (Pi-drift backport), Phase 1 (security S1–S5), Phase 2 (data-path clarity), most of Phase 4 cleanup (C1/C2/C5; C3 partial).
+> - ✅ **Operational:** subnet-move recovery — DMI-19 (MAC-keyed reconcile tool) + DMI-20 (live Pi DB remap).
+> - ⏳ **Open / next up:** **Phase 0** (test harness + CI — the skipped prerequisite), **Phase 3** (decompose large modules + SQLite migrations), **C4** (canonical deploy script), **C3 remainder** (README link drift).
 
 ---
 
@@ -52,7 +57,7 @@ Step by step:
 
 **Two important side paths:**
 - **Push channel** — scheduler can also `POST {BACKEND_URL}/api/internal/metrics` when `PUSH_TO_BACKEND` is enabled (`main.py:287`), handled at `backend/src/routes/mining.routes.ts:777` → `updateMetricsFromScheduler()`. This is a *second* way the same data reaches the backend, parallel to the Prometheus read path.
-- **Simulation** — when `config.mining.useRealData` is false or Prometheus is disabled, the backend serves `simulateMiningStats()` (random data) instead of real metrics (`mining.service.ts:948`).
+- **Simulation** — gated behind `SIMULATION_MODE` (default false) since Phase 2/P2.1. Fake data is served *only* when explicitly enabled; a Prometheus read error keeps last-known real stats rather than silently falling back to random data.
 - **Control** — miner reboot is in-process TypeScript (`miner-control.service.ts` → `miner-rebooter.ts`: WhatsMiner protocol + `antminerRestart`), exposed via API and the Telegram bot — independent of the read path.
 
 **Two metric namespaces exist:** the scheduler exposes `miner_*`; the backend's own `/metrics` endpoint exposes a different `mining_*` / `alert_queue_*` set (`server.ts:122`). Not wrong, but worth knowing they are distinct.
@@ -67,13 +72,13 @@ Ordered by severity. File:line references included.
 - **S1 — `/api/internal/metrics` is unauthenticated** — ✅ **DONE** (branch `feat/internal-metrics-auth`, commit `05971be`, verified live). Now requires `X-Internal-Token` = `INTERNAL_METRICS_TOKEN`; unset token fails closed (503) in production, warns+allows in dev.
 - **S5 — Legacy `X-Telegram-Chat-ID` header grants admin without a token** — ✅ **DONE** (branch `feat/disable-legacy-header-auth`, commit `e41fd54`, verified live). Legacy path now gated behind `ALLOW_LEGACY_HEADER_AUTH` (default false) with a startup warning when enabled; JWT and system-API-key paths unchanged. Verified: default → legacy admin header rejected (401); flag on → admin 200 / non-admin 403 + warning.
 - **S2 — Hardcoded fallback JWT secrets** — ✅ **DONE** (branch `feat/require-jwt-secrets-in-prod`, commit `fe157fa`, verified live). `validateJwtSecrets()` startup guard: prod + unset/dev-default `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET` → error + `exit(1)`; dev → warn. Dev defaults exported as constants from `config.ts`.
-- **S3 — Permissive CORS with credentials** (`server.ts:47-50`): `origin: config.corsOrigin || true` + `credentials: true`, and `corsOrigin` defaults to `'*'` (`config.ts:10`). `origin: true` reflects any requesting origin, effectively allowing all origins to send credentialed requests. **Next up.** *Fix (decided):* use an explicit comma-split `CORS_ORIGIN` allowlist with `credentials:true`; when `CORS_ORIGIN` is unset/`*` → **production warns and drops credentials** (origin `*`, `credentials:false`), **development keeps reflect-origin+credentials** to preserve local cross-origin cookie auth.
-- **S4 — Weak default Grafana password** (the old committed default) — present in **three committed files**, not one: `docker-compose.prod.yml:225`, `.env.example:87`, `README.md:86` (plus `docker/grafana/README.md` ×3). Risky if it survives onto a Pi exposed on LAN/Tailscale. *Fix:* require `GF_SECURITY_ADMIN_PASSWORD` (drop the inline default), set it in `.env`, scrub the value from docs.
+- **S3 — Permissive CORS with credentials** — ✅ **DONE** (branch `feat/cors-allowlist`, commit `369cfd4`, verified live). Explicit comma-split `CORS_ORIGIN` allowlist with `credentials:true`; when unset/`*` → production warns and drops credentials (origin `*`, `credentials:false`), development keeps reflect-origin+credentials for local cookie auth.
+- **S4 — Weak default Grafana password** — ✅ **DONE** (branch `feat/grafana-password-required`, commit `93fbdfb`, verified). `docker-compose.prod.yml` now requires `GF_SECURITY_ADMIN_PASSWORD` (fail-closed `${..:?}`); the committed default was dropped and scrubbed from all docs + `health-check.sh`. ⚠️ The Pi `.env` must set this before a prod Grafana restart.
 
 ### Correctness / consistency
-- **R1 — Dual ingestion paths** (Prometheus read vs. `/internal/metrics` push) can disagree and there is no documented "source of truth" precedence. Increases the chance of stale or conflicting stats depending on deployment config.
-- **R2 — In-memory stats are authoritative for the live UI** (`miningStats` global in `mining.service.ts`). On restart or between intervals the UI can show empty/zeroed state until the next tick.
-- **R3 — Simulation path still wired into the production code path** (`simulateMiningStats`, `generateRandomError`, `Math.random()` in `mining.service.ts`). A misconfigured `USE_REAL_DATA`/`PROMETHEUS_ENABLED` silently serves fake data that looks real.
+- **R1 — Dual ingestion paths** — ✅ **RESOLVED** (Phase 2, P2.2). `METRICS_SOURCE` (default `prometheus`) makes exactly one path authoritative; the other acks but does not overwrite `miningStats`.
+- **R2 — In-memory stats are authoritative for the live UI** (`miningStats` global in `mining.service.ts`). 🟡 Partly mitigated: on a Prometheus error the backend now keeps last-known real stats (P2.1) instead of zeroing. Still in-memory only — a restart shows empty until the next tick. Open.
+- **R3 — Simulation path wired into the production code path** — ✅ **RESOLVED** (Phase 2, P2.1). Fake data is served only when `SIMULATION_MODE=true` (default false); never a silent fallback. Reintroducing a `simulateMiningStats()` fallback is explicitly disallowed.
 
 ### Operability / maintainability
 - **M1 — Very large modules** concentrate risk and are hard to test: `telegram.service.ts` (2369), `database.service.ts` (1595), `mining.service.ts` (1470), `Miners.tsx` (958).
@@ -86,11 +91,11 @@ Ordered by severity. File:line references included.
 
 Low-risk, high-signal. None of these change behavior.
 
-- **C1 — Dead/backup code**: `python-scheduler/backup/` (`scheduler_v1_backup.py`, `scheduler_v2.py`), `bin/backup/`, `docs/archive/`, `.github/workflows/build-and-push-full.yml.disabled`, `CLAUDE_backup_17062026.md`. Move to a single `archive/` or delete.
-- **C2 — Root markdown sprawl**: ~20 historical design notes at repo root (`FIXES_IMPLEMENTED.md`, `SCRYPT_*.md`, `TELEGRAM_*.md`, `ALGORITHM_SEPARATION*.md`, `COMPLETE_ALGORITHM_SEPARATION.md`, etc.). Consolidate under `docs/` so the root shows only README + CLAUDE + PROJECT_STATE.
-- **C3 — README drift**: README points at `docker-compose.dev.yml` and several `docs/*.md` paths that don't exist (`make dev` references a missing compose file). Fix or remove the broken references.
-- **C4 — Duplicate/overlapping deploy scripts**: `quick-deploy.sh`, `build-local.sh`, `deploy-to-pi-registry.sh`, `deploy-optimized.sh`, `pi-quick-update.sh`, `pi-deploy.sh`. Document which is canonical; retire the rest.
-- **C5 — Two metric namespaces** (`miner_*` vs `mining_*`) undocumented — add a short note (or unify) so future contributors don't assume they're the same series.
+- **C1 — Dead/backup code** — ✅ **DONE** (DMI-21, commit `ca45aa7`). Removed `python-scheduler/backup/`, `bin/backup/`, and `.github/workflows/build-and-push-full.yml.disabled` (14 files). `docs/archive/` is retained as the deliberate archive home; gitignored `CLAUDE_backup_*.md` left as-is.
+- **C2 — Root markdown sprawl** — ✅ **DONE** (DMI-23, commit `6f5f1e9`). 8 historical notes `git mv`'d into `docs/archive/`; root tracked `.md` reduced 18 → 10 (canonical + planning).
+- **C3 — README / Makefile drift** — 🟡 **PARTIAL.** Makefile fixed (DMI-22, commit `8ad4279`): targets route through `docker-compose.prod.yml`, broken `dev` target removed, CLAUDE.md note synced. **Still open:** `README.md` line 79 still references `docker-compose.dev.yml`, and **15 of 18 README doc-links 404** (e.g. `docs/OVERVIEW.md`, `CICD_WORKFLOW.md`, `docs/QUICKSTART.md`, `TELEGRAM_SETUP.md`, `CHANGELOG.md`, `CONTRIBUTING.md`). Needs a README link audit + fix/remove.
+- **C4 — Duplicate/overlapping deploy scripts** — ⏳ **OPEN.** Nine `*.sh` at root (`quick-deploy.sh`, `build-local.sh`, `deploy-to-pi-registry.sh`, `deploy-optimized.sh`, `pi-quick-update.sh`, `pi-deploy.sh`, `setup-registry.sh`, `health-check.sh`, `test-miner-connection.sh`). Document the canonical path (`quick-deploy.sh` → local-registry flow; `deploy-optimized.sh` → Docker Hub flow) and retire/label the rest.
+- **C5 — Two metric namespaces** (`miner_*` vs `mining_*`) — ✅ **DONE** (Phase 2, P2.3, commit `0b3ef19`). Documented in CLAUDE.md "Data sources & metrics".
 
 ---
 
@@ -98,20 +103,18 @@ Low-risk, high-signal. None of these change behavior.
 
 Designed so each phase is independently shippable and reversible. Earlier phases unblock later ones.
 
-### Phase P0 — Pi drift backport ⏰ URGENT (do before the next Pi deploy)
-Source: `PI_DRIFT_FINDINGS.md` + branch `backport/pi-local-fixes` (`e5ad63d`). The Pi had ~6 days of **uncommitted** working-tree bug fixes that exist nowhere in version control. A fresh deploy from `main` would silently revert them (duplicate Telegram alerts, broken `MinerOffline`/`MinerNotMining` rules using the non-existent `miner_scrape_success`, a `pyasic_collector` crash path). Verified: backport touches exactly the 7 reported files, the technical claims hold (`miner_scrape_success` is dead `backup/` code; `miner_scrape_status` is the real metric; `load_*config` are sync `def`), and the **unsafe async change was correctly excluded** (no `await load_miners_config` in the branch).
-- **Blocker / decision:** `backport/pi-local-fixes` and the parked `feat/per-miner-history` **overlap on `python-scheduler/main.py`, `backend/Dockerfile`, `backend/src/server.ts`** and take *different* approaches to the same pool/DNS code (backport drops `socket.gethostbyname`; per-miner-history wraps it in `asyncio.to_thread`). Pick ONE canonical version and reconcile before merging either — they will conflict.
-- Review + merge the reconciled backport to `main` so a redeploy can't revert the Pi.
-- Commit `PI_DRIFT_FINDINGS.md` as the record.
-- Deferred: the async `config.py` conversion (the WIP `config.py.new` on the Pi) — finish and test as its own change; do NOT ship the half-done version.
+### Phase P0 — Pi drift backport — ✅ DONE & merged (`7f1d4b6`)
+The ~6 days of uncommitted Pi-side bug fixes (duplicate Telegram alerts, broken `MinerOffline`/`MinerNotMining` rules using the non-existent `miner_scrape_success`, a `pyasic_collector` crash path) were reconciled and merged so a redeploy can no longer revert them. `feat/per-miner-history` was retired (archived to local tag `archive/per-miner-history`); the overlap was resolved in main's favour. `PI_DRIFT_FINDINGS.md` committed as the record (now under `docs/archive/`). Deferred and still open: the async `config.py` conversion (Pi WIP `config.py.new`) — finish + test as its own change.
 
-### Phase 0 — Safety net (prerequisite)
-- Add a minimal test harness: backend (Jest or node:test) with one smoke test that boots the app and hits `/health`; wire `npm test` for real.
-- Add a typecheck/lint CI step (`npm run build` on backend + frontend) so regressions are caught.
+### Phase 0 — Safety net (prerequisite) — ⏳ **NEXT UP** (skipped so far)
+Intended to land before Phases 1–4 but leapfrogged; every slice since has been verified by hand (build + live curl) instead. Worth doing now to make Phase 3 refactors safe.
+- Add a minimal test harness: backend (Jest or node:test) with one smoke test that boots the app and hits `/health`; wire `npm test` for real (today it is a stub — M2).
+- Add a typecheck/CI step (`npm run build` on backend + frontend; `py_compile`/unittest for the scheduler) so regressions are caught.
+- Note: `bin/test_farm_init.py` (14 stdlib unit tests, from DMI-19) is the first real test in the repo — a seed to build CI around.
 - *Goal: make every later change verifiable.*
 
-### Phase 1 — Security hardening (highest value)
-Order: S1 ✅ → S5 ✅ → S2 ✅ → **S3 (next)** → S4.
+### Phase 1 — Security hardening (highest value) — ✅ DONE & merged to `main`
+Order delivered: S1 ✅ → S5 ✅ → S2 ✅ → S3 ✅ → S4 ✅.
 - **S1**: authenticate `/api/internal/metrics` — ✅ DONE (commit `05971be`, verified).
 - **S5**: disable the legacy `X-Telegram-Chat-ID` admin path by default — ✅ DONE (commit `e41fd54`, verified).
 - **S2**: refuse to boot in production with default/unset JWT secrets — ✅ DONE (commit `fe157fa`, verified).
@@ -125,19 +128,25 @@ Order: S1 ✅ → S5 ✅ → S2 ✅ → **S3 (next)** → S4.
 - P2.3 CLAUDE.md namespaces/data-path docs — `0b3ef19`.
 - Verified safe against the live Pi (`.env` takes new defaults; Prometheus holds 22 miner series).
 
-### Phase 3 — Maintainability
-- Decompose the largest modules (`telegram.service.ts`, `database.service.ts`, `mining.service.ts`) along clear seams (command handlers, schema/migrations, stats vs. control). Add unit tests as each seam is extracted.
-- Introduce explicit SQLite schema versioning/migrations (M3).
+### Phase 3 — Maintainability — ⏳ OPEN (not started)
+- Decompose the largest modules (`telegram.service.ts` 2369, `database.service.ts` 1595, `mining.service.ts` 1470) along clear seams (command handlers, schema/migrations, stats vs. control). Add unit tests as each seam is extracted. **Depends on Phase 0** for a safety net.
+- Introduce explicit SQLite schema versioning/migrations (M3). Note: the live DB now also carries a `mac` column added operationally during DMI-20 — fold it into the versioned schema.
 
-### Phase 4 — Cleanup & docs
-- Execute C1–C4: archive dead code, consolidate root markdown into `docs/`, fix README drift, document the canonical deploy script.
+### Phase 4 — Cleanup & docs — 🟡 MOSTLY DONE
+- ✅ C1 dead code (DMI-21), ✅ C2 root markdown (DMI-23), ✅ C5 metric namespaces (P2.3), 🟡 C3 Makefile done / README drift open (DMI-22), ⏳ **C4 canonical deploy script — still to do**.
+
+### Operational stream — subnet-move recovery — ✅ DONE
+Not in the original review (environmental, surfaced 2026-06-20 when the Pi's `eth0` moved `192.168.1.x → 192.168.2.x`).
+- **DMI-19** — universal MAC-keyed `reconcile` mode in `bin/farm_init.py` (matching tiers MAC → IP-enrich → octet+model heuristic; dry-run default; 14 unit tests). Merged `cc53027`.
+- **DMI-20** — live Pi SQLite remap (PK-safe in-place multi-table UPDATE preserving `miner_stats_history`); restored 0 → 19 active miners (~2070 TH/s); added + backfilled the `miners.mac` column so future moves are MAC-recoverable.
 
 ---
 
 ## Implementation steps (for Kimi)
 
-**Next up: Phase P0 — reconcile + merge the Pi-drift backport before the next Pi deploy** (see Phase P0 above; decision needed: `backport/pi-local-fixes` vs `feat/per-miner-history` overlap).
-Completed & merged to main: Phase 1 (S1–S5) and Phase 2 (P2.1–P2.3).
+**Next up: Phase 0 — stand up the test harness + CI** (see Phase 0 above): real `npm test` smoke test on the backend, build/lint gate, scheduler `unittest`. This unblocks the Phase 3 refactors.
+Also queued: **C4** (document the canonical deploy script) and the **C3 remainder** (README link audit — 15/18 links currently 404).
+Completed & merged to main: P0, Phase 1 (S1–S5), Phase 2 (P2.1–P2.3), Phase 4 C1/C2/C5 (+ C3 Makefile), and the DMI-19/20 operational stream.
 
 ---
 
