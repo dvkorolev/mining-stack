@@ -48,16 +48,6 @@ python3 bin/farm_init.py
 deactivate
 ```
 
-### Method 2: Via Docker (if services are running)
-
-```bash
-# Trigger discovery via API
-curl -X POST http://localhost:8000/discover
-
-# Or via backend
-curl -X POST http://localhost:5000/api/mining/discover
-```
-
 **Note**: This takes 3-5 minutes as it scans the entire network.
 
 ## What Happens
@@ -89,7 +79,8 @@ The script creates `etc/miners.yaml`:
 miners:
   - ip: 192.168.1.40
     model: M30S++ VH90 (Stock)
-    alias: EN-M30SppVH90-040
+    alias: M30S++ VH90 (Stock) (00:AA:BB:CC:DD:EE)
+    mac: 00:AA:BB:CC:DD:EE
     owner: EN
     status: active
     credentials:
@@ -100,10 +91,11 @@ miners:
         expected: 106.1
       power:
         expected: 3408.0
-        
+
   - ip: 192.168.1.64
     model: S19 Pro
-    alias: EN-S19Pro-064
+    alias: S19 Pro (00:AA:BB:CC:DD:EF)
+    mac: 00:AA:BB:CC:DD:EF
     owner: EN
     status: active
     credentials:
@@ -120,6 +112,10 @@ miners:
 - **Whatsminer** (M30, M50): admin/admin
 - **Antminer** (S19, S17): root/root
 - **Other miners**: root/root (default)
+
+The `mac` field is optional but strongly recommended. It is the only identifier
+that survives an IP change, and it is used by `reconcile` mode to repair the
+inventory after a network move.
 
 ## Customization
 
@@ -266,6 +262,55 @@ cd /opt/mining-stack
 source venv/bin/activate
 pip install pyasic pyyaml netifaces aiohttp
 ```
+
+## Reconciling After a Network Change
+
+When miners get new IP addresses (new subnet, DHCP lease change, etc.) the
+only stable identifier is the MAC address. Use `reconcile` mode to repair the
+inventory without losing human-assigned names, owners, or credentials.
+
+```bash
+cd /opt/mining-stack
+source venv/bin/activate
+
+# Dry-run: see what would change, write nothing
+python3 bin/farm_init.py reconcile
+
+# Apply the plan
+python3 bin/farm_init.py reconcile --apply
+
+# Also trust tier-3 heuristic matches (same last IP octet + same model)
+python3 bin/farm_init.py reconcile --apply --accept-heuristic
+```
+
+For testing or replay, feed a JSON file of already-discovered miners instead of
+scanning the network:
+
+```bash
+python3 bin/farm_init.py reconcile \
+  --inventory /opt/mining-stack/etc/miners.yaml \
+  --live-from /tmp/live_miners.json
+```
+
+`live_miners.json` format:
+
+```json
+[
+  {"ip": "192.168.2.65", "mac": "cc:0c:0c:00:02:17", "model": "M50"},
+  {"ip": "192.168.2.98", "mac": "c6:..", "model": "M50"}
+]
+```
+
+Reconcile matching order:
+
+1. **MAC exact** — live MAC matches inventory MAC → update IP, keep identity.
+2. **IP exact** — live IP matches inventory IP; if inventory had no MAC, stamp it.
+3. **Heuristic** — same last IP octet and same model → suggestion only, unless
+   `--accept-heuristic` is used.
+
+Unmatched live miners are appended (`new`), unmatched inventory entries are kept
+as-is (`missing`), and live miners without a MAC that cannot be matched are
+flagged as `unidentified`.
 
 ## Re-Discovery
 
