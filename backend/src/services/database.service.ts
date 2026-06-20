@@ -14,6 +14,7 @@ import path from 'path';
 import fs from 'fs';
 import { logger } from '../utils/logger';
 import { config } from '../config/config';
+import { runMigrations } from '../db/migrations';
 
 export interface StatsRecord {
   id?: number;
@@ -55,6 +56,7 @@ export interface MinerRecord {
   use_https?: number; // 0 or 1 (SQLite boolean)
   static_power?: number;
   api_port?: number;
+  mac?: string | null;
   created_at?: number;
   updated_at?: number;
 }
@@ -424,6 +426,8 @@ class DatabaseService {
         logger.warn('Could not add pool_account_id column:', error.message);
       }
     }
+
+    runMigrations(this.db);
 
     // Initialize default pool APIs
     this.initializeDefaultPoolApis();
