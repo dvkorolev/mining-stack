@@ -102,3 +102,36 @@ curl http://localhost:5001/v2/_catalog | jq .
 - `quick-deploy.sh` - Full workflow
 
 See [REGISTRY_DEPLOYMENT.md](REGISTRY_DEPLOYMENT.md) for detailed documentation.
+
+## Deployment scripts (reference)
+
+There are two supported deployment flows. Use the **canonical entrypoint** for each;
+the rest are helpers invoked by them or one-off utilities.
+
+### Flow A — Local registry (default, this guide)
+Build ARM64 images on the Mac, push to a local registry, pull on the Pi.
+
+| Script | Role |
+|---|---|
+| **`quick-deploy.sh`** | **Canonical entrypoint** — full workflow (calls `build-local.sh` + `deploy-to-pi-registry.sh`). |
+| `build-local.sh` | Build ARM64 images and push to the local registry (with an arch-verification guard). |
+| `deploy-to-pi-registry.sh` | Configure the Pi to pull from the Mac's registry and restart services. |
+| `setup-registry.sh` | One-time: register the insecure registry with Docker Desktop. |
+
+### Flow B — Docker Hub
+Push images to Docker Hub; the Pi pulls and restarts.
+
+| Script | Role |
+|---|---|
+| **`deploy-optimized.sh`** | **Canonical entrypoint** — build + push to Docker Hub (user `dvkorolev`). |
+| `pi-quick-update.sh` | Run on/against the Pi to pull updated images and restart. |
+| `pi-deploy.sh` | Older full Pi deploy helper (superseded by the flows above). |
+
+### Utilities (not deployment)
+| Script | Role |
+|---|---|
+| `health-check.sh` | Probe the running stack's service health. |
+| `test-miner-connection.sh` | Diagnose connectivity to a miner. |
+
+> New to the repo? Use **`./quick-deploy.sh`** (Flow A). Do not run deploy scripts against
+> the Pi without confirming SSH/registry access first.
