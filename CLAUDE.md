@@ -189,7 +189,8 @@ make rebuild-frontend
 ```
 
 Notes:
-- `make dev` references `docker-compose.dev.yml`, but that file is not present; do not assume it works
+- targets run against `docker-compose.prod.yml` (via the `COMPOSE_FILES` var); add the logging overlay with `make up COMPOSE_FILES="-f docker-compose.prod.yml -f docker-compose.logging.yml"`
+- there is no `dev` target / `docker-compose.dev.yml`; use the per-service dev commands above for local work
 - `make clean` destroys volumes and DB state
 
 ## Deployment

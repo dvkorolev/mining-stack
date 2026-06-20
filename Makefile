@@ -1,53 +1,55 @@
-.PHONY: build up down restart rebuild logs clean dev prod
+.PHONY: build up down restart rebuild rebuild-backend rebuild-frontend logs clean prod quick
+
+# The stack is defined by docker-compose.prod.yml. Add the logging overlay
+# (loki/promtail) by overriding COMPOSE_FILES, e.g.:
+#   make up COMPOSE_FILES="-f docker-compose.prod.yml -f docker-compose.logging.yml"
+COMPOSE_FILES ?= -f docker-compose.prod.yml
+COMPOSE = docker-compose $(COMPOSE_FILES)
 
 # Build images with BuildKit
 build:
-	DOCKER_BUILDKIT=1 docker-compose build
+	DOCKER_BUILDKIT=1 $(COMPOSE) build
 
 # Start services without rebuilding
 up:
-	docker-compose up -d
+	$(COMPOSE) up -d
 
 # Stop services
 down:
-	docker-compose down
+	$(COMPOSE) down
 
 # Restart services without rebuilding
 restart:
-	docker-compose restart
+	$(COMPOSE) restart
 
 # Rebuild and restart specific service
 rebuild-backend:
-	DOCKER_BUILDKIT=1 docker-compose build backend
-	docker-compose up -d backend
+	DOCKER_BUILDKIT=1 $(COMPOSE) build backend
+	$(COMPOSE) up -d backend
 
 rebuild-frontend:
-	DOCKER_BUILDKIT=1 docker-compose build frontend
-	docker-compose up -d frontend
+	DOCKER_BUILDKIT=1 $(COMPOSE) build frontend
+	$(COMPOSE) up -d frontend
 
 # Full rebuild (use sparingly)
 rebuild:
-	DOCKER_BUILDKIT=1 docker-compose build
-	docker-compose up -d
+	DOCKER_BUILDKIT=1 $(COMPOSE) build
+	$(COMPOSE) up -d
 
 # View logs
 logs:
-	docker-compose logs -f
+	$(COMPOSE) logs -f
 
 # Clean up (removes containers, networks, volumes)
 clean:
-	docker-compose down -v
+	$(COMPOSE) down -v
 	docker system prune -f
-
-# Development mode
-dev:
-	docker-compose -f docker-compose.dev.yml up
 
 # Production mode
 prod:
-	DOCKER_BUILDKIT=1 docker-compose build
-	docker-compose up -d
+	DOCKER_BUILDKIT=1 $(COMPOSE) build
+	$(COMPOSE) up -d
 
 # Quick restart without rebuild
 quick:
-	docker-compose restart
+	$(COMPOSE) restart
