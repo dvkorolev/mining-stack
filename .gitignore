@@ -68,3 +68,7 @@ Thumbs.db
 scripts/extract-miner-pool-usernames.py
 scripts/fix-all-miner-names.sh
 scripts/fix-miner-name-53.sh
+
+# Claude <-> Kimi delegation handoff scratch (task/status/pid files; may contain
+# hosts/tokens from briefs — ephemeral RAM, never committed)
+.claude/scratch/
