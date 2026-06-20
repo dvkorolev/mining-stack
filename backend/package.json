@@ -7,7 +7,7 @@
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run build && node --test test/",
     "migrate": "node dist/scripts/migrate-yaml-to-db.js",
     "migrate:dev": "ts-node src/scripts/migrate-yaml-to-db.ts",
     "migrate:alert-rules": "node dist/scripts/migrate-alert-rules.js",
