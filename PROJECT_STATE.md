@@ -7,10 +7,10 @@ Date: 2026-06-17 (original review) · **Last refreshed: 2026-06-20**
 Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
 
-> **Status at a glance (main `c396230`)**
-> - ✅ **Done & merged:** P0 (Pi-drift backport), Phase 1 (security S1–S5), Phase 2 (data-path clarity), most of Phase 4 cleanup (C1/C2/C5; C3 partial).
+> **Status at a glance (main `64a5af8`)**
+> - ✅ **Done & merged:** P0 (Pi-drift backport), **Phase 0** (test harness + CI), Phase 1 (security S1–S5), Phase 2 (data-path clarity), **Phase 4 cleanup complete (C1–C5)**.
 > - ✅ **Operational:** subnet-move recovery — DMI-19 (MAC-keyed reconcile tool) + DMI-20 (live Pi DB remap).
-> - ⏳ **Open / next up:** **Phase 0** (test harness + CI — the skipped prerequisite), **Phase 3** (decompose large modules + SQLite migrations), **C4** (canonical deploy script), **C3 remainder** (README link drift).
+> - ⏳ **Open / next up:** **Phase 3** (decompose large modules + SQLite schema versioning) — the remaining major workstream.
 
 ---
 
@@ -93,8 +93,8 @@ Low-risk, high-signal. None of these change behavior.
 
 - **C1 — Dead/backup code** — ✅ **DONE** (DMI-21, commit `ca45aa7`). Removed `python-scheduler/backup/`, `bin/backup/`, and `.github/workflows/build-and-push-full.yml.disabled` (14 files). `docs/archive/` is retained as the deliberate archive home; gitignored `CLAUDE_backup_*.md` left as-is.
 - **C2 — Root markdown sprawl** — ✅ **DONE** (DMI-23, commit `6f5f1e9`). 8 historical notes `git mv`'d into `docs/archive/`; root tracked `.md` reduced 18 → 10 (canonical + planning).
-- **C3 — README / Makefile drift** — 🟡 **PARTIAL.** Makefile fixed (DMI-22, commit `8ad4279`): targets route through `docker-compose.prod.yml`, broken `dev` target removed, CLAUDE.md note synced. **Still open:** `README.md` line 79 still references `docker-compose.dev.yml`, and **15 of 18 README doc-links 404** (e.g. `docs/OVERVIEW.md`, `CICD_WORKFLOW.md`, `docs/QUICKSTART.md`, `TELEGRAM_SETUP.md`, `CHANGELOG.md`, `CONTRIBUTING.md`). Needs a README link audit + fix/remove.
-- **C4 — Duplicate/overlapping deploy scripts** — ⏳ **OPEN.** Nine `*.sh` at root (`quick-deploy.sh`, `build-local.sh`, `deploy-to-pi-registry.sh`, `deploy-optimized.sh`, `pi-quick-update.sh`, `pi-deploy.sh`, `setup-registry.sh`, `health-check.sh`, `test-miner-connection.sh`). Document the canonical path (`quick-deploy.sh` → local-registry flow; `deploy-optimized.sh` → Docker Hub flow) and retire/label the rest.
+- **C3 — README / Makefile drift** — ✅ **DONE.** Makefile fixed (DMI-22, `8ad4279`); README link drift fixed (DMI-26, `1dc72a1`): all 23 relative links now resolve (was 3/18), two duplicate Documentation sections merged, dead `docker-compose.dev.yml` quickstart → `make up`, MIT `LICENSE` added.
+- **C4 — Duplicate/overlapping deploy scripts** — ✅ **DONE** (DMI-27, `da71063`). `DEPLOYMENT.md` now has a "Deployment scripts (reference)" section mapping all 9 `*.sh` to two flows, marking `quick-deploy.sh` (local-registry) and `deploy-optimized.sh` (Docker Hub) as the canonical entrypoints.
 - **C5 — Two metric namespaces** (`miner_*` vs `mining_*`) — ✅ **DONE** (Phase 2, P2.3, commit `0b3ef19`). Documented in CLAUDE.md "Data sources & metrics".
 
 ---
@@ -106,12 +106,11 @@ Designed so each phase is independently shippable and reversible. Earlier phases
 ### Phase P0 — Pi drift backport — ✅ DONE & merged (`7f1d4b6`)
 The ~6 days of uncommitted Pi-side bug fixes (duplicate Telegram alerts, broken `MinerOffline`/`MinerNotMining` rules using the non-existent `miner_scrape_success`, a `pyasic_collector` crash path) were reconciled and merged so a redeploy can no longer revert them. `feat/per-miner-history` was retired (archived to local tag `archive/per-miner-history`); the overlap was resolved in main's favour. `PI_DRIFT_FINDINGS.md` committed as the record (now under `docs/archive/`). Deferred and still open: the async `config.py` conversion (Pi WIP `config.py.new`) — finish + test as its own change.
 
-### Phase 0 — Safety net (prerequisite) — ⏳ **NEXT UP** (skipped so far)
-Intended to land before Phases 1–4 but leapfrogged; every slice since has been verified by hand (build + live curl) instead. Worth doing now to make Phase 3 refactors safe.
-- Add a minimal test harness: backend (Jest or node:test) with one smoke test that boots the app and hits `/health`; wire `npm test` for real (today it is a stub — M2).
-- Add a typecheck/CI step (`npm run build` on backend + frontend; `py_compile`/unittest for the scheduler) so regressions are caught.
-- Note: `bin/test_farm_init.py` (14 stdlib unit tests, from DMI-19) is the first real test in the repo — a seed to build CI around.
-- *Goal: make every later change verifiable.*
+### Phase 0 — Safety net (prerequisite) — ✅ DONE & merged (DMI-25, `3f4ddb1`)
+Landed late (after Phases 1/2/4) but now in place, so Phase 3 refactors are verifiable.
+- `backend/test/smoke.test.js` — `node:test` smoke test that boots `dist/server.js` (safe self-contained env, temp `DATA_DIR`) and asserts `GET /health` → 200; `npm test` is now real (`npm run build && node --test test/`).
+- `.github/workflows/ci.yml` — gates backend (build + smoke test), frontend (build), and scheduler (`py_compile main.py` + `python bin/test_farm_init.py`) on PR + push to `main`.
+- *Goal achieved: every later change is now verifiable by CI, not just by hand.*
 
 ### Phase 1 — Security hardening (highest value) — ✅ DONE & merged to `main`
 Order delivered: S1 ✅ → S5 ✅ → S2 ✅ → S3 ✅ → S4 ✅.
@@ -132,8 +131,8 @@ Order delivered: S1 ✅ → S5 ✅ → S2 ✅ → S3 ✅ → S4 ✅.
 - Decompose the largest modules (`telegram.service.ts` 2369, `database.service.ts` 1595, `mining.service.ts` 1470) along clear seams (command handlers, schema/migrations, stats vs. control). Add unit tests as each seam is extracted. **Depends on Phase 0** for a safety net.
 - Introduce explicit SQLite schema versioning/migrations (M3). Note: the live DB now also carries a `mac` column added operationally during DMI-20 — fold it into the versioned schema.
 
-### Phase 4 — Cleanup & docs — 🟡 MOSTLY DONE
-- ✅ C1 dead code (DMI-21), ✅ C2 root markdown (DMI-23), ✅ C5 metric namespaces (P2.3), 🟡 C3 Makefile done / README drift open (DMI-22), ⏳ **C4 canonical deploy script — still to do**.
+### Phase 4 — Cleanup & docs — ✅ DONE (C1–C5 complete)
+- ✅ C1 dead code (DMI-21), ✅ C2 root markdown (DMI-23), ✅ C3 Makefile + README drift / MIT LICENSE (DMI-22/26), ✅ C4 canonical deploy script (DMI-27), ✅ C5 metric namespaces (P2.3).
 
 ### Operational stream — subnet-move recovery — ✅ DONE
 Not in the original review (environmental, surfaced 2026-06-20 when the Pi's `eth0` moved `192.168.1.x → 192.168.2.x`).
@@ -144,9 +143,8 @@ Not in the original review (environmental, surfaced 2026-06-20 when the Pi's `et
 
 ## Implementation steps (for Kimi)
 
-**Next up: Phase 0 — stand up the test harness + CI** (see Phase 0 above): real `npm test` smoke test on the backend, build/lint gate, scheduler `unittest`. This unblocks the Phase 3 refactors.
-Also queued: **C4** (document the canonical deploy script) and the **C3 remainder** (README link audit — 15/18 links currently 404).
-Completed & merged to main: P0, Phase 1 (S1–S5), Phase 2 (P2.1–P2.3), Phase 4 C1/C2/C5 (+ C3 Makefile), and the DMI-19/20 operational stream.
+**Next up: Phase 3 — maintainability** (see Phase 3 above): decompose the largest backend services along clear seams (now safe — Phase 0 CI is in place) and introduce explicit SQLite schema versioning (incl. the operationally-added `mac` column). This is a multi-session workstream; split into independently shippable slices, each green on CI.
+Completed & merged to main: P0, **Phase 0** (DMI-25), Phase 1 (S1–S5), Phase 2 (P2.1–P2.3), **Phase 4 (C1–C5, DMI-21/22/23/26/27)**, and the DMI-19/20 operational stream.
 
 ---
 
