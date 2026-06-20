@@ -1,8 +1,7 @@
-# Build argument for platform flexibility
-ARG PLATFORM=linux/amd64
-
 # ========== BUILDER STAGE ==========
-FROM --platform=${PLATFORM} node:18.18.2-alpine AS builder
+# No explicit --platform: let the builder's target platform (buildx --platform,
+# or the host) drive the base image so native modules match the runtime arch.
+FROM node:18.18.2-alpine AS builder
 
 WORKDIR /app
 
@@ -22,7 +21,7 @@ COPY . .
 RUN npm run build
 
 # ========== DEPS STAGE - Production dependencies only ==========
-FROM --platform=${PLATFORM} node:18.18.2-alpine AS deps
+FROM node:18.18.2-alpine AS deps
 
 WORKDIR /app
 
@@ -37,7 +36,7 @@ RUN npm ci --only=production && \
     npm cache clean --force
 
 # ========== PRODUCTION STAGE ==========
-FROM --platform=${PLATFORM} node:18.18.2-alpine AS production
+FROM node:18.18.2-alpine AS production
 
 WORKDIR /app
 
