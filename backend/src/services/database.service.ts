@@ -21,6 +21,7 @@ import { MinerStatsHistoryRepository } from '../db/repositories/miner-stats-hist
 import { MinerRepository } from '../db/repositories/miner.repository';
 import { AlertRuleRepository } from '../db/repositories/alert-rule.repository';
 import { UserRepository } from '../db/repositories/user.repository';
+import { PoolRepository } from '../db/repositories/pool.repository';
 
 export interface StatsRecord {
   id?: number;
@@ -168,6 +169,7 @@ class DatabaseService {
   private miners: MinerRepository;
   private alertRules: AlertRuleRepository;
   private users: UserRepository;
+  private pools: PoolRepository;
 
   constructor() {
     // Ensure database directory exists
@@ -189,6 +191,7 @@ class DatabaseService {
     this.miners = new MinerRepository(this.db);
     this.alertRules = new AlertRuleRepository(this.db);
     this.users = new UserRepository(this.db);
+    this.pools = new PoolRepository(this.db);
 
     logger.info(`Database initialized at ${this.dbPath}`);
   }
@@ -708,44 +711,30 @@ class DatabaseService {
     return this.alertRules.getAlertRuleHistory(ruleId, limit);
   }
 
-  // ================== POOL API MONITORING METHODS ==================
+  // --- Pool APIs + accounts (delegated to PoolRepository) ---
 
   getAllPoolApis(): PoolApiRecord[] {
-    return this.db.prepare('SELECT * FROM pool_apis').all() as PoolApiRecord[];
+    return this.pools.getAllPoolApis();
   }
 
   insertPoolApi(poolApi: Omit<PoolApiRecord, 'id'>): number {
-    const stmt = this.db.prepare('INSERT INTO pool_apis (name, api_base_url) VALUES (?, ?)');
-    const result = stmt.run(poolApi.name, poolApi.api_base_url);
-    return result.lastInsertRowid as number;
+    return this.pools.insertPoolApi(poolApi);
   }
 
   updatePoolApi(id: number, poolApi: Omit<PoolApiRecord, 'id'>): void {
-    this.db.prepare('UPDATE pool_apis SET name = ?, api_base_url = ? WHERE id = ?').run(poolApi.name, poolApi.api_base_url, id);
+    this.pools.updatePoolApi(id, poolApi);
   }
 
   deletePoolApi(id: number): void {
-    this.db.prepare('DELETE FROM pool_apis WHERE id = ?').run(id);
+    this.pools.deletePoolApi(id);
   }
 
   getAllPoolAccounts(): (PoolAccountRecord & { pool_name: string })[] {
-    const stmt = this.db.prepare(`
-      SELECT pa.*, p.name as pool_name
-      FROM pool_accounts pa
-      JOIN pool_apis p ON pa.pool_api_id = p.id
-    `);
-    return stmt.all() as (PoolAccountRecord & { pool_name: string })[];
+    return this.pools.getAllPoolAccounts();
   }
 
   getPoolAccountById(id: number): (PoolAccountRecord & { pool_name: string }) | null {
-    const stmt = this.db.prepare(`
-      SELECT pa.*, p.name as pool_name
-      FROM pool_accounts pa
-      JOIN pool_apis p ON pa.pool_api_id = p.id
-      WHERE pa.id = ?
-    `);
-    const result = stmt.get(id) as (PoolAccountRecord & { pool_name: string }) | undefined;
-    return result || null;
+    return this.pools.getPoolAccountById(id);
   }
 
   // --- Users + audit log (delegated to UserRepository) ---
@@ -775,46 +764,15 @@ class DatabaseService {
   }
 
   insertPoolAccount(account: Omit<PoolAccountRecord, 'id'>): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO pool_accounts (pool_api_id, account_name, usernames, api_key, coin, notes, created_at, updated_at, owner_user_id)
-      VALUES (?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'), ?)
-    `);
-    const result = stmt.run(
-      account.pool_api_id,
-      account.account_name,
-      account.usernames || null,
-      account.api_key,
-      account.coin || 'btc',
-      account.notes || null
-    );
-    return result.lastInsertRowid as number;
+    return this.pools.insertPoolAccount(account);
   }
 
   updatePoolAccount(id: number, account: Partial<Omit<PoolAccountRecord, 'id'>>): void {
-    const stmt = this.db.prepare(`
-      UPDATE pool_accounts 
-      SET pool_api_id = COALESCE(?, pool_api_id),
-          account_name = COALESCE(?, account_name),
-          usernames = COALESCE(?, usernames),
-          api_key = COALESCE(?, api_key),
-          coin = COALESCE(?, coin),
-          notes = COALESCE(?, notes),
-          updated_at = strftime('%s', 'now')
-      WHERE id = ?
-    `);
-    stmt.run(
-      account.pool_api_id !== undefined ? account.pool_api_id : null,
-      account.account_name !== undefined ? account.account_name : null,
-      account.usernames !== undefined ? account.usernames : null,
-      account.api_key !== undefined ? account.api_key : null,
-      account.coin !== undefined ? account.coin : null,
-      account.notes !== undefined ? account.notes : null,
-      id
-    );
+    this.pools.updatePoolAccount(id, account);
   }
 
   deletePoolAccount(id: number): void {
-    this.db.prepare('DELETE FROM pool_accounts WHERE id = ?').run(id);
+    this.pools.deletePoolAccount(id);
   }
 
   /**
