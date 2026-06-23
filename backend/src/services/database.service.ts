@@ -20,6 +20,7 @@ import { StatsRepository } from '../db/repositories/stats.repository';
 import { MinerStatsHistoryRepository } from '../db/repositories/miner-stats-history.repository';
 import { MinerRepository } from '../db/repositories/miner.repository';
 import { AlertRuleRepository } from '../db/repositories/alert-rule.repository';
+import { UserRepository } from '../db/repositories/user.repository';
 
 export interface StatsRecord {
   id?: number;
@@ -166,6 +167,7 @@ class DatabaseService {
   private minerStatsHistory: MinerStatsHistoryRepository;
   private miners: MinerRepository;
   private alertRules: AlertRuleRepository;
+  private users: UserRepository;
 
   constructor() {
     // Ensure database directory exists
@@ -186,6 +188,7 @@ class DatabaseService {
     this.minerStatsHistory = new MinerStatsHistoryRepository(this.db);
     this.miners = new MinerRepository(this.db);
     this.alertRules = new AlertRuleRepository(this.db);
+    this.users = new UserRepository(this.db);
 
     logger.info(`Database initialized at ${this.dbPath}`);
   }
@@ -745,107 +748,30 @@ class DatabaseService {
     return result || null;
   }
 
-  // ==================== USER MANAGEMENT ====================
+  // --- Users + audit log (delegated to UserRepository) ---
 
   getUserByChatId(chatId: string): UserRecord | null {
-    const stmt = this.db.prepare('SELECT * FROM users WHERE telegram_chat_id = ?');
-    const result = stmt.get(chatId) as UserRecord | undefined;
-    return result || null;
+    return this.users.getUserByChatId(chatId);
   }
 
   getUserById(id: number): UserRecord | null {
-    const stmt = this.db.prepare('SELECT * FROM users WHERE id = ?');
-    const result = stmt.get(id) as UserRecord | undefined;
-    return result || null;
+    return this.users.getUserById(id);
   }
 
   upsertUser(user: UserRecord): number {
-    if (user.id) {
-      const stmt = this.db.prepare(`
-        UPDATE users
-        SET telegram_chat_id = ?,
-            display_name = ?,
-            role = ?,
-            status = ?,
-            metadata = ?,
-            updated_at = strftime('%s','now'),
-            last_login_at = COALESCE(?, last_login_at)
-        WHERE id = ?
-      `);
-      stmt.run(
-        user.telegram_chat_id,
-        user.display_name || null,
-        user.role,
-        user.status || 'active',
-        user.metadata || null,
-        user.last_login_at || null,
-        user.id
-      );
-      return user.id;
-    }
-
-    const insert = this.db.prepare(`
-      INSERT INTO users (
-        telegram_chat_id, display_name, role, status, metadata, created_at, updated_at, last_login_at
-      ) VALUES (?, ?, ?, ?, ?, strftime('%s','now'), strftime('%s','now'), ?)
-    `);
-
-    const result = insert.run(
-      user.telegram_chat_id,
-      user.display_name || null,
-      user.role,
-      user.status || 'active',
-      user.metadata || null,
-      user.last_login_at || null
-    );
-
-    return result.lastInsertRowid as number;
+    return this.users.upsertUser(user);
   }
 
   getOrCreateUserByChatId(chatId: string, role: 'admin' | 'user' = 'user'): UserRecord {
-    let existing = this.getUserByChatId(chatId);
-    if (existing) {
-      return existing;
-    }
-
-    const id = this.upsertUser({ telegram_chat_id: chatId, role });
-    return this.getUserById(id)!;
+    return this.users.getOrCreateUserByChatId(chatId, role);
   }
 
   updateUserLastLogin(userId: number): void {
-    const stmt = this.db.prepare(`
-      UPDATE users
-      SET last_login_at = strftime('%s','now'),
-          updated_at = strftime('%s','now')
-      WHERE id = ?
-    `);
-    stmt.run(userId);
+    this.users.updateUserLastLogin(userId);
   }
 
-  // ==================== AUDIT LOGGING ====================
-
   insertAuditLog(entry: AuditLogRecord): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO audit_logs (
-        timestamp, user_id, action, resource_type, resource_id,
-        details, result, ip_address, user_agent
-      ) VALUES (
-        COALESCE(?, strftime('%s','now')),
-        ?, ?, ?, ?, ?, ?, ?, ?
-      )
-    `);
-
-    stmt.run(
-      entry.timestamp || null,
-      entry.user_id || null,
-      entry.action,
-      entry.resource_type || null,
-      entry.resource_id || null,
-      entry.details || null,
-      entry.result || 'success',
-      entry.ip_address || null,
-      entry.user_agent || null
-    );
+    this.users.insertAuditLog(entry);
   }
 
   insertPoolAccount(account: Omit<PoolAccountRecord, 'id'>): number {
