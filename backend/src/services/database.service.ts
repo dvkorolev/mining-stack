@@ -17,6 +17,7 @@ import { config } from '../config/config';
 import { runMigrations } from '../db/migrations';
 import { SettingsRepository } from '../db/repositories/settings.repository';
 import { StatsRepository } from '../db/repositories/stats.repository';
+import { MinerStatsHistoryRepository } from '../db/repositories/miner-stats-history.repository';
 
 export interface StatsRecord {
   id?: number;
@@ -160,6 +161,7 @@ class DatabaseService {
   // Per-domain repositories (facade-over-repositories decomposition, Phase 3.2)
   private settings: SettingsRepository;
   private stats: StatsRepository;
+  private minerStatsHistory: MinerStatsHistoryRepository;
 
   constructor() {
     // Ensure database directory exists
@@ -177,6 +179,7 @@ class DatabaseService {
     // Instantiate repositories after the schema is ready; they share this.db
     this.settings = new SettingsRepository(this.db);
     this.stats = new StatsRepository(this.db);
+    this.minerStatsHistory = new MinerStatsHistoryRepository(this.db);
 
     logger.info(`Database initialized at ${this.dbPath}`);
   }
@@ -785,70 +788,18 @@ class DatabaseService {
     return this.stats.cleanupInvalidStats(maxHashrate);
   }
 
-  // ==================== MINER STATS HISTORY (30-day retention) ====================
+  // --- Miner stats history (delegated to MinerStatsHistoryRepository) ---
 
-  /**
-   * Insert a miner stats history record
-   */
   insertMinerStatsHistory(record: Omit<MinerStatsHistoryRecord, 'id'>): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO miner_stats_history (miner_ip, timestamp, hashrate, temperature, fan_speed, power_usage, rejection_rate, uptime)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    try {
-      stmt.run(
-        record.miner_ip,
-        record.timestamp,
-        record.hashrate,
-        record.temperature,
-        record.fan_speed,
-        record.power_usage,
-        record.rejection_rate,
-        record.uptime || 0
-      );
-    } catch (error) {
-      logger.error(`Error inserting miner stats history for ${record.miner_ip}:`, error);
-    }
+    this.minerStatsHistory.insertMinerStatsHistory(record);
   }
 
-  /**
-   * Get miner stats history for a specific miner
-   * @param minerIp Miner IP address
-   * @param startTime Start timestamp (ms)
-   * @param endTime End timestamp (ms)
-   */
   getMinerStatsHistory(minerIp: string, startTime: number, endTime: number): MinerStatsHistoryRecord[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM miner_stats_history
-      WHERE miner_ip = ? AND timestamp >= ? AND timestamp <= ?
-      ORDER BY timestamp ASC
-    `);
-
-    return stmt.all(minerIp, startTime, endTime) as MinerStatsHistoryRecord[];
+    return this.minerStatsHistory.getMinerStatsHistory(minerIp, startTime, endTime);
   }
 
-  /**
-   * Clean up old miner stats history (keep last 30 days)
-   * Since we have Grafana/Prometheus for long-term data
-   */
   cleanupOldMinerStatsHistory(): number {
-    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-
-    const stmt = this.db.prepare(`
-      DELETE FROM miner_stats_history WHERE timestamp < ?
-    `);
-
-    try {
-      const result = stmt.run(thirtyDaysAgo);
-      if (result.changes > 0) {
-        logger.info(`Cleaned up ${result.changes} old miner stats history records (>30 days)`);
-      }
-      return result.changes;
-    } catch (error) {
-      logger.error('Error cleaning up miner stats history:', error);
-      return 0;
-    }
+    return this.minerStatsHistory.cleanupOldMinerStatsHistory();
   }
 
   // ==================== ALERT RULES MANAGEMENT ====================
