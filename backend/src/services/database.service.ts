@@ -15,6 +15,7 @@ import fs from 'fs';
 import { logger } from '../utils/logger';
 import { config } from '../config/config';
 import { runMigrations } from '../db/migrations';
+import { SettingsRepository } from '../db/repositories/settings.repository';
 
 export interface StatsRecord {
   id?: number;
@@ -155,6 +156,9 @@ class DatabaseService {
   private db: Database.Database;
   private dbPath: string;
 
+  // Per-domain repositories (facade-over-repositories decomposition, Phase 3.2)
+  private settings: SettingsRepository;
+
   constructor() {
     // Ensure database directory exists
     const dbDir = path.join(config.paths.data || '/opt/mining-stack/data');
@@ -167,6 +171,10 @@ class DatabaseService {
     this.db.pragma('journal_mode = WAL'); // Better performance for concurrent access
     
     this.initializeDatabase();
+
+    // Instantiate repositories after the schema is ready; they share this.db
+    this.settings = new SettingsRepository(this.db);
+
     logger.info(`Database initialized at ${this.dbPath}`);
   }
 
@@ -714,64 +722,22 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Get a setting value
-   */
+  // --- Settings (delegated to SettingsRepository) ---
+
   getSetting(key: string): string | null {
-    const stmt = this.db.prepare('SELECT value FROM settings WHERE key = ?');
-    const result = stmt.get(key) as { value: string } | undefined;
-    return result ? result.value : null;
+    return this.settings.getSetting(key);
   }
 
-  /**
-   * Set a setting value
-   */
   setSetting(key: string, value: string): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO settings (key, value, updated_at) 
-      VALUES (?, ?, strftime('%s', 'now'))
-      ON CONFLICT(key) DO UPDATE SET 
-        value = excluded.value,
-        updated_at = strftime('%s', 'now')
-    `);
-    
-    try {
-      stmt.run(key, value);
-      logger.info(`Setting updated: ${key}`);
-    } catch (error) {
-      logger.error(`Error updating setting ${key}:`, error);
-      throw error;
-    }
+    this.settings.setSetting(key, value);
   }
 
-  /**
-   * Delete a setting
-   */
   deleteSetting(key: string): void {
-    const stmt = this.db.prepare('DELETE FROM settings WHERE key = ?');
-    
-    try {
-      stmt.run(key);
-      logger.info(`Setting deleted: ${key}`);
-    } catch (error) {
-      logger.error(`Error deleting setting ${key}:`, error);
-      throw error;
-    }
+    this.settings.deleteSetting(key);
   }
 
-  /**
-   * Get all settings
-   */
   getAllSettings(): Record<string, string> {
-    const stmt = this.db.prepare('SELECT key, value FROM settings');
-    const rows = stmt.all() as Array<{ key: string; value: string }>;
-    
-    const settings: Record<string, string> = {};
-    rows.forEach(row => {
-      settings[row.key] = row.value;
-    });
-    
-    return settings;
+    return this.settings.getAllSettings();
   }
 
   /**
