@@ -15,6 +15,13 @@ import fs from 'fs';
 import { logger } from '../utils/logger';
 import { config } from '../config/config';
 import { runMigrations } from '../db/migrations';
+import { SettingsRepository } from '../db/repositories/settings.repository';
+import { StatsRepository } from '../db/repositories/stats.repository';
+import { MinerStatsHistoryRepository } from '../db/repositories/miner-stats-history.repository';
+import { MinerRepository } from '../db/repositories/miner.repository';
+import { AlertRuleRepository } from '../db/repositories/alert-rule.repository';
+import { UserRepository } from '../db/repositories/user.repository';
+import { PoolRepository } from '../db/repositories/pool.repository';
 
 export interface StatsRecord {
   id?: number;
@@ -155,6 +162,15 @@ class DatabaseService {
   private db: Database.Database;
   private dbPath: string;
 
+  // Per-domain repositories (facade-over-repositories decomposition, Phase 3.2)
+  private settings: SettingsRepository;
+  private stats: StatsRepository;
+  private minerStatsHistory: MinerStatsHistoryRepository;
+  private miners: MinerRepository;
+  private alertRules: AlertRuleRepository;
+  private users: UserRepository;
+  private pools: PoolRepository;
+
   constructor() {
     // Ensure database directory exists
     const dbDir = path.join(config.paths.data || '/opt/mining-stack/data');
@@ -167,6 +183,16 @@ class DatabaseService {
     this.db.pragma('journal_mode = WAL'); // Better performance for concurrent access
     
     this.initializeDatabase();
+
+    // Instantiate repositories after the schema is ready; they share this.db
+    this.settings = new SettingsRepository(this.db);
+    this.stats = new StatsRepository(this.db);
+    this.minerStatsHistory = new MinerStatsHistoryRepository(this.db);
+    this.miners = new MinerRepository(this.db);
+    this.alertRules = new AlertRuleRepository(this.db);
+    this.users = new UserRepository(this.db);
+    this.pools = new PoolRepository(this.db);
+
     logger.info(`Database initialized at ${this.dbPath}`);
   }
 
@@ -452,217 +478,42 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Insert raw stats record
-   */
+  // --- Time-series stats (delegated to StatsRepository) ---
+
   insertStats(stats: StatsRecord): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO stats_raw (
-        timestamp, totalHashrate, averageHashrate24h, activeMiners, 
-        totalMiners, totalMined, avgTemperature, avgPower, rejectionRate
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    try {
-      stmt.run(
-        stats.timestamp,
-        stats.totalHashrate,
-        stats.averageHashrate24h,
-        stats.activeMiners,
-        stats.totalMiners,
-        stats.totalMined,
-        stats.avgTemperature,
-        stats.avgPower,
-        stats.rejectionRate
-      );
-    } catch (error) {
-      logger.error('Error inserting stats:', error);
-      throw error;
-    }
+    this.stats.insertStats(stats);
   }
 
-  /**
-   * Get raw stats for a time range
-   */
   getStats(startTime: number, endTime: number): StatsRecord[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM stats_raw 
-      WHERE timestamp >= ? AND timestamp <= ?
-      ORDER BY timestamp ASC
-    `);
-
-    return stmt.all(startTime, endTime) as StatsRecord[];
+    return this.stats.getStats(startTime, endTime);
   }
 
-  /**
-   * Get recent stats (last N records)
-   */
   getRecentStats(limit: number = 60): StatsRecord[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM stats_raw 
-      ORDER BY timestamp DESC 
-      LIMIT ?
-    `);
-
-    return (stmt.all(limit) as StatsRecord[]).reverse();
+    return this.stats.getRecentStats(limit);
   }
 
-  /**
-   * Get hourly aggregated stats
-   */
   getHourlyStats(startTime: number, endTime: number): AggregatedStats[] {
-    const stmt = this.db.prepare(`
-      SELECT 
-        'hour' as period,
-        timestamp,
-        avgHashrate,
-        maxHashrate,
-        minHashrate,
-        avgActiveMiners,
-        totalMined,
-        avgTemperature,
-        avgPower,
-        avgRejectionRate,
-        dataPoints
-      FROM stats_hourly 
-      WHERE timestamp >= ? AND timestamp <= ?
-      ORDER BY timestamp ASC
-    `);
-
-    return stmt.all(startTime, endTime) as AggregatedStats[];
+    return this.stats.getHourlyStats(startTime, endTime);
   }
 
-  /**
-   * Get daily aggregated stats
-   */
   getDailyStats(startTime: number, endTime: number): AggregatedStats[] {
-    const stmt = this.db.prepare(`
-      SELECT 
-        'day' as period,
-        timestamp,
-        avgHashrate,
-        maxHashrate,
-        minHashrate,
-        avgActiveMiners,
-        totalMined,
-        avgTemperature,
-        avgPower,
-        avgRejectionRate,
-        dataPoints
-      FROM stats_daily 
-      WHERE timestamp >= ? AND timestamp <= ?
-      ORDER BY timestamp ASC
-    `);
-
-    return stmt.all(startTime, endTime) as AggregatedStats[];
+    return this.stats.getDailyStats(startTime, endTime);
   }
 
-  /**
-   * Aggregate raw data into hourly stats
-   */
   aggregateHourly(): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO stats_hourly (
-        timestamp, avgHashrate, maxHashrate, minHashrate, 
-        avgActiveMiners, totalMined, avgTemperature, avgPower, 
-        avgRejectionRate, dataPoints
-      )
-      SELECT 
-        (timestamp / 3600000) * 3600000 as hour_timestamp,
-        AVG(totalHashrate) as avgHashrate,
-        MAX(totalHashrate) as maxHashrate,
-        MIN(totalHashrate) as minHashrate,
-        AVG(activeMiners) as avgActiveMiners,
-        SUM(totalMined) as totalMined,
-        AVG(avgTemperature) as avgTemperature,
-        AVG(avgPower) as avgPower,
-        AVG(rejectionRate) as avgRejectionRate,
-        COUNT(*) as dataPoints
-      FROM stats_raw
-      WHERE timestamp >= (strftime('%s', 'now') - 86400) * 1000
-      GROUP BY hour_timestamp
-    `);
-
-    try {
-      const result = stmt.run();
-      logger.info(`Aggregated ${result.changes} hourly records`);
-    } catch (error) {
-      logger.error('Error aggregating hourly stats:', error);
-    }
+    this.stats.aggregateHourly();
   }
 
-  /**
-   * Aggregate hourly data into daily stats
-   */
   aggregateDaily(): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO stats_daily (
-        timestamp, avgHashrate, maxHashrate, minHashrate, 
-        avgActiveMiners, totalMined, avgTemperature, avgPower, 
-        avgRejectionRate, dataPoints
-      )
-      SELECT 
-        (timestamp / 86400000) * 86400000 as day_timestamp,
-        AVG(avgHashrate) as avgHashrate,
-        MAX(maxHashrate) as maxHashrate,
-        MIN(minHashrate) as minHashrate,
-        AVG(avgActiveMiners) as avgActiveMiners,
-        SUM(totalMined) as totalMined,
-        AVG(avgTemperature) as avgTemperature,
-        AVG(avgPower) as avgPower,
-        AVG(avgRejectionRate) as avgRejectionRate,
-        SUM(dataPoints) as dataPoints
-      FROM stats_hourly
-      WHERE timestamp >= (strftime('%s', 'now') - 2592000) * 1000
-      GROUP BY day_timestamp
-    `);
-
-    try {
-      const result = stmt.run();
-      logger.info(`Aggregated ${result.changes} daily records`);
-    } catch (error) {
-      logger.error('Error aggregating daily stats:', error);
-    }
+    this.stats.aggregateDaily();
   }
 
-  /**
-   * Clean up old raw data (keep last 24 hours)
-   */
   cleanupOldRawData(): void {
-    const cutoff = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago
-    
-    const stmt = this.db.prepare(`
-      DELETE FROM stats_raw WHERE timestamp < ?
-    `);
-
-    try {
-      const result = stmt.run(cutoff);
-      if (result.changes > 0) {
-        logger.info(`Cleaned up ${result.changes} old raw records`);
-      }
-    } catch (error) {
-      logger.error('Error cleaning up raw data:', error);
-    }
+    this.stats.cleanupOldRawData();
   }
 
-  /**
-   * Clean up old hourly data (keep last 30 days)
-   */
   cleanupOldHourlyData(): void {
-    const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000); // 30 days ago
-    
-    const stmt = this.db.prepare(`
-      DELETE FROM stats_hourly WHERE timestamp < ?
-    `);
-
-    try {
-      const result = stmt.run(cutoff);
-      if (result.changes > 0) {
-        logger.info(`Cleaned up ${result.changes} old hourly records`);
-      }
-    } catch (error) {
-      logger.error('Error cleaning up hourly data:', error);
-    }
+    this.stats.cleanupOldHourlyData();
   }
 
   /**
@@ -714,200 +565,56 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Get a setting value
-   */
+  // --- Settings (delegated to SettingsRepository) ---
+
   getSetting(key: string): string | null {
-    const stmt = this.db.prepare('SELECT value FROM settings WHERE key = ?');
-    const result = stmt.get(key) as { value: string } | undefined;
-    return result ? result.value : null;
+    return this.settings.getSetting(key);
   }
 
-  /**
-   * Set a setting value
-   */
   setSetting(key: string, value: string): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO settings (key, value, updated_at) 
-      VALUES (?, ?, strftime('%s', 'now'))
-      ON CONFLICT(key) DO UPDATE SET 
-        value = excluded.value,
-        updated_at = strftime('%s', 'now')
-    `);
-    
-    try {
-      stmt.run(key, value);
-      logger.info(`Setting updated: ${key}`);
-    } catch (error) {
-      logger.error(`Error updating setting ${key}:`, error);
-      throw error;
-    }
+    this.settings.setSetting(key, value);
   }
 
-  /**
-   * Delete a setting
-   */
   deleteSetting(key: string): void {
-    const stmt = this.db.prepare('DELETE FROM settings WHERE key = ?');
-    
-    try {
-      stmt.run(key);
-      logger.info(`Setting deleted: ${key}`);
-    } catch (error) {
-      logger.error(`Error deleting setting ${key}:`, error);
-      throw error;
-    }
+    this.settings.deleteSetting(key);
   }
 
-  /**
-   * Get all settings
-   */
   getAllSettings(): Record<string, string> {
-    const stmt = this.db.prepare('SELECT key, value FROM settings');
-    const rows = stmt.all() as Array<{ key: string; value: string }>;
-    
-    const settings: Record<string, string> = {};
-    rows.forEach(row => {
-      settings[row.key] = row.value;
-    });
-    
-    return settings;
+    return this.settings.getAllSettings();
   }
 
-  /**
-   * Insert or update a miner record
-   */
+  // --- Miners (delegated to MinerRepository) ---
+
   upsertMiner(miner: MinerRecord): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO miners (
-        ip, name, model, alias, owner, owner_user_id, status, credentials, thresholds,
-        use_https, static_power, api_port, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
-      ON CONFLICT(ip) DO UPDATE SET 
-        name = excluded.name,
-        model = excluded.model,
-        alias = excluded.alias,
-        owner = excluded.owner,
-        owner_user_id = excluded.owner_user_id,
-        status = excluded.status,
-        credentials = excluded.credentials,
-        thresholds = excluded.thresholds,
-        use_https = excluded.use_https,
-        static_power = excluded.static_power,
-        api_port = excluded.api_port,
-        updated_at = strftime('%s', 'now')
-    `);
-    
-    try {
-      stmt.run(
-        miner.ip,
-        miner.name,
-        miner.model,
-        miner.alias || null,
-        miner.owner,
-        miner.owner_user_id || null,
-        miner.status || 'active',
-        miner.credentials || null,
-        miner.thresholds || null,
-        miner.use_https || 0,
-        miner.static_power || null,
-        miner.api_port || null
-      );
-      logger.info(`Miner upserted: ${miner.name} (${miner.ip})`);
-    } catch (error) {
-      logger.error(`Error upserting miner ${miner.name}:`, error);
-      throw error;
-    }
+    this.miners.upsertMiner(miner);
   }
 
-  /**
-   * Get all miners for a specific owner
-   */
   getMinersByOwner(ownerChatId: string): MinerRecord[] {
-    const stmt = this.db.prepare(`
-      SELECT m.* FROM miners m
-      LEFT JOIN users u ON m.owner_user_id = u.id
-      WHERE m.owner = ? OR u.telegram_chat_id = ?
-      ORDER BY m.name ASC
-    `);
-    return stmt.all(ownerChatId, ownerChatId) as MinerRecord[];
+    return this.miners.getMinersByOwner(ownerChatId);
   }
 
-  /**
-   * Get all miners (admin only)
-   */
   getAllMiners(): MinerRecord[] {
-    const stmt = this.db.prepare(`
-      SELECT m.* FROM miners m
-      LEFT JOIN users u ON m.owner_user_id = u.id
-      ORDER BY COALESCE(u.telegram_chat_id, m.owner) ASC, m.name ASC
-    `);
-    return stmt.all() as MinerRecord[];
+    return this.miners.getAllMiners();
   }
 
-  /**
-   * Get a single miner by IP
-   */
   getMinerByIp(ip: string): MinerRecord | null {
-    const stmt = this.db.prepare('SELECT * FROM miners WHERE ip = ?');
-    const result = stmt.get(ip) as MinerRecord | undefined;
-    return result || null;
+    return this.miners.getMinerByIp(ip);
   }
 
-  /**
-   * Get a single miner by name
-   */
   getMinerByName(name: string): MinerRecord | null {
-    const stmt = this.db.prepare('SELECT * FROM miners WHERE name = ?');
-    const result = stmt.get(name) as MinerRecord | undefined;
-    return result || null;
+    return this.miners.getMinerByName(name);
   }
 
-  /**
-   * Get a single miner by alias
-   */
   getMinerByAlias(alias: string): MinerRecord | null {
-    const stmt = this.db.prepare('SELECT * FROM miners WHERE alias = ?');
-    const result = stmt.get(alias) as MinerRecord | undefined;
-    return result || null;
+    return this.miners.getMinerByAlias(alias);
   }
 
-  /**
-   * Delete a miner by IP
-   */
   deleteMiner(ip: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM miners WHERE ip = ?');
-    
-    try {
-      const result = stmt.run(ip);
-      if (result.changes > 0) {
-        logger.info(`Miner deleted: ${ip}`);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      logger.error(`Error deleting miner ${ip}:`, error);
-      throw error;
-    }
+    return this.miners.deleteMiner(ip);
   }
 
-  /**
-   * Update miner status
-   */
   updateMinerStatus(ip: string, status: string): void {
-    const stmt = this.db.prepare(`
-      UPDATE miners 
-      SET status = ?, updated_at = strftime('%s', 'now') 
-      WHERE ip = ?
-    `);
-    
-    try {
-      stmt.run(status, ip);
-      logger.info(`Miner status updated: ${ip} -> ${status}`);
-    } catch (error) {
-      logger.error(`Error updating miner status ${ip}:`, error);
-      throw error;
-    }
+    this.miners.updateMinerStatus(ip, status);
   }
 
   /**
@@ -927,58 +634,16 @@ class DatabaseService {
 
   // Pool management methods removed - miners store pool config directly
 
-  /**
-   * Get miners using a specific pool URL
-   */
   getMinersUsingPoolUrl(poolUrl: string): Array<{ miner_ip: string; name: string }> {
-    const stmt = this.db.prepare(`
-      SELECT DISTINCT mp.miner_ip, m.name
-      FROM miner_pools mp
-      JOIN miners m ON mp.miner_ip = m.ip
-      WHERE mp.pool_url = ?
-      ORDER BY m.name ASC
-    `);
-    return stmt.all(poolUrl) as Array<{ miner_ip: string; name: string }>;
+    return this.miners.getMinersUsingPoolUrl(poolUrl);
   }
 
-  /**
-   * Set miner pools (from hardware sync)
-   */
   setMinerPools(minerIp: string, pools: Array<{ url: string; user: string; password?: string; priority: number }>): void {
-    const deleteStmt = this.db.prepare('DELETE FROM miner_pools WHERE miner_ip = ?');
-    const insertStmt = this.db.prepare(`
-      INSERT INTO miner_pools (miner_ip, pool_url, pool_priority, pool_user, pool_password, synced_at)
-      VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
-    `);
-    
-    try {
-      // Delete existing pools for this miner
-      deleteStmt.run(minerIp);
-      
-      // Insert new pools
-      for (const pool of pools) {
-        insertStmt.run(minerIp, pool.url, pool.priority, pool.user, pool.password || null);
-      }
-      
-      logger.info(`Updated ${pools.length} pool(s) for miner ${minerIp}`);
-    } catch (error) {
-      logger.error(`Error setting pools for miner ${minerIp}:`, error);
-      throw error;
-    }
+    this.miners.setMinerPools(minerIp, pools);
   }
 
-  /**
-   * Get pools for a specific miner
-   */
   getMinerPools(minerIp: string): Array<{ url: string; user: string; password?: string; priority: number }> {
-    const stmt = this.db.prepare(`
-      SELECT pool_url as url, pool_user as user, pool_password as password, pool_priority as priority
-      FROM miner_pools
-      WHERE miner_ip = ?
-      ORDER BY pool_priority ASC
-    `);
-    
-    return stmt.all(minerIp) as Array<{ url: string; user: string; password?: string; priority: number }>;
+    return this.miners.getMinerPools(minerIp);
   }
 
   // Pool config methods removed - configuration moved to pool_accounts table
@@ -988,91 +653,25 @@ class DatabaseService {
    * @param maxHashrate Maximum realistic hashrate in TH/s (default: 10000)
    */
   cleanupInvalidStats(maxHashrate: number = 10000): number {
-    try {
-      const stmt = this.db.prepare(`
-        DELETE FROM stats_raw 
-        WHERE totalHashrate > ? OR totalHashrate < 0
-      `);
-      const result = stmt.run(maxHashrate);
-      logger.info(`Cleaned up ${result.changes} invalid stats records (hashrate > ${maxHashrate} TH/s)`);
-      return result.changes;
-    } catch (error) {
-      logger.error('Error cleaning up invalid stats:', error);
-      throw error;
-    }
+    return this.stats.cleanupInvalidStats(maxHashrate);
   }
 
-  // ==================== MINER STATS HISTORY (30-day retention) ====================
+  // --- Miner stats history (delegated to MinerStatsHistoryRepository) ---
 
-  /**
-   * Insert a miner stats history record
-   */
   insertMinerStatsHistory(record: Omit<MinerStatsHistoryRecord, 'id'>): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO miner_stats_history (miner_ip, timestamp, hashrate, temperature, fan_speed, power_usage, rejection_rate, uptime)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    try {
-      stmt.run(
-        record.miner_ip,
-        record.timestamp,
-        record.hashrate,
-        record.temperature,
-        record.fan_speed,
-        record.power_usage,
-        record.rejection_rate,
-        record.uptime || 0
-      );
-    } catch (error) {
-      logger.error(`Error inserting miner stats history for ${record.miner_ip}:`, error);
-    }
+    this.minerStatsHistory.insertMinerStatsHistory(record);
   }
 
-  /**
-   * Get miner stats history for a specific miner
-   * @param minerIp Miner IP address
-   * @param startTime Start timestamp (ms)
-   * @param endTime End timestamp (ms)
-   */
   getMinerStatsHistory(minerIp: string, startTime: number, endTime: number): MinerStatsHistoryRecord[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM miner_stats_history
-      WHERE miner_ip = ? AND timestamp >= ? AND timestamp <= ?
-      ORDER BY timestamp ASC
-    `);
-
-    return stmt.all(minerIp, startTime, endTime) as MinerStatsHistoryRecord[];
+    return this.minerStatsHistory.getMinerStatsHistory(minerIp, startTime, endTime);
   }
 
-  /**
-   * Clean up old miner stats history (keep last 30 days)
-   * Since we have Grafana/Prometheus for long-term data
-   */
   cleanupOldMinerStatsHistory(): number {
-    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-
-    const stmt = this.db.prepare(`
-      DELETE FROM miner_stats_history WHERE timestamp < ?
-    `);
-
-    try {
-      const result = stmt.run(thirtyDaysAgo);
-      if (result.changes > 0) {
-        logger.info(`Cleaned up ${result.changes} old miner stats history records (>30 days)`);
-      }
-      return result.changes;
-    } catch (error) {
-      logger.error('Error cleaning up miner stats history:', error);
-      return 0;
-    }
+    return this.minerStatsHistory.cleanupOldMinerStatsHistory();
   }
 
-  // ==================== ALERT RULES MANAGEMENT ====================
+  // --- Alert rules (delegated to AlertRuleRepository) ---
 
-  /**
-   * Get all alert rules (optionally filtered)
-   */
   getAllAlertRules(filters?: {
     enabled?: boolean;
     severity?: string;
@@ -1081,493 +680,99 @@ class DatabaseService {
     owner?: string;
     minerIp?: string;
   }): AlertRuleRecord[] {
-    let query = 'SELECT * FROM alert_rules WHERE 1=1';
-    const params: any[] = [];
-
-    if (filters?.enabled !== undefined) {
-      query += ' AND enabled = ?';
-      params.push(filters.enabled ? 1 : 0);
-    }
-
-    if (filters?.severity) {
-      query += ' AND severity = ?';
-      params.push(filters.severity);
-    }
-
-    if (filters?.component) {
-      query += ' AND component = ?';
-      params.push(filters.component);
-    }
-
-    if (filters?.scope) {
-      query += ' AND scope = ?';
-      params.push(filters.scope);
-    }
-
-    if (filters?.owner) {
-      query += ' AND (scope = ? OR target_owner = ? OR target_owner IS NULL)';
-      params.push('global', filters.owner);
-    }
-
-    if (filters?.minerIp) {
-      query += ' AND (target_miner_ip = ? OR target_miner_ip IS NULL)';
-      params.push(filters.minerIp);
-    }
-
-    query += ' ORDER BY rule_group ASC, severity DESC, name ASC';
-
-    const stmt = this.db.prepare(query);
-    return stmt.all(...params) as AlertRuleRecord[];
+    return this.alertRules.getAllAlertRules(filters);
   }
 
-  /**
-   * Get alert rule by ID
-   */
   getAlertRuleById(id: number): AlertRuleRecord | null {
-    const stmt = this.db.prepare('SELECT * FROM alert_rules WHERE id = ?');
-    const result = stmt.get(id) as AlertRuleRecord | undefined;
-    return result || null;
+    return this.alertRules.getAlertRuleById(id);
   }
 
-  /**
-   * Get alert rule by name
-   */
   getAlertRuleByName(name: string): AlertRuleRecord | null {
-    const stmt = this.db.prepare('SELECT * FROM alert_rules WHERE name = ?');
-    const result = stmt.get(name) as AlertRuleRecord | undefined;
-    return result || null;
+    return this.alertRules.getAlertRuleByName(name);
   }
 
-  /**
-   * Insert new alert rule
-   */
   insertAlertRule(rule: Omit<AlertRuleRecord, 'id' | 'created_at' | 'updated_at'>): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO alert_rules (
-        name, display_name, description, rule_group, severity, component,
-        expr, for_duration, summary_template, description_template,
-        scope, target_miner_ip, target_owner, enabled, is_system, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    try {
-      const result = stmt.run(
-        rule.name,
-        rule.display_name,
-        rule.description || null,
-        rule.rule_group,
-        rule.severity,
-        rule.component,
-        rule.expr,
-        rule.for_duration,
-        rule.summary_template,
-        rule.description_template || null,
-        rule.scope,
-        rule.target_miner_ip || null,
-        rule.target_owner || null,
-        rule.enabled,
-        rule.is_system,
-        rule.created_by || null
-      );
-
-      const ruleId = result.lastInsertRowid as number;
-
-      // Log to history
-      this.logAlertRuleHistory(ruleId, rule.name, 'created', rule.created_by);
-
-      logger.info(`Alert rule created: ${rule.name} (ID: ${ruleId})`);
-      return ruleId;
-    } catch (error) {
-      logger.error(`Error inserting alert rule ${rule.name}:`, error);
-      throw error;
-    }
+    return this.alertRules.insertAlertRule(rule);
   }
 
-  /**
-   * Update alert rule
-   */
   updateAlertRule(id: number, updates: Partial<AlertRuleRecord>, changedBy?: string): boolean {
-    const existing = this.getAlertRuleById(id);
-    if (!existing) {
-      return false;
-    }
-
-    // Build dynamic update query
-    const fields: string[] = [];
-    const params: any[] = [];
-
-    if (updates.display_name !== undefined) {
-      fields.push('display_name = ?');
-      params.push(updates.display_name);
-    }
-    if (updates.description !== undefined) {
-      fields.push('description = ?');
-      params.push(updates.description);
-    }
-    if (updates.rule_group !== undefined) {
-      fields.push('rule_group = ?');
-      params.push(updates.rule_group);
-    }
-    if (updates.severity !== undefined) {
-      fields.push('severity = ?');
-      params.push(updates.severity);
-    }
-    if (updates.component !== undefined) {
-      fields.push('component = ?');
-      params.push(updates.component);
-    }
-    if (updates.expr !== undefined) {
-      fields.push('expr = ?');
-      params.push(updates.expr);
-    }
-    if (updates.for_duration !== undefined) {
-      fields.push('for_duration = ?');
-      params.push(updates.for_duration);
-    }
-    if (updates.summary_template !== undefined) {
-      fields.push('summary_template = ?');
-      params.push(updates.summary_template);
-    }
-    if (updates.description_template !== undefined) {
-      fields.push('description_template = ?');
-      params.push(updates.description_template);
-    }
-    if (updates.scope !== undefined) {
-      fields.push('scope = ?');
-      params.push(updates.scope);
-    }
-    if (updates.target_miner_ip !== undefined) {
-      fields.push('target_miner_ip = ?');
-      params.push(updates.target_miner_ip);
-    }
-    if (updates.target_owner !== undefined) {
-      fields.push('target_owner = ?');
-      params.push(updates.target_owner);
-    }
-    if (updates.enabled !== undefined) {
-      fields.push('enabled = ?');
-      params.push(updates.enabled);
-    }
-
-    if (fields.length === 0) {
-      return false; // No updates
-    }
-
-    fields.push('updated_at = strftime(\'%s\', \'now\')');
-    params.push(id);
-
-    const stmt = this.db.prepare(`
-      UPDATE alert_rules 
-      SET ${fields.join(', ')}
-      WHERE id = ?
-    `);
-
-    try {
-      const result = stmt.run(...params);
-
-      if (result.changes > 0) {
-        // Log to history
-        this.logAlertRuleHistory(id, existing.name, 'updated', changedBy, JSON.stringify(updates));
-        logger.info(`Alert rule updated: ${existing.name} (ID: ${id})`);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      logger.error(`Error updating alert rule ${id}:`, error);
-      throw error;
-    }
+    return this.alertRules.updateAlertRule(id, updates, changedBy);
   }
 
-  /**
-   * Delete alert rule
-   */
   deleteAlertRule(id: number, changedBy?: string): boolean {
-    const existing = this.getAlertRuleById(id);
-    if (!existing) {
-      return false;
-    }
-
-    // Don't allow deleting system rules
-    if (existing.is_system === 1) {
-      throw new Error('Cannot delete system alert rules. Disable them instead.');
-    }
-
-    const stmt = this.db.prepare('DELETE FROM alert_rules WHERE id = ?');
-
-    try {
-      const result = stmt.run(id);
-
-      if (result.changes > 0) {
-        // Log to history
-        this.logAlertRuleHistory(id, existing.name, 'deleted', changedBy);
-        logger.info(`Alert rule deleted: ${existing.name} (ID: ${id})`);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      logger.error(`Error deleting alert rule ${id}:`, error);
-      throw error;
-    }
+    return this.alertRules.deleteAlertRule(id, changedBy);
   }
 
-  /**
-   * Toggle alert rule enabled status
-   */
   toggleAlertRule(id: number, enabled: boolean, changedBy?: string): boolean {
-    const existing = this.getAlertRuleById(id);
-    if (!existing) {
-      return false;
-    }
-
-    const stmt = this.db.prepare(`
-      UPDATE alert_rules 
-      SET enabled = ?, updated_at = strftime('%s', 'now')
-      WHERE id = ?
-    `);
-
-    try {
-      const result = stmt.run(enabled ? 1 : 0, id);
-
-      if (result.changes > 0) {
-        // Log to history
-        const action = enabled ? 'enabled' : 'disabled';
-        this.logAlertRuleHistory(id, existing.name, action, changedBy);
-        logger.info(`Alert rule ${action}: ${existing.name} (ID: ${id})`);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      logger.error(`Error toggling alert rule ${id}:`, error);
-      throw error;
-    }
+    return this.alertRules.toggleAlertRule(id, enabled, changedBy);
   }
 
-  /**
-   * Log alert rule change to history
-   */
-  private logAlertRuleHistory(
-    ruleId: number,
-    ruleName: string,
-    action: 'created' | 'updated' | 'deleted' | 'enabled' | 'disabled',
-    changedBy?: string,
-    changes?: string
-  ): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO alert_rule_history (rule_id, rule_name, action, changed_by, changes)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    try {
-      stmt.run(ruleId, ruleName, action, changedBy || null, changes || null);
-    } catch (error) {
-      logger.error('Error logging alert rule history:', error);
-      // Don't throw - history logging failure shouldn't break the main operation
-    }
-  }
-
-  /**
-   * Get alert rule history
-   */
   getAlertRuleHistory(ruleId?: number, limit: number = 100): AlertRuleHistoryRecord[] {
-    let query = 'SELECT * FROM alert_rule_history';
-    const params: any[] = [];
-
-    if (ruleId !== undefined) {
-      query += ' WHERE rule_id = ?';
-      params.push(ruleId);
-    }
-
-    query += ' ORDER BY timestamp DESC LIMIT ?';
-    params.push(limit);
-
-    const stmt = this.db.prepare(query);
-    return stmt.all(...params) as AlertRuleHistoryRecord[];
+    return this.alertRules.getAlertRuleHistory(ruleId, limit);
   }
 
-  // ================== POOL API MONITORING METHODS ==================
+  // --- Pool APIs + accounts (delegated to PoolRepository) ---
 
   getAllPoolApis(): PoolApiRecord[] {
-    return this.db.prepare('SELECT * FROM pool_apis').all() as PoolApiRecord[];
+    return this.pools.getAllPoolApis();
   }
 
   insertPoolApi(poolApi: Omit<PoolApiRecord, 'id'>): number {
-    const stmt = this.db.prepare('INSERT INTO pool_apis (name, api_base_url) VALUES (?, ?)');
-    const result = stmt.run(poolApi.name, poolApi.api_base_url);
-    return result.lastInsertRowid as number;
+    return this.pools.insertPoolApi(poolApi);
   }
 
   updatePoolApi(id: number, poolApi: Omit<PoolApiRecord, 'id'>): void {
-    this.db.prepare('UPDATE pool_apis SET name = ?, api_base_url = ? WHERE id = ?').run(poolApi.name, poolApi.api_base_url, id);
+    this.pools.updatePoolApi(id, poolApi);
   }
 
   deletePoolApi(id: number): void {
-    this.db.prepare('DELETE FROM pool_apis WHERE id = ?').run(id);
+    this.pools.deletePoolApi(id);
   }
 
   getAllPoolAccounts(): (PoolAccountRecord & { pool_name: string })[] {
-    const stmt = this.db.prepare(`
-      SELECT pa.*, p.name as pool_name
-      FROM pool_accounts pa
-      JOIN pool_apis p ON pa.pool_api_id = p.id
-    `);
-    return stmt.all() as (PoolAccountRecord & { pool_name: string })[];
+    return this.pools.getAllPoolAccounts();
   }
 
   getPoolAccountById(id: number): (PoolAccountRecord & { pool_name: string }) | null {
-    const stmt = this.db.prepare(`
-      SELECT pa.*, p.name as pool_name
-      FROM pool_accounts pa
-      JOIN pool_apis p ON pa.pool_api_id = p.id
-      WHERE pa.id = ?
-    `);
-    const result = stmt.get(id) as (PoolAccountRecord & { pool_name: string }) | undefined;
-    return result || null;
+    return this.pools.getPoolAccountById(id);
   }
 
-  // ==================== USER MANAGEMENT ====================
+  // --- Users + audit log (delegated to UserRepository) ---
 
   getUserByChatId(chatId: string): UserRecord | null {
-    const stmt = this.db.prepare('SELECT * FROM users WHERE telegram_chat_id = ?');
-    const result = stmt.get(chatId) as UserRecord | undefined;
-    return result || null;
+    return this.users.getUserByChatId(chatId);
   }
 
   getUserById(id: number): UserRecord | null {
-    const stmt = this.db.prepare('SELECT * FROM users WHERE id = ?');
-    const result = stmt.get(id) as UserRecord | undefined;
-    return result || null;
+    return this.users.getUserById(id);
   }
 
   upsertUser(user: UserRecord): number {
-    if (user.id) {
-      const stmt = this.db.prepare(`
-        UPDATE users
-        SET telegram_chat_id = ?,
-            display_name = ?,
-            role = ?,
-            status = ?,
-            metadata = ?,
-            updated_at = strftime('%s','now'),
-            last_login_at = COALESCE(?, last_login_at)
-        WHERE id = ?
-      `);
-      stmt.run(
-        user.telegram_chat_id,
-        user.display_name || null,
-        user.role,
-        user.status || 'active',
-        user.metadata || null,
-        user.last_login_at || null,
-        user.id
-      );
-      return user.id;
-    }
-
-    const insert = this.db.prepare(`
-      INSERT INTO users (
-        telegram_chat_id, display_name, role, status, metadata, created_at, updated_at, last_login_at
-      ) VALUES (?, ?, ?, ?, ?, strftime('%s','now'), strftime('%s','now'), ?)
-    `);
-
-    const result = insert.run(
-      user.telegram_chat_id,
-      user.display_name || null,
-      user.role,
-      user.status || 'active',
-      user.metadata || null,
-      user.last_login_at || null
-    );
-
-    return result.lastInsertRowid as number;
+    return this.users.upsertUser(user);
   }
 
   getOrCreateUserByChatId(chatId: string, role: 'admin' | 'user' = 'user'): UserRecord {
-    let existing = this.getUserByChatId(chatId);
-    if (existing) {
-      return existing;
-    }
-
-    const id = this.upsertUser({ telegram_chat_id: chatId, role });
-    return this.getUserById(id)!;
+    return this.users.getOrCreateUserByChatId(chatId, role);
   }
 
   updateUserLastLogin(userId: number): void {
-    const stmt = this.db.prepare(`
-      UPDATE users
-      SET last_login_at = strftime('%s','now'),
-          updated_at = strftime('%s','now')
-      WHERE id = ?
-    `);
-    stmt.run(userId);
+    this.users.updateUserLastLogin(userId);
   }
 
-  // ==================== AUDIT LOGGING ====================
-
   insertAuditLog(entry: AuditLogRecord): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO audit_logs (
-        timestamp, user_id, action, resource_type, resource_id,
-        details, result, ip_address, user_agent
-      ) VALUES (
-        COALESCE(?, strftime('%s','now')),
-        ?, ?, ?, ?, ?, ?, ?, ?
-      )
-    `);
-
-    stmt.run(
-      entry.timestamp || null,
-      entry.user_id || null,
-      entry.action,
-      entry.resource_type || null,
-      entry.resource_id || null,
-      entry.details || null,
-      entry.result || 'success',
-      entry.ip_address || null,
-      entry.user_agent || null
-    );
+    this.users.insertAuditLog(entry);
   }
 
   insertPoolAccount(account: Omit<PoolAccountRecord, 'id'>): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO pool_accounts (pool_api_id, account_name, usernames, api_key, coin, notes, created_at, updated_at, owner_user_id)
-      VALUES (?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'), ?)
-    `);
-    const result = stmt.run(
-      account.pool_api_id,
-      account.account_name,
-      account.usernames || null,
-      account.api_key,
-      account.coin || 'btc',
-      account.notes || null
-    );
-    return result.lastInsertRowid as number;
+    return this.pools.insertPoolAccount(account);
   }
 
   updatePoolAccount(id: number, account: Partial<Omit<PoolAccountRecord, 'id'>>): void {
-    const stmt = this.db.prepare(`
-      UPDATE pool_accounts 
-      SET pool_api_id = COALESCE(?, pool_api_id),
-          account_name = COALESCE(?, account_name),
-          usernames = COALESCE(?, usernames),
-          api_key = COALESCE(?, api_key),
-          coin = COALESCE(?, coin),
-          notes = COALESCE(?, notes),
-          updated_at = strftime('%s', 'now')
-      WHERE id = ?
-    `);
-    stmt.run(
-      account.pool_api_id !== undefined ? account.pool_api_id : null,
-      account.account_name !== undefined ? account.account_name : null,
-      account.usernames !== undefined ? account.usernames : null,
-      account.api_key !== undefined ? account.api_key : null,
-      account.coin !== undefined ? account.coin : null,
-      account.notes !== undefined ? account.notes : null,
-      id
-    );
+    this.pools.updatePoolAccount(id, account);
   }
 
   deletePoolAccount(id: number): void {
-    this.db.prepare('DELETE FROM pool_accounts WHERE id = ?').run(id);
+    this.pools.deletePoolAccount(id);
   }
 
   /**
