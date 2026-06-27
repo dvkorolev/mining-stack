@@ -20,6 +20,8 @@ import { getMiners, updateMinerStatus, getMinerById, loadMinersConfig } from '..
 import { logger } from '../utils/logger';
 import { getDatabase, StatsRecord } from './database.service';
 import * as prometheusService from './prometheus.service';
+import { ERROR_CODES } from './mining/error-codes';
+import { simulateMinerStats } from './mining/simulation';
 
 const execAsync = promisify(exec);
 
@@ -128,13 +130,6 @@ let cleanupInterval: NodeJS.Timeout | null = null;
 // Get database instance
 const db = getDatabase();
 
-// Persistent miner state to avoid constant status changes
-const minerPersistentState = new Map<string, {
-  status: 'online' | 'offline' | 'error';
-  lastHashrate: number;
-  lastStatusChange: number;
-}>();
-
 // Share history for time-windowed rejection rate calculation
 interface ShareSnapshot {
   timestamp: number;
@@ -145,115 +140,6 @@ interface ShareSnapshot {
 const minerShareHistory = new Map<string, ShareSnapshot[]>();
 const SHARE_HISTORY_WINDOW = 5 * 60 * 1000; // 5 minutes (matching Prometheus)
 const MAX_SHARE_SNAPSHOTS = 10; // Keep last 10 snapshots
-
-// Minimum time between status changes (5 minutes)
-const MIN_STATUS_CHANGE_INTERVAL = 5 * 60 * 1000;
-
-/**
- * Error code definitions with descriptions
- */
-const ERROR_CODES = {
-  HIGH_TEMP: {
-    code: 'HIGH_TEMP',
-    message: 'High Temperature',
-    description: 'Miner temperature exceeds safe operating threshold (>85°C)',
-    severity: 'critical' as const,
-  },
-  FAN_FAILURE: {
-    code: 'FAN_FAILURE',
-    message: 'Fan Failure',
-    description: 'One or more cooling fans are not operating correctly',
-    severity: 'critical' as const,
-  },
-  LOW_HASHRATE: {
-    code: 'LOW_HASHRATE',
-    message: 'Low Hashrate',
-    description: 'Hashrate is significantly below expected performance',
-    severity: 'warning' as const,
-  },
-  HIGH_REJECTION: {
-    code: 'HIGH_REJECTION',
-    message: 'High Share Rejection',
-    description: 'Share rejection rate exceeds 5%',
-    severity: 'warning' as const,
-  },
-  POWER_ISSUE: {
-    code: 'POWER_ISSUE',
-    message: 'Power Fluctuation',
-    description: 'Unstable power supply detected',
-    severity: 'warning' as const,
-  },
-  NETWORK_ERROR: {
-    code: 'NETWORK_ERROR',
-    message: 'Network Connection Issue',
-    description: 'Unable to maintain stable connection to mining pool',
-    severity: 'critical' as const,
-  },
-  CHIP_ERROR: {
-    code: 'CHIP_ERROR',
-    message: 'ASIC Chip Error',
-    description: 'One or more ASIC chips are not responding',
-    severity: 'critical' as const,
-  },
-  MISSING_CHIPS: {
-    code: 'MISSING_CHIPS',
-    message: 'Missing Chips on Hashboard',
-    description: 'One or more hashboards are reporting fewer chips than expected',
-    severity: 'warning' as const,
-  },
-};
-
-/**
- * Generate random error for simulation
- */
-const generateRandomError = (temperature: number, rejectionRate: number): MinerError | null => {
-  const errors: MinerError[] = [];
-  
-  // High temperature error
-  if (temperature > 85) {
-    errors.push({
-      ...ERROR_CODES.HIGH_TEMP,
-      timestamp: Date.now(),
-      details: { temperature: temperature.toFixed(1) },
-    });
-  }
-  
-  // High rejection rate
-  if (rejectionRate > 5) {
-    errors.push({
-      ...ERROR_CODES.HIGH_REJECTION,
-      timestamp: Date.now(),
-      details: { rejectionRate: rejectionRate.toFixed(2) },
-    });
-  }
-  
-  // Random errors (simulate various issues)
-  const randomValue = Math.random();
-  if (randomValue < 0.3) {
-    errors.push({
-      ...ERROR_CODES.FAN_FAILURE,
-      timestamp: Date.now(),
-    });
-  } else if (randomValue < 0.5) {
-    errors.push({
-      ...ERROR_CODES.CHIP_ERROR,
-      timestamp: Date.now(),
-      details: { affectedChips: Math.floor(Math.random() * 3) + 1 },
-    });
-  } else if (randomValue < 0.7) {
-    errors.push({
-      ...ERROR_CODES.NETWORK_ERROR,
-      timestamp: Date.now(),
-    });
-  } else {
-    errors.push({
-      ...ERROR_CODES.POWER_ISSUE,
-      timestamp: Date.now(),
-    });
-  }
-  
-  return errors.length > 0 ? errors[0] : null;
-};
 
 /**
  * Calculate time-windowed rejection rate (similar to Prometheus rate())
@@ -492,139 +378,6 @@ const calculateAggregates = (minerStats: MinerStats[], statsHistory: { timestamp
     maxHashrateScrypt,
     minHashrateScrypt,
     uptimePercent,
-  };
-};
-
-/**
- * Simulate miner stats for a single miner
- * Uses configuration values for realistic simulation
- * Maintains persistent state to avoid constant status changes
- */
-const simulateMinerStats = (miner: any): MinerStats => {
-  const minerId = miner.name || miner.ip;
-  const now = Date.now();
-  
-  // Get or initialize persistent state
-  let state = minerPersistentState.get(minerId);
-  if (!state) {
-    // Initialize with online status for new miners
-    const isOnline = Math.random() < config.simulation.onlineProbability;
-    state = {
-      status: isOnline ? 'online' : 'offline',
-      lastHashrate: 0,
-      lastStatusChange: now
-    };
-    minerPersistentState.set(minerId, state);
-  }
-  
-  // Only consider status change if enough time has passed
-  let status = state.status;
-  if (now - state.lastStatusChange > MIN_STATUS_CHANGE_INTERVAL) {
-    // Small chance of status change (5% every check after minimum interval)
-    if (Math.random() < 0.05) {
-      if (status === 'offline') {
-        status = 'online';
-      } else if (status === 'online' && Math.random() < config.simulation.errorProbability) {
-        status = 'error';
-      } else if (status === 'error') {
-        status = 'online';
-      } else if (Math.random() < 0.02) {
-        // Very small chance to go offline
-        status = 'offline';
-      }
-      state.status = status;
-      state.lastStatusChange = now;
-    }
-  }
-  
-  const lastSeen = new Date();
-  
-  // Update miner status
-  if (miner.name) {
-    updateMinerStatus(miner.name, status);
-  }
-  
-  // Generate realistic stats based on miner status with smoothing
-  const baseHashrate = miner.model.includes('S19') ? 100 : 50;
-  
-  let currentHashrate = 0;
-  if (status === 'online') {
-    // Reduced variance to 2% for smoother changes
-    const varianceRange = baseHashrate * 0.02;
-    const hashrateVariance = Math.random() * varianceRange - (varianceRange / 2);
-    const targetHashrate = Math.max(0, baseHashrate + hashrateVariance);
-    
-    // Apply exponential moving average for smooth transitions
-    const alpha = 0.3; // Smoothing factor
-    currentHashrate = state.lastHashrate === 0 
-      ? targetHashrate 
-      : alpha * targetHashrate + (1 - alpha) * state.lastHashrate;
-    
-    state.lastHashrate = currentHashrate;
-  } else {
-    state.lastHashrate = 0;
-  }
-  
-  // Generate hardware stats
-  const temperature = config.simulation.tempMin + Math.random() * (config.simulation.tempMax - config.simulation.tempMin);
-  
-  // Generate cumulative share counts (increasing over time)
-  const baseAccepted = 1000000; // Start with high base
-  const baseRejected = 10000;
-  const acceptedShares = baseAccepted + Math.floor(Math.random() * 1000);
-  const rejectedShares = baseRejected + Math.floor(Math.random() * 50);
-  
-  // Calculate rejection rate from lifetime totals (aligned with Grafana)
-  const total = acceptedShares + rejectedShares;
-  const rejectionRate = total > 0 ? (rejectedShares / total) * 100 : 0;
-  
-  // Generate errors if status is error
-  const errors: MinerError[] = [];
-  let statusMessage = status.toUpperCase();
-  
-  if (status === 'error') {
-    const error = generateRandomError(temperature, rejectionRate);
-    if (error) {
-      errors.push(error);
-      statusMessage = error.message;
-      
-      // Log error to console and file
-      logger.warn(`Miner ${minerId} error: ${error.message} - ${error.description}`, {
-        miner: minerId,
-        errorCode: error.code,
-        severity: error.severity,
-        details: error.details,
-      });
-    }
-  }
-  
-  const lastError = errors.length > 0 ? errors[errors.length - 1] : undefined;
-
-  return {
-    minerId,
-    name: miner.alias || miner.name || miner.ip,
-    model: miner.model,
-    ip: miner.ip,
-    alias: miner.alias,
-    owner: miner.owner,
-    status,
-    statusMessage,
-    lastSeen,
-    currentHashrate,
-    averageHashrate: currentHashrate * 0.98, // Slightly lower average
-    shares: {
-      accepted: acceptedShares,
-      rejected: rejectedShares
-    },
-    hardware: {
-      temperature,
-      fanSpeed: config.simulation.fanMin + Math.random() * (config.simulation.fanMax - config.simulation.fanMin),
-      powerUsage: config.simulation.powerMin + Math.random() * (config.simulation.powerMax - config.simulation.powerMin)
-    },
-    uptime: status === 'online' ? 3600 + Math.floor(Math.random() * 86400) : 0,
-    errors,
-    errorCount: errors.length,
-    lastError,
   };
 };
 
