@@ -22,6 +22,7 @@ import { getDatabase, StatsRecord } from './database.service';
 import * as prometheusService from './prometheus.service';
 import { ERROR_CODES } from './mining/error-codes';
 import { simulateMinerStats } from './mining/simulation';
+import { getMiningStats as getLiveStats, setMiningStats as setLiveStats } from './mining/state';
 
 const execAsync = promisify(exec);
 
@@ -104,23 +105,9 @@ export interface MiningStats {
   };
 }
 
-// In-memory storage for mining stats
-let miningStats: MiningStats = {
-  totalHashrate: 0,
-  totalHashrateSha256: 0,
-  totalHashrateScrypt: 0,
-  averageHashrate24h: 0,
-  averageHashrate24hSha256: 0,
-  averageHashrate24hScrypt: 0,
-  activeMiners: 0,
-  activeMinersSha256: 0,
-  activeMinersScrypt: 0,
-  totalMiners: 0,
-  totalMined: 0,
-  miners: [],
-  timestamp: Date.now(),
-  statsHistory: []
-};
+// The live mining-stats snapshot now lives in ./mining/state (single
+// reader/writer). getLiveStats()/setLiveStats() are the local aliases for that
+// module's getMiningStats()/setMiningStats(); setLiveStats is the one writer.
 
 // Track mining simulation intervals
 let simulationInterval: NodeJS.Timeout | null = null;
@@ -402,7 +389,7 @@ const simulateMiningStats = (): MiningStats => {
   // Calculate 24h average hashrate from history
   // Filter out corrupted values (> 5000 TH/s) from existing history
   const MAX_REALISTIC_HASHRATE = 5000;
-  const cleanHistory = miningStats.statsHistory.filter(h => 
+  const cleanHistory = getLiveStats().statsHistory.filter(h => 
     h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
   ).map(h => ({
     timestamp: h.timestamp,
@@ -471,7 +458,7 @@ const simulateMiningStats = (): MiningStats => {
     activeMinersSha256,
     activeMinersScrypt,
     totalMiners: miners.length,
-    totalMined: miningStats.totalMined + btcMined,
+    totalMined: getLiveStats().totalMined + btcMined,
     miners: minerStats,
     timestamp: Date.now(),
     statsHistory,
@@ -530,7 +517,7 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
     // Calculate 24h average hashrate from history
     // Filter out corrupted values (> 5000 TH/s) from existing history
     const MAX_REALISTIC_HASHRATE = 5000;
-    const cleanHistory = miningStats.statsHistory.filter(h => 
+    const cleanHistory = getLiveStats().statsHistory.filter(h => 
       h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
     ).map(h => ({
       timestamp: h.timestamp,
@@ -585,7 +572,7 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
       activeMinersSha256,
       activeMinersScrypt,
       totalMiners: miners.length,
-      totalMined: miningStats.totalMined + btcMined,
+      totalMined: getLiveStats().totalMined + btcMined,
       miners: minerStats,
       timestamp: Date.now(),
       statsHistory,
@@ -628,7 +615,7 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
   } catch (error) {
     logger.error('Error fetching real mining stats:', error);
     // Keep last-known-good stats instead of silently falling back to simulated data
-    return miningStats;
+    return getLiveStats();
   }
 };
 
@@ -636,15 +623,15 @@ const getRealMiningStats = async (): Promise<MiningStats> => {
 const getMiningStats = (owner?: string): MiningStats => {
   // If no owner specified, return global stats
   if (!owner) {
-    return miningStats;
+    return getLiveStats();
   }
   
   // Filter miners by owner and recalculate stats
-  const ownerMiners = miningStats.miners.filter(m => m.owner === owner);
+  const ownerMiners = getLiveStats().miners.filter(m => m.owner === owner);
   
   if (ownerMiners.length === 0) {
     return {
-      ...miningStats,
+      ...getLiveStats(),
       totalHashrate: 0,
       totalHashrateSha256: 0,
       totalHashrateScrypt: 0,
@@ -683,7 +670,7 @@ const getMiningStats = (owner?: string): MiningStats => {
     (ownerMiners.filter(m => m.hardware?.powerUsage).length || 1);
   
   return {
-    ...miningStats,
+    ...getLiveStats(),
     totalHashrate,
     totalHashrateSha256,
     totalHashrateScrypt,
@@ -719,13 +706,13 @@ const startMining = async (minerConfig: any = {}) => {
       try {
         if (config.mining.simulationMode) {
           const stats = simulateMiningStats();
-          miningStats = stats; // Update in-memory stats
+          setLiveStats(stats); // Update in-memory stats
           broadcast({ type: 'mining-stats', data: stats });
         } else if (config.mining.metricsSource === 'push') {
           // push path is authoritative; the interval must not overwrite live stats
         } else {
           const stats = await getRealMiningStats();
-          miningStats = stats; // Update in-memory stats
+          setLiveStats(stats); // Update in-memory stats
           broadcast({ type: 'mining-stats', data: stats });
         }
       } catch (error) {
@@ -757,10 +744,10 @@ const startMining = async (minerConfig: any = {}) => {
     }, 6 * 60 * 60 * 1000); // 6 hours
 
     // Initial stats update
-    let initialStats = miningStats;
+    let initialStats = getLiveStats();
     if (config.mining.simulationMode) {
       initialStats = simulateMiningStats();
-      miningStats = initialStats;
+      setLiveStats(initialStats);
     }
     
     // Run initial aggregation
@@ -880,7 +867,7 @@ const getMinerStats = (minerId: string) => {
   }
   
   // If we have stats for this miner, return them
-  const minerStats = miningStats.miners.find(m => m.minerId === minerId);
+  const minerStats = getLiveStats().miners.find(m => m.minerId === minerId);
   if (minerStats) {
     return minerStats;
   }
@@ -1136,7 +1123,7 @@ const updateMetricsFromScheduler = async (
     // Update stats history
     // Filter out corrupted values (> 5000 TH/s) from existing history
     const MAX_REALISTIC_HASHRATE = 5000;
-    const cleanHistory = miningStats.statsHistory.filter(h => 
+    const cleanHistory = getLiveStats().statsHistory.filter(h => 
       h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
     ).map(h => ({
       timestamp: h.timestamp,
@@ -1171,7 +1158,7 @@ const updateMetricsFromScheduler = async (
     const aggregates = calculateAggregates(minerStats, statsHistory);
     
     // Update global stats
-    miningStats = {
+    setLiveStats({
       totalHashrate,
       totalHashrateSha256,
       totalHashrateScrypt,
@@ -1182,13 +1169,13 @@ const updateMetricsFromScheduler = async (
       activeMinersSha256,
       activeMinersScrypt,
       totalMiners: minerStats.length, // Use merged count (includes configured miners not yet scraped)
-      totalMined: miningStats.totalMined, // Keep existing total
+      totalMined: getLiveStats().totalMined, // Keep existing total
       miners: minerStats,
       timestamp: timestamp || Date.now(),
       statsHistory,
       aggregates
-    };
-    
+    });
+
     // Save to database
     try {
       const avgTemperature = minerStats.length > 0
@@ -1202,12 +1189,12 @@ const updateMetricsFromScheduler = async (
       const rejectionRate = totalShares > 0 ? (rejectedShares / totalShares) * 100 : 0;
       
       const dbRecord: StatsRecord = {
-        timestamp: miningStats.timestamp,
-        totalHashrate: miningStats.totalHashrate,
-        averageHashrate24h: miningStats.averageHashrate24h,
-        activeMiners: miningStats.activeMiners,
+        timestamp: getLiveStats().timestamp,
+        totalHashrate: getLiveStats().totalHashrate,
+        averageHashrate24h: getLiveStats().averageHashrate24h,
+        activeMiners: getLiveStats().activeMiners,
         totalMiners: minerStats.length, // Use merged count
-        totalMined: miningStats.totalMined,
+        totalMined: getLiveStats().totalMined,
         avgTemperature,
         avgPower,
         rejectionRate,
@@ -1218,7 +1205,7 @@ const updateMetricsFromScheduler = async (
     }
     
     // Broadcast to WebSocket clients
-    broadcast({ type: 'mining-stats', data: miningStats });
+    broadcast({ type: 'mining-stats', data: getLiveStats() });
     
     logger.info(`✓ Metrics updated: ${activeMiners}/${miners.length} miners active, ${totalHashrate.toFixed(2)} TH/s`);
   } catch (error) {
