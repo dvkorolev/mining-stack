@@ -10,7 +10,7 @@ Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docke
 > **Status at a glance (main `64a5af8`)**
 > - ✅ **Done & merged:** P0 (Pi-drift backport), **Phase 0** (test harness + CI), Phase 1 (security S1–S5), Phase 2 (data-path clarity), **Phase 4 cleanup complete (C1–C5)**.
 > - ✅ **Operational:** subnet-move recovery — DMI-19 (MAC-keyed reconcile tool) + DMI-20 (live Pi DB remap).
-> - ⏳ **Open / next up:** **Phase 3** (decompose large modules + SQLite schema versioning) — the remaining major workstream.
+> - ⏳ **In progress:** **Phase 3** (decompose large modules + SQLite schema versioning). 3.1 (DMI-28), 3.2 (DMI-29..35, `database.service.ts`) and 3.3 (DMI-36..41, `mining.service.ts`) done; **3.4 (`telegram.service.ts`) is next and last**.
 
 ---
 
@@ -127,9 +127,11 @@ Order delivered: S1 ✅ → S5 ✅ → S2 ✅ → S3 ✅ → S4 ✅.
 - P2.3 CLAUDE.md namespaces/data-path docs — `0b3ef19`.
 - Verified safe against the live Pi (`.env` takes new defaults; Prometheus holds 22 miner series).
 
-### Phase 3 — Maintainability — ⏳ OPEN (not started)
-- Decompose the largest modules (`telegram.service.ts` 2369, `database.service.ts` 1595, `mining.service.ts` 1470) along clear seams (command handlers, schema/migrations, stats vs. control). Add unit tests as each seam is extracted. **Depends on Phase 0** for a safety net.
-- Introduce explicit SQLite schema versioning/migrations (M3). Note: the live DB now also carries a `mac` column added operationally during DMI-20 — fold it into the versioned schema.
+### Phase 3 — Maintainability — ⏳ IN PROGRESS
+- **3.1 — SQLite schema versioning (M3)** — ✅ DONE & merged (DMI-28, `76df13e`). `backend/src/db/migrations.ts`: `PRAGMA user_version` + ordered `MIGRATIONS` array; migration #1 folds in the operationally-added `mac` column (DMI-20) idempotently.
+- **3.2 — `database.service.ts` decomposition** — ✅ DONE & merged (DMI-29..35, merge `7fb376e`). 1599 → 804 LOC thin facade over 7 per-domain repositories in `backend/src/db/repositories/`; zero callsite changes; 41 repository unit tests; build + tests green.
+- **3.3 — `mining.service.ts` decomposition** — ✅ DONE (DMI-36..41, branch `feature/dmi-phase3.3-mining-service`). 1488 → 308 LOC facade over `backend/src/services/mining/`: `simulation` (fake data, SIMULATION_MODE only), `state` (live snapshot, single writer), `stats-reader` (Prometheus read path), `push-receiver` (scheduler push path), `lifecycle` (interval orchestration), `aggregates` (pure fleet aggregates). Public API unchanged (zero callsite changes); `METRICS_SOURCE` single-writer invariant preserved and now pinned by unit tests; facade no longer writes live stats at all.
+- **3.4 — `telegram.service.ts` (~2369 LOC)** — ⏳ OPEN (highest risk, last). Decompose along command-handler seams.
 
 ### Phase 4 — Cleanup & docs — ✅ DONE (C1–C5 complete)
 - ✅ C1 dead code (DMI-21), ✅ C2 root markdown (DMI-23), ✅ C3 Makefile + README drift / MIT LICENSE (DMI-22/26), ✅ C4 canonical deploy script (DMI-27), ✅ C5 metric namespaces (P2.3).
