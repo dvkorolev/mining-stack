@@ -5,18 +5,22 @@
  * reached when `config.mining.simulationMode` is true; it must never be a
  * silent fallback for the real metrics path (see CLAUDE.md "Simulation").
  *
- * The facade (mining.service.ts) owns the fleet-level aggregator
- * (`simulateMiningStats`); this module owns the per-miner generators and
- * their private persistent state.
+ * Owns both the per-miner generators (with their private persistent state)
+ * and the fleet-level aggregator `simulateMiningStats`. The DB handle is
+ * fetched lazily inside the aggregator so importing this module stays free
+ * of side effects.
  *
  * @module services/mining/simulation
  */
 
 import { config } from '../../config/config';
-import { updateMinerStatus } from '../../config/miners.config';
+import { getMiners, updateMinerStatus } from '../../config/miners.config';
 import { logger } from '../../utils/logger';
+import { getDatabase, StatsRecord } from '../database.service';
+import { calculateAggregates } from './aggregates';
 import { ERROR_CODES } from './error-codes';
-import type { MinerError, MinerStats } from '../mining.service';
+import { getMiningStats as getLiveStats } from './state';
+import type { MinerError, MinerStats, MiningStats } from '../mining.service';
 
 // Persistent miner state to avoid constant status changes between ticks
 const minerPersistentState = new Map<string, {
@@ -211,4 +215,126 @@ export const simulateMinerStats = (miner: any): MinerStats => {
     errorCount: errors.length,
     lastError,
   };
+};
+
+/**
+ * Simulate mining stats for all miners (fleet-level aggregate).
+ * Reads the live snapshot for history/totalMined continuity but does NOT
+ * write it — the lifecycle interval is the single writer in simulation mode.
+ */
+export const simulateMiningStats = (): MiningStats => {
+  const miners = getMiners();
+  const minerStats = miners.map(simulateMinerStats);
+
+  // Calculate total hashrates by algorithm
+  const totalHashrate = minerStats.reduce((sum, miner) => sum + miner.currentHashrate, 0);
+  const totalHashrateSha256 = minerStats
+    .filter(m => m.algorithm === 'sha256')
+    .reduce((sum, miner) => sum + miner.currentHashrate, 0);
+  const totalHashrateScrypt = minerStats
+    .filter(m => m.algorithm === 'scrypt')
+    .reduce((sum, miner) => sum + miner.currentHashrate, 0);
+
+  const activeMiners = minerStats.filter(m => m.status === 'online').length;
+  const activeMinersSha256 = minerStats.filter(m => m.status === 'online' && m.algorithm === 'sha256').length;
+  const activeMinersScrypt = minerStats.filter(m => m.status === 'online' && m.algorithm === 'scrypt').length;
+
+  // Calculate 24h average hashrate from history
+  // Filter out corrupted values (> 5000 TH/s) from existing history
+  const MAX_REALISTIC_HASHRATE = 5000;
+  const cleanHistory = getLiveStats().statsHistory.filter(h =>
+    h.hashrate > 0 && h.hashrate <= MAX_REALISTIC_HASHRATE
+  ).map(h => ({
+    timestamp: h.timestamp,
+    hashrate: h.hashrate,
+    hashrateSha256: h.hashrateSha256 || 0,
+    hashrateScrypt: h.hashrateScrypt || 0
+  }));
+  const statsHistory = [
+    ...cleanHistory,
+    {
+      timestamp: Date.now(),
+      hashrate: totalHashrate,
+      hashrateSha256: totalHashrateSha256,
+      hashrateScrypt: totalHashrateScrypt
+    }
+  ].slice(-config.mining.maxHistoryPoints);
+
+  // Calculate 24h average using only data from last 24 hours
+  const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+  const recentStats = statsHistory.filter(stat => stat.timestamp >= twentyFourHoursAgo);
+  const averageHashrate24h = recentStats.length > 0
+    ? recentStats.reduce((sum, stat) => sum + stat.hashrate, 0) / recentStats.length
+    : totalHashrate;
+  const averageHashrate24hSha256 = recentStats.length > 0
+    ? recentStats.reduce((sum, stat) => sum + stat.hashrateSha256, 0) / recentStats.length
+    : totalHashrateSha256;
+  const averageHashrate24hScrypt = recentStats.length > 0
+    ? recentStats.reduce((sum, stat) => sum + stat.hashrateScrypt, 0) / recentStats.length
+    : totalHashrateScrypt;
+
+  // Realistic BTC mining calculation
+  // Network hashrate ~600 EH/s = 600,000,000 TH/s
+  // Block reward: 3.125 BTC per block (after 2024 halving)
+  // Blocks per day: 144
+  // Daily BTC: 450 BTC total for entire network
+  // Formula: (miner_hashrate / network_hashrate) * daily_btc * time_fraction
+  const networkHashrate = 600000000; // 600 EH/s in TH/s
+  const dailyBTC = 450;
+  const updateIntervalSeconds = config.mining.updateInterval / 1000;
+  const timeFraction = updateIntervalSeconds / 86400; // fraction of a day
+  const btcMined = (totalHashrate / networkHashrate) * dailyBTC * timeFraction;
+
+  // Calculate additional metrics for database
+  const avgTemperature = minerStats.length > 0
+    ? minerStats.reduce((sum, m) => sum + (m.hardware?.temperature || 0), 0) / minerStats.length
+    : 0;
+
+  const avgPower = minerStats.reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0);
+
+  const totalShares = minerStats.reduce((sum, m) => sum + m.shares.accepted + m.shares.rejected, 0);
+  const rejectedShares = minerStats.reduce((sum, m) => sum + m.shares.rejected, 0);
+  const rejectionRate = totalShares > 0 ? (rejectedShares / totalShares) * 100 : 0;
+
+  // Calculate aggregates
+  const aggregates = calculateAggregates(minerStats, statsHistory);
+
+  // Update global stats
+  const stats: MiningStats = {
+    totalHashrate,
+    totalHashrateSha256,
+    totalHashrateScrypt,
+    averageHashrate24h,
+    averageHashrate24hSha256,
+    averageHashrate24hScrypt,
+    activeMiners,
+    activeMinersSha256,
+    activeMinersScrypt,
+    totalMiners: miners.length,
+    totalMined: getLiveStats().totalMined + btcMined,
+    miners: minerStats,
+    timestamp: Date.now(),
+    statsHistory,
+    aggregates
+  };
+
+  // Save to database
+  try {
+    const dbRecord: StatsRecord = {
+      timestamp: stats.timestamp,
+      totalHashrate: stats.totalHashrate,
+      averageHashrate24h: stats.averageHashrate24h,
+      activeMiners: stats.activeMiners,
+      totalMiners: miners.length,
+      totalMined: stats.totalMined,
+      avgTemperature,
+      avgPower,
+      rejectionRate,
+    };
+    getDatabase().insertStats(dbRecord);
+  } catch (error) {
+    logger.error('Error saving stats to database:', error);
+  }
+
+  return stats;
 };

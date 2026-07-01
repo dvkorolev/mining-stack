@@ -16,7 +16,7 @@ import { broadcast } from '../websocket.service';
 import { getMiners } from '../../config/miners.config';
 import { logger } from '../../utils/logger';
 import { getDatabase, StatsRecord } from '../database.service';
-import { calculateAggregates } from './stats-reader';
+import { calculateAggregates } from './aggregates';
 import { getMiningStats as getLiveStats, setMiningStats as setLiveStats } from './state';
 import type { MinerError, MinerStats } from '../mining.service';
 
