@@ -7,10 +7,12 @@ Date: 2026-06-17 (original review) · **Last refreshed: 2026-08-07**
 Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
 
-> **Status at a glance (main `cc93c71`)**
+> **Status at a glance (main `e7fcf82`)**
 > - ✅ **Done & merged:** P0 (Pi-drift backport), **Phase 0** (test harness + CI), Phase 1 (security S1–S5), Phase 2 (data-path clarity), **Phase 4 cleanup complete (C1–C5)**, **Phase 3.3** (`mining.service.ts` decomposition, DMI-36..41).
-> - ✅ **Operational:** subnet-move recovery — DMI-19 (MAC-keyed reconcile tool) + DMI-20 (live Pi DB remap) + **DMI-43** (Mac-side deploy scripts unified/idempotent host discovery, closing the gap DMI-19/20 didn't cover).
+> - ✅ **Operational:** subnet-move recovery — DMI-19 (MAC-keyed reconcile tool) + DMI-20 (live Pi DB remap) + **DMI-43** (deploy-script host discovery) + **DMI-44** (router syslog → Loki).
 > - ⏳ **In progress:** **Phase 3** (decompose large modules + SQLite schema versioning). 3.1 (DMI-28), 3.2 (DMI-29..35, `database.service.ts`) and 3.3 (DMI-36..41, `mining.service.ts`) done; **3.4 (`telegram.service.ts`) is next and last**.
+> - 🔧 **Open ops items:** **DMI-45** (5 miners not scraping; 3 still on dead `192.168.1.x` — unfinished DMI-19/20 tail) · **DMI-46** (post-mortem of the 2026-08-07 site outage, root cause undetermined).
+> - ⚠️ **Pi is running images ~6 weeks old.** Everything from Phase 3.3 onward — plus DMI-43/44 — is on `main` but has never been deployed. The only exception is the DMI-44 promtail change, which was applied live on the Pi first and then ported to git (repo and Pi verified identical). A deploy is the obvious next operational step, but was deliberately deferred until site stability was restored.
 
 ---
 
@@ -141,6 +143,13 @@ Not in the original review (environmental, surfaced 2026-06-20 when the Pi's `et
 - **DMI-19** — universal MAC-keyed `reconcile` mode in `bin/farm_init.py` (matching tiers MAC → IP-enrich → octet+model heuristic; dry-run default; 14 unit tests). Merged `cc53027`.
 - **DMI-20** — live Pi SQLite remap (PK-safe in-place multi-table UPDATE preserving `miner_stats_history`); restored 0 → 19 active miners (~2070 TH/s); added + backfilled the `miners.mac` column so future moves are MAC-recoverable.
 - **DMI-43** (2026-08-07) — DMI-19/20 fixed the *miners'* addresses on the Pi's own DB, but the Mac-side deploy scripts (`quick-deploy.sh`, `deploy-to-pi-registry.sh`, `deploy-optimized.sh`, `pi-quick-update.sh`) still hardcoded the Pi's own pre-migration address (`192.168.1.66` / `100.112.244.18`), two of them with no fallback at all. New `deploy-lib.sh` provides one `find_pi_host()` (SSH-probe based, `PI_HOST`/`PI_HOSTS` overridable) sourced by all four, now pointed at the current addresses (`192.168.2.63` LAN DHCP / `100.119.15.37` Tailscale); also made `quick-deploy.sh`'s buildx builder creation idempotent (`ensure_buildx_builder()`). `pi-deploy.sh` (runs on-Pi, not host-discovery-relevant) untouched. Commit `cc93c71`.
+- **DMI-44** (2026-08-07, commit `e7fcf82`) — router syslog → Loki. The site's Keenetic keeps its system log in RAM only, so a full-site outage that day was unanalysable: the recovery power-cycle wiped the evidence. promtail now runs a `keenetic-syslog` job on UDP 1514 and was bumped **2.9.0 → 3.5.1** — the router speaks RFC3164 (BSD) syslog and 2.9 parses only RFC5424, silently discarding the datagrams (`syslog_format` requires promtail ≥ 3.1). Applied live on the Pi first, then ported to git and verified byte-identical. Router side, out-of-band: `system log server <pi-ip>:1514`.
+
+### Open operational items (Linear Backlog)
+- **DMI-45** — 5 miners fail to scrape (`miner_scrape_status < 0`); 3 of them (`miner-134-inactive`, `workerS19new`, `workers19kpro115`) still hold `192.168.1.x` addresses in the DB, the unfinished tail of the DMI-19/20 migration — they were offline when the June remap ran. Fleet sits at ~993 TH/s vs ~2070 in June with 7 miners in `miner_state=0`; measured flat over 20 min, so this is a standing condition, not post-outage ramp-up. Any fix must be a PK-safe in-place `UPDATE` (miner IP is the primary key and `miner_stats_history` has an `ON DELETE CASCADE` FK) — reuse `bin/farm_init.py reconcile`.
+- **DMI-46** — post-mortem of the 2026-08-07 outage. Root cause **undetermined**: the pre-reboot router log was already lost. Two candidates remain undistinguished — an `ip ssh security-level` CLI change made a minute earlier, or ordinary 4G-uplink flakiness (this site is 4G-only, weak signal, and Keenetic's `ping-check` auto modem-restart is deliberately disabled by the owner, so the link never self-heals). DMI-44 exists specifically so the next occurrence leaves evidence.
+
+Site-specific network/ops details (router credentials, Tailscale footguns, 4G constraints) live in the git-ignored `CLAUDE.local.md`, not here.
 
 ---
 
