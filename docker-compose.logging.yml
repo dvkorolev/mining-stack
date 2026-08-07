@@ -39,11 +39,16 @@ services:
 
   # Promtail - Log collector
   promtail:
-    image: grafana/promtail:2.9.0
+    # 3.5.x is required for the Keenetic syslog job: the router emits RFC3164 (BSD)
+    # syslog, and the `syslog_format` option that parses it only exists in promtail
+    # >= 3.1. On 2.9.0 those datagrams arrive but are silently dropped.
+    image: grafana/promtail:3.5.1
     platform: linux/arm64
     container_name: promtail
     ports:
       - "9080:9080"
+      # Keenetic router syslog (see promtail-config.yml, job_name: keenetic-syslog)
+      - "1514:1514/udp"
     volumes:
       # Docker socket to read container logs
       - /var/run/docker.sock:/var/run/docker.sock:ro

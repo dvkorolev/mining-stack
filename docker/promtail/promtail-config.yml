@@ -65,3 +65,27 @@ scrape_configs:
       # Output the message field (or original if not JSON)
       - output:
           source: message
+
+  # Keenetic router syslog. The router's own log is RAM-only and is wiped on every
+  # power-cycle, so the 2026-08-07 site outage could not be investigated after the
+  # fact; shipping it into Loki keeps it across reboots.
+  #
+  # The router emits RFC3164 (BSD) syslog, so this needs promtail >= 3.1 for
+  # `syslog_format` — on 2.9.0 the datagrams arrive but are silently discarded.
+  # Router side (not tracked here): `system log server <pi-ip>:1514`.
+  - job_name: keenetic-syslog
+    syslog:
+      listen_address: 0.0.0.0:1514
+      listen_protocol: udp
+      syslog_format: rfc3164
+      idle_timeout: 60s
+      label_structured_data: false
+      labels:
+        job: keenetic-syslog
+    relabel_configs:
+      - source_labels: ['__syslog_message_hostname']
+        target_label: 'host'
+      - source_labels: ['__syslog_message_severity']
+        target_label: 'severity'
+      - source_labels: ['__syslog_message_app_name']
+        target_label: 'app'
