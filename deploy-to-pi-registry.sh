@@ -8,9 +8,13 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+source "$(dirname "$0")/deploy-lib.sh"
+
 # Configuration
-PI_USER="${PI_USER:-admin}"
-PI_HOST="${PI_HOST:-192.168.1.66}"
+if ! PI_HOST="$(find_pi_host)"; then
+    echo -e "${RED}Error: Cannot reach Pi on any known address.${NC}"
+    exit 1
+fi
 PI_REMOTE="${PI_USER}@${PI_HOST}"
 REGISTRY="${REGISTRY:-100.121.189.88:5001}"
 REMOTE_DIR="/opt/mining-stack"

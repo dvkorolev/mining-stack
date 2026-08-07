@@ -8,34 +8,15 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+source "$(dirname "$0")/deploy-lib.sh"
+
 # Configuration
 DOCKER_HUB_USER="${DOCKER_HUB_USER:-dvkorolev}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 PLATFORM="linux/arm64"
-
-# Pi connection - try multiple addresses
-PI_USER="${PI_USER:-admin}"
-PI_HOSTS=("192.168.1.66" "100.112.244.18")  # Local and Tailscale
-PI_HOST=""
 REMOTE_DIR="/opt/mining-stack"
 
 echo -e "${GREEN}=== Optimized Deployment to Docker Hub & Raspberry Pi ===${NC}"
-
-# Find reachable Pi host
-find_pi_host() {
-    for host in "${PI_HOSTS[@]}"; do
-        echo -e "${YELLOW}Checking $host...${NC}"
-        if ping -c 1 -W 2 "$host" > /dev/null 2>&1; then
-            if ssh -o ConnectTimeout=5 -o BatchMode=yes "${PI_USER}@${host}" "echo ok" 2>/dev/null; then
-                PI_HOST="$host"
-                echo -e "${GREEN}✓ Connected to Pi via $host${NC}"
-                return 0
-            fi
-        fi
-    done
-    echo -e "${RED}Cannot reach Pi on any address${NC}"
-    return 1
-}
 
 # Build and push to Docker Hub
 build_and_push() {
@@ -68,7 +49,9 @@ echo -e "\n${GREEN}=== All images pushed to Docker Hub ===${NC}"
 # Step 2: Find Pi and deploy
 echo -e "\n${BLUE}Step 2: Connecting to Raspberry Pi${NC}"
 
-if ! find_pi_host; then
+if PI_HOST="$(find_pi_host)"; then
+    echo -e "${GREEN}✓ Connected to Pi via ${PI_HOST}${NC}"
+else
     echo -e "${RED}Skipping Pi deployment - Pi unreachable${NC}"
     echo -e "${YELLOW}Run manually on Pi:${NC}"
     echo -e "  docker compose -f docker-compose.prod.yml pull"

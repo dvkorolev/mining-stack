@@ -12,11 +12,17 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║   Mining Stack - Build & Push to Local Registry           ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
 
+source "$(dirname "$0")/deploy-lib.sh"
+
 # Configuration
-PI_USER="${PI_USER:-admin}"
-PI_HOST="${PI_HOST:-192.168.1.66}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 REGISTRY="${REGISTRY:-100.121.189.88:5001}"
+
+if ! PI_HOST="$(find_pi_host)"; then
+    echo -e "${RED}Error: Cannot reach Pi on any known address.${NC}"
+    exit 1
+fi
+export PI_USER PI_HOST
 
 echo -e "\n${BLUE}Configuration:${NC}"
 echo -e "  Target: ${YELLOW}${PI_USER}@${PI_HOST}${NC}"
@@ -33,10 +39,9 @@ fi
 # Check if buildx is available
 if ! docker buildx version > /dev/null 2>&1; then
     echo -e "${RED}Error: Docker buildx is not available.${NC}"
-    echo -e "${YELLOW}Creating buildx builder...${NC}"
-    docker buildx create --name multiarch --use
-    docker buildx inspect --bootstrap
+    exit 1
 fi
+ensure_buildx_builder "multiarch"
 
 # Step 1: Build and push images to local registry
 echo -e "${YELLOW}Step 1/2: Building and pushing images to local registry...${NC}"

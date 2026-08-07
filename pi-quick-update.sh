@@ -7,18 +7,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-PI_USER="${PI_USER:-admin}"
-PI_HOSTS=("192.168.1.66" "100.112.244.18")
+source "$(dirname "$0")/deploy-lib.sh"
 
-# Find reachable Pi
-for host in "${PI_HOSTS[@]}"; do
-    if ssh -o ConnectTimeout=5 -o BatchMode=yes "${PI_USER}@${host}" "echo ok" 2>/dev/null; then
-        PI_HOST="$host"
-        break
-    fi
-done
-
-if [ -z "$PI_HOST" ]; then
+if ! PI_HOST="$(find_pi_host)"; then
     echo -e "${RED}Cannot reach Pi${NC}"
     exit 1
 fi
