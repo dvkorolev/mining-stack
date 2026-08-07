@@ -3,13 +3,13 @@
 Repository review and improvement plan. Originally analysis-only; now also the
 living roadmap, kept in sync with shipped work and the Linear "Mining Stack" project.
 
-Date: 2026-06-17 (original review) · **Last refreshed: 2026-06-20**
+Date: 2026-06-17 (original review) · **Last refreshed: 2026-08-07**
 Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
 
-> **Status at a glance (main `64a5af8`)**
-> - ✅ **Done & merged:** P0 (Pi-drift backport), **Phase 0** (test harness + CI), Phase 1 (security S1–S5), Phase 2 (data-path clarity), **Phase 4 cleanup complete (C1–C5)**.
-> - ✅ **Operational:** subnet-move recovery — DMI-19 (MAC-keyed reconcile tool) + DMI-20 (live Pi DB remap).
+> **Status at a glance (main `cc93c71`)**
+> - ✅ **Done & merged:** P0 (Pi-drift backport), **Phase 0** (test harness + CI), Phase 1 (security S1–S5), Phase 2 (data-path clarity), **Phase 4 cleanup complete (C1–C5)**, **Phase 3.3** (`mining.service.ts` decomposition, DMI-36..41).
+> - ✅ **Operational:** subnet-move recovery — DMI-19 (MAC-keyed reconcile tool) + DMI-20 (live Pi DB remap) + **DMI-43** (Mac-side deploy scripts unified/idempotent host discovery, closing the gap DMI-19/20 didn't cover).
 > - ⏳ **In progress:** **Phase 3** (decompose large modules + SQLite schema versioning). 3.1 (DMI-28), 3.2 (DMI-29..35, `database.service.ts`) and 3.3 (DMI-36..41, `mining.service.ts`) done; **3.4 (`telegram.service.ts`) is next and last**.
 
 ---
@@ -140,6 +140,7 @@ Order delivered: S1 ✅ → S5 ✅ → S2 ✅ → S3 ✅ → S4 ✅.
 Not in the original review (environmental, surfaced 2026-06-20 when the Pi's `eth0` moved `192.168.1.x → 192.168.2.x`).
 - **DMI-19** — universal MAC-keyed `reconcile` mode in `bin/farm_init.py` (matching tiers MAC → IP-enrich → octet+model heuristic; dry-run default; 14 unit tests). Merged `cc53027`.
 - **DMI-20** — live Pi SQLite remap (PK-safe in-place multi-table UPDATE preserving `miner_stats_history`); restored 0 → 19 active miners (~2070 TH/s); added + backfilled the `miners.mac` column so future moves are MAC-recoverable.
+- **DMI-43** (2026-08-07) — DMI-19/20 fixed the *miners'* addresses on the Pi's own DB, but the Mac-side deploy scripts (`quick-deploy.sh`, `deploy-to-pi-registry.sh`, `deploy-optimized.sh`, `pi-quick-update.sh`) still hardcoded the Pi's own pre-migration address (`192.168.1.66` / `100.112.244.18`), two of them with no fallback at all. New `deploy-lib.sh` provides one `find_pi_host()` (SSH-probe based, `PI_HOST`/`PI_HOSTS` overridable) sourced by all four, now pointed at the current addresses (`192.168.2.63` LAN DHCP / `100.119.15.37` Tailscale); also made `quick-deploy.sh`'s buildx builder creation idempotent (`ensure_buildx_builder()`). `pi-deploy.sh` (runs on-Pi, not host-discovery-relevant) untouched. Commit `cc93c71`.
 
 ---
 
