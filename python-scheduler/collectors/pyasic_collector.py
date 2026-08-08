@@ -20,7 +20,7 @@ from metrics import (
     miner_board_hashrate, miner_board_temp, miner_board_chips_count,
     miner_board_chips_expected, miner_fan_speed, miner_pool_accepted,
     miner_pool_rejected, collection_duration, collection_success,
-    collection_timestamp, miner_gaps_filled_total
+    collection_timestamp, miner_gaps_filled_total, update_miner_label_cache
 )
 
 logger = logging.getLogger(__name__)
@@ -684,6 +684,11 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             is_scrypt = _is_scrypt_miner(miner_model, miner.get('algorithm'))
             algorithm = 'scrypt' if is_scrypt else 'sha256'
             
+            # Record the labels here too, not just on the success path: a miner that
+            # has never been reachable still gets series, and remove_miner_series()
+            # needs the cached label set to clear them once it crosses the threshold.
+            update_miner_label_cache(miner_ip, miner_name, model_normalized, algorithm)
+
             miner_scrape_status.labels(ip=miner_ip, name=miner_name, model=model_normalized, algorithm=algorithm).set(scrape_status)
             miner_state.labels(ip=miner_ip, name=miner_name, model=model_normalized, algorithm=algorithm).set(0)
             

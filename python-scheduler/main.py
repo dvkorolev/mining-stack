@@ -42,7 +42,8 @@ from metrics import (
     pool_network_packet_loss, collection_duration,
     collection_success, collection_timestamp,
     miner_scrape_status, miner_state,
-    miner_fallback_trigger_total, miner_fallback_total
+    miner_fallback_trigger_total, miner_fallback_total,
+    remove_miner_series
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
 from collectors.antminer_cgi_collector import collect_antminer_cgi
@@ -542,12 +543,10 @@ async def collect_all_metrics():
                     streak = service_state.increment_failure_streak(miner['ip'], miner['name'], miner['model'])
                     
                     if streak >= FAILURE_THRESHOLD:
-                        model_normalized = miner['model'].replace(" ", "_")
-                        try:
-                            miner_scrape_status.remove(miner['ip'], miner['name'], model_normalized)
-                            miner_state.remove(miner['ip'], miner['name'], model_normalized)
-                        except KeyError:
-                            pass
+                        # Labels (incl. `algorithm`) come from the cache the collector
+                        # fills for this miner; a hand-built subset would not match what
+                        # was registered, and prometheus_client rejects a short one.
+                        remove_miner_series(miner['ip'], [miner_scrape_status, miner_state])
             
             # Update service state
             service_state.update_last_collection(

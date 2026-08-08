@@ -87,9 +87,43 @@ def remove_old_miner_labels(ip: str, old_name: str, old_model: str, old_algorith
     for metric in get_all_miner_metrics():
         try:
             metric.remove(ip, old_name, old_model, old_algorithm)
-        except KeyError:
+        except (KeyError, ValueError):
             # Label combination doesn't exist, that's fine
             pass
+
+
+def remove_miner_series(ip: str, metrics=None) -> bool:
+    """
+    Remove a miner's series using the label set recorded for it.
+
+    Callers generally know only ip/name/model; the `algorithm` label is
+    recovered from the cache that update_miner_label_cache() fills on every
+    successful collection. Passing fewer label values than a metric declares
+    raises ValueError in prometheus_client, so the full set matters.
+
+    An ip that was never collected has no series to remove, so this is a no-op.
+    The cache entry is deliberately kept: if the miner later returns under a
+    different name or model, remove_old_miner_labels() still needs it to clean
+    up the remaining gauges.
+
+    Args:
+        ip: miner address, the cache key.
+        metrics: metrics to clear; defaults to every miner gauge.
+
+    Returns:
+        True if a label set was known for `ip`, False if there was nothing to do.
+    """
+    labels = _miner_label_cache.get(ip)
+    if labels is None:
+        return False
+
+    for metric in (get_all_miner_metrics() if metrics is None else metrics):
+        try:
+            metric.remove(ip, labels['name'], labels['model'], labels['algorithm'])
+        except (KeyError, ValueError):
+            # Label combination doesn't exist on this metric, that's fine
+            pass
+    return True
 
 def update_miner_label_cache(ip: str, name: str, model: str, algorithm: str):
     """

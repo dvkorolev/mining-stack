@@ -45,6 +45,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install pyyaml
-      - run: python -m py_compile python-scheduler/main.py
+      - run: pip install pyyaml prometheus-client==0.19.0
+      - run: python -m py_compile python-scheduler/main.py python-scheduler/metrics.py python-scheduler/collectors/*.py
       - run: python bin/test_farm_init.py
+      - run: python python-scheduler/test_metrics_cleanup.py
