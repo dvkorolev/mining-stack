@@ -57,6 +57,30 @@ miner_gaps_filled_total = Counter('miner_gaps_filled_total', 'Count of gaps fill
 miner_fallback_trigger_total = Counter('miner_fallback_trigger_total', 'Count of fallback triggers by reason category', ['reason'])
 miner_fallback_total = Counter('miner_fallback_total', 'Count of fallback collector attempts by method and result', ['method', 'result'])
 
+# Miner-config provenance (DMI-58): which source the polled miner list came from,
+# and how many miners it holds. Together these make "monitoring the wrong list"
+# alertable — it used to be indistinguishable from a healthy collection.
+scheduler_config_source = Gauge('scheduler_config_source', 'Active miner-config source (1=active, 0=inactive)', ['source'])
+scheduler_miners_configured = Gauge('scheduler_miners_configured', 'Number of miners in the active configuration')
+
+
+def publish_config_source(source: str, miner_count: int, known_sources) -> None:
+    """
+    Publish the active miner-config source as a complete set of series.
+
+    Every known source gets a series so the inactive ones read 0 rather than
+    vanishing — an absent series and a false one look the same in a graph, and
+    alerts on `== 1` need the label to exist before the bad state occurs.
+
+    Args:
+        source: the active source (config.get_miners_config_source()).
+        miner_count: miners in the active configuration.
+        known_sources: every possible source value (config.CONFIG_SOURCES).
+    """
+    for known in known_sources:
+        scheduler_config_source.labels(source=known).set(1 if known == source else 0)
+    scheduler_miners_configured.set(miner_count)
+
 # ============================================================================
 # METRIC CLEANUP HELPERS
 # ============================================================================

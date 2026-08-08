@@ -30,8 +30,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from config import (
     MINERS_CONFIG, POOLS_CONFIG, COLLECTION_INTERVAL, POOL_TEST_INTERVAL, ENABLE_ICMP_PING,
     BACKEND_URL, PUSH_TO_BACKEND, INTERNAL_METRICS_TOKEN,
+    CONFIG_SOURCES, DEGRADED_CONFIG_SOURCES,
     load_miners_config, load_pools_config, invalidate_config_cache,
-    miners_config_cache
+    get_miners_config, get_miners_config_source
 )
 from state_manager import ServiceState
 from asic_profile_loader import get_library
@@ -43,7 +44,7 @@ from metrics import (
     collection_success, collection_timestamp,
     miner_scrape_status, miner_state,
     miner_fallback_trigger_total, miner_fallback_total,
-    remove_miner_series
+    remove_miner_series, publish_config_source
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
 from collectors.antminer_cgi_collector import collect_antminer_cgi
@@ -284,9 +285,16 @@ async def collect_all_metrics():
                      collection_id=int(time.time()))
             
             miners = load_miners_config()
+            config_source = get_miners_config_source()
+            publish_config_source(config_source, len(miners), CONFIG_SOURCES)
             log_event(logger, 'info', 'Loaded miner configuration',
-                     miners_count=len(miners))
-            
+                     miners_count=len(miners), config_source=config_source)
+            if config_source in DEGRADED_CONFIG_SOURCES:
+                # DMI-58: polling the wrong list still looks like a successful
+                # collection, so the warning has to come from here.
+                log_event(logger, 'warning', 'Polling a fallback miner configuration',
+                         miners_count=len(miners), config_source=config_source)
+
             pyasic_result = await collect_pyasic_metrics(miners)
             miners_data = pyasic_result.get('miners_data', [])
             miners_data_by_ip = {
@@ -632,7 +640,12 @@ async def lifespan(app_instance: FastAPI):
     logger.info(f"  Tracked miners: {state_stats['tracked_miners']}")
     
     logger.info("=" * 60)
-    
+
+    # Publish the config-source gauge before the first collection, so the
+    # series exist from the first scrape rather than appearing only once a
+    # collection has run (DMI-58).
+    publish_config_source(get_miners_config_source(), len(get_miners_config()), CONFIG_SOURCES)
+
     # Initialize APScheduler
     scheduler = AsyncIOScheduler()
     
@@ -813,7 +826,10 @@ async def status():
         "collection_interval_minutes": COLLECTION_INTERVAL,
         "pool_test_interval_minutes": POOL_TEST_INTERVAL,
         "architecture": "v3_apscheduler_with_state_persistence",
-        "miners_count": len(miners_config_cache) if miners_config_cache else 0,
+        # Read through the accessor: importing the cache by value bound it to
+        # None at import time, so this always reported 0 miners.
+        "miners_count": len(get_miners_config()),
+        "config_source": get_miners_config_source(),
         "state_stats": state_stats
     }
 

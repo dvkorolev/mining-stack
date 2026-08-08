@@ -146,6 +146,21 @@ Boot behavior:
 Rule:
 - do not reintroduce runtime dependence on YAML for normal request handling
 
+### Scheduler miner list — provenance is tracked (DMI-58)
+The scheduler fetches its miner list from `GET {BACKEND_URL}/api/mining/miners` and falls back to
+`MINERS_CONFIG` (`etc/miners.yaml`, which holds example miners) only when it has never fetched a
+real one. Every load records where the list came from, in `config.miners_config_source`:
+- `database_api` / `yaml` — the intended source (healthy)
+- `stale_cache` — backend unreachable, last known good list retained rather than replaced
+- `yaml_fallback` — backend unreachable with nothing cached; likely polling placeholders
+- `none` — nothing loaded
+
+Same rule as `SIMULATION_MODE`: **a fallback must never be indistinguishable from success.** The
+source is exposed as `scheduler_config_source{source}` / `scheduler_miners_configured`, drives
+`/health` (degraded on the fallback sources) and `/status`, and is alerted on in
+`docker/prometheus/rules/scheduler_alerts.yml`. Do not make the health check re-probe the backend
+instead of reporting the loaded config, and do not let a failed fetch overwrite a good list.
+
 ## Commands
 
 ### Backend
