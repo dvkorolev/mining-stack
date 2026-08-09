@@ -1,60 +1,38 @@
 # Mining Pool Configuration
-# Define critical pools to monitor independently of miner status
-# These pools will be tested even if all miners are offline
-
-pools:
-  # Slush Pool (Braiins Pool)
-  - url: "stratum.slushpool.com:3333"
-    name: "SlushPool"
-    algorithm: "sha256"
-    priority: "high"
-  
-  # F2Pool
-  - url: "stratum.f2pool.com:3333"
-    name: "F2Pool"
-    algorithm: "sha256"
-    priority: "high"
-  
-  # Antpool
-  - url: "stratum.antpool.com:3333"
-    name: "Antpool"
-    algorithm: "sha256"
-    priority: "medium"
-  
-  # ViaBTC
-  - url: "stratum.viabtc.com:3333"
-    name: "ViaBTC"
-    algorithm: "sha256"
-    priority: "medium"
-  
-  # Poolin
-  - url: "stratum.ss.poolin.me:443"
-    name: "Poolin"
-    algorithm: "sha256"
-    priority: "medium"
-  
-  # LitecoinPool (SCRYPT)
-  - url: "stratum.litecoinpool.org:3333"
-    name: "LitecoinPool"
-    algorithm: "scrypt"
-    priority: "medium"
-  
-  # Prohashing (Multi-algo)
-  - url: "prohashing.com:3333"
-    name: "Prohashing"
-    algorithm: "multi"
-    priority: "low"
+#
+# Pools listed here are probed directly by the scheduler (DNS + TCP connect +
+# optional ping) and exposed as pool_network_*, independently of miner status.
+#
+# DMI-56: the list this file used to carry was seven pools the farm does not
+# mine on, and none of the ones it does. Six returned exactly 0.0% reachability
+# for a month — two hostnames no longer resolve, three point at Cloudflare
+# addresses that do not carry port 3333. The seventh, stratum.slushpool.com,
+# fails roughly 25% of the time on its own: pools drop repeated bare TCP
+# connects from an address that never speaks stratum. Read as connectivity, it
+# produced a phantom "535 outages / 75.5% availability" and a wrong diagnosis of
+# the 2026-08-07 outage (DMI-46).
+#
+# The list is deliberately empty rather than repointed at the pool the farm
+# actually uses: probing that one the same way would recreate the same false
+# signal on the connection everything depends on. Pool health now comes from the
+# miners themselves — they hold real stratum sessions — via `miner_pool_alive`
+# and the rules in docker/prometheus/rules/pool_status_alerts.yml. Uplink
+# availability is `sum(rate(miner_pool_accepted_total[5m]))`.
+#
+# Only add an entry here for a pool where a plain TCP connect is genuinely
+# meaningful, and confirm it is not a pool that penalises non-stratum probes.
+pools: []
 
 # Configuration options
 config:
   # How often to test pools (in minutes)
   test_interval: 5
-  
+
   # Enable ICMP ping tests (requires root/CAP_NET_RAW)
   enable_ping: false
-  
+
   # Connection timeout (seconds)
   connection_timeout: 5
-  
+
   # DNS resolution timeout (seconds)
   dns_timeout: 3

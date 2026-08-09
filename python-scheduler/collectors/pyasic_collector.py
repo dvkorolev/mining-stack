@@ -20,8 +20,10 @@ from metrics import (
     miner_board_hashrate, miner_board_temp, miner_board_chips_count,
     miner_board_chips_expected, miner_fan_speed, miner_pool_accepted,
     miner_pool_rejected, collection_duration, collection_success,
-    collection_timestamp, miner_gaps_filled_total, update_miner_label_cache
+    collection_timestamp, miner_gaps_filled_total, update_miner_label_cache,
+    set_miner_pools
 )
+from parsers.pool_status import extract_pool_status
 
 logger = logging.getLogger(__name__)
 
@@ -317,6 +319,12 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
         
         miner_pool_accepted.labels(ip=ip, name=name, model=model, algorithm=algo).set(total_accepted)
         miner_pool_rejected.labels(ip=ip, name=name, model=model, algorithm=algo).set(total_rejected)
+
+    # Per-pool identity and status (DMI-56). Outside the block above on
+    # purpose: that one needs share counters, this needs only a URL, and a
+    # miner that reports pools without counters still tells us which pools it
+    # uses and whether they are alive.
+    set_miner_pools(ip, name, extract_pool_status(pools))
     
     cgminer_board_temps = data.get('cgminer_board_temps', [])
     if cgminer_board_temps and isinstance(cgminer_board_temps, list):

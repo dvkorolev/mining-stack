@@ -46,9 +46,11 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install pyyaml prometheus-client==0.19.0 requests
-      - run: python -m py_compile python-scheduler/main.py python-scheduler/metrics.py python-scheduler/config.py python-scheduler/health_check.py python-scheduler/collectors/*.py
+      - run: python -m py_compile python-scheduler/main.py python-scheduler/metrics.py python-scheduler/config.py python-scheduler/health_check.py python-scheduler/collectors/*.py python-scheduler/parsers/*.py
       - run: python bin/test_farm_init.py
       - run: python python-scheduler/test_metrics_cleanup.py
-      # Run from the package dir: config/health_check import each other by bare name.
+      # Run from the package dir: these modules import each other by bare name.
       - run: python test_config_source.py
+        working-directory: python-scheduler
+      - run: python test_pool_status.py
         working-directory: python-scheduler

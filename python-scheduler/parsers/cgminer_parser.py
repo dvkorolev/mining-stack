@@ -187,16 +187,26 @@ def parse_cgminer_response(stats: Optional[Dict], summary: Optional[Dict], pools
                 result['hashrate'] = hashrate_ths
                 result['hashrate_unit'] = detected_unit
     
-    # Parse pools for rejected shares
+    # Parse pools for share counts and identity.
+    # DMI-56: the URL and Status used to be dropped here, so the fleet's actual
+    # pools — the only ground truth for what to monitor — never left this
+    # function, and a pool going Dead on the miners was invisible.
     if pools and 'POOLS' in pools:
         pool_list = []
-        for pool in pools['POOLS']:
+        for position, pool in enumerate(pools['POOLS']):
             accepted = pool.get('Accepted', pool.get('accepted', 0))
             rejected = pool.get('Rejected', pool.get('rejected', 0))
-            pool_list.append({
+            entry = {
                 'accepted': int(accepted),
-                'rejected': int(rejected)
-            })
+                'rejected': int(rejected),
+                'index': pool.get('POOL', position),
+                'url': pool.get('URL', pool.get('url', '')),
+                'status': pool.get('Status', pool.get('status', '')),
+            }
+            stratum_active = pool.get('Stratum Active', pool.get('stratum_active'))
+            if stratum_active is not None:
+                entry['stratum_active'] = stratum_active
+            pool_list.append(entry)
         result['pools'] = pool_list
     
     return result

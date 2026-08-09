@@ -44,7 +44,7 @@ from metrics import (
     collection_success, collection_timestamp,
     miner_scrape_status, miner_state,
     miner_fallback_trigger_total, miner_fallback_total,
-    remove_miner_series, publish_config_source
+    remove_miner_series, remove_miner_pool_series, publish_config_source
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
 from collectors.antminer_cgi_collector import collect_antminer_cgi
@@ -555,6 +555,11 @@ async def collect_all_metrics():
                         # fills for this miner; a hand-built subset would not match what
                         # was registered, and prometheus_client rejects a short one.
                         remove_miner_series(miner['ip'], [miner_scrape_status, miner_state])
+                        # A miner this far past the failure threshold is telling
+                        # us nothing about its pools either; leaving the last
+                        # `alive` reading behind would report a live pool from a
+                        # machine that has not answered in hours (DMI-56).
+                        remove_miner_pool_series(miner['ip'])
             
             # Update service state
             service_state.update_last_collection(

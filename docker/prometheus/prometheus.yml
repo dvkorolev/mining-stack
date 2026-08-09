@@ -65,6 +65,13 @@ scrape_configs:
   # ============================================================================
   
   # Blackbox TCP - Mining pool connectivity checks
+  #
+  # The target list is currently empty on purpose: it watched seven pools the
+  # farm does not use, and probe_success against a pool measures the pool's
+  # tolerance of bare TCP connects, not our connectivity — reading it as uplink
+  # availability produced a wrong outage diagnosis (DMI-46/56). Use
+  # miner_pool_alive for pool health and the fleet share rate for availability.
+  # Read targets/README.md before adding anything back.
   - job_name: 'blackbox-tcp'
     metrics_path: /probe
     params:
