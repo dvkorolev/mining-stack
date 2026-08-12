@@ -1,0 +1,59 @@
+# Pool health as the miners themselves report it (DMI-56).
+#
+# Distinct from pool_network_alerts.yml, which alerts on pool_network_* — the
+# scheduler's own TCP/DNS probing of a configured list. That mechanism is fine,
+# but its target list was seven pools the farm does not use, so it never said
+# anything about the pools that matter.
+#
+# These rules read miner_pool_alive instead: every miner holds a real stratum
+# session, so its verdict on a pool cannot be confused with a pool refusing bare
+# TCP connects from a prober — the mistake that produced the retracted
+# availability figure in DMI-46.
+groups:
+  - name: pool_status
+    interval: 30s
+    rules:
+      # Critical: a miner has no usable pool left, so it cannot submit work
+      # regardless of how healthy the hardware looks.
+      - alert: MinerNoLivePool
+        expr: max by (ip, name) (miner_pool_alive) == 0
+        for: 10m
+        labels:
+          severity: critical
+          component: pool
+        annotations:
+          summary: "Miner {{ $labels.name }} has no live pool"
+          description: >-
+            Every pool configured on {{ $labels.name }} ({{ $labels.ip }}) is
+            reporting Dead. The miner cannot submit shares.
+
+      # Critical: a pool is dead across most of the fleet, which points at the
+      # pool or the uplink rather than at one machine.
+      - alert: PoolDeadAcrossFleet
+        expr: |
+          count by (url) (miner_pool_alive == 0)
+            / count by (url) (miner_pool_alive) > 0.5
+        for: 10m
+        labels:
+          severity: critical
+          component: pool
+        annotations:
+          summary: "Pool {{ $labels.url }} is dead on most of the fleet"
+          description: >-
+            More than half the miners configured against {{ $labels.url }}
+            report it Dead. Check the pool and the uplink before touching
+            individual miners.
+
+      # Warning: a single miner cannot reach a pool the rest of the fleet can.
+      # Usually that miner's own configuration or network path.
+      - alert: PoolDeadOnMiner
+        expr: miner_pool_alive == 0
+        for: 30m
+        labels:
+          severity: warning
+          component: pool
+        annotations:
+          summary: "Pool {{ $labels.url }} is dead on {{ $labels.name }}"
+          description: >-
+            {{ $labels.name }} ({{ $labels.ip }}) has reported pool
+            {{ $labels.url }} as Dead for 30 minutes.

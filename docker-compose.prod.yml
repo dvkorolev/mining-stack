@@ -25,6 +25,15 @@ services:
     volumes:
       - ./etc:/app/etc
       - ./data/python-scheduler:/app/data
+    # DMI-58: the scheduler fetches its entire miner list from the backend API.
+    # Started first, it cannot resolve `backend`, falls back to the example
+    # miners in etc/miners.yaml and polls those instead of the real fleet.
+    # This dependency used to point the other way (backend -> scheduler), which
+    # is backwards: the backend has no code path that calls the scheduler
+    # (JOB_RUNNER_URL is unused), while the scheduler cannot work without it.
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
       - mining-network
     restart: unless-stopped
@@ -93,9 +102,6 @@ services:
       - ./bin:/opt/mining-stack/bin:ro
       - ./venv:/opt/mining-stack/venv:ro
       - ./docker/prometheus/rules:/app/prometheus-rules
-    depends_on:
-      python-scheduler:
-        condition: service_healthy
     deploy:
       resources:
         limits:

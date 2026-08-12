@@ -131,6 +131,17 @@ The backend has two ways miner data can reach the live `miningStats`: reading Pr
 - `push` — `updateMetricsFromScheduler` is authoritative; the interval does not overwrite.
 Do not let both write `miningStats` again — that reintroduces the clobber this flag fixed.
 
+### Pool health and uplink availability (DMI-56)
+- **Pool health comes from the miners**, not from probing pools: `miner_pool_alive{ip,name,url,pool_index}`,
+  built from each miner's own reported pool list (`pool_status.extract_pool_status()`). The `url` label
+  is the fleet's ground truth for which pools are in use.
+- **Never read `probe_success{job="pool-tcp-check"}` as connectivity.** A pool drops repeated bare TCP
+  connects from an address that never speaks stratum, so that metric measures the pool's tolerance of
+  us. Doing this produced a phantom 25% outage rate and a wrong outage diagnosis (DMI-46). The target
+  list is deliberately empty; see `docker/prometheus/targets/README.md` before adding to it.
+- **Uplink availability is `sum(rate(miner_pool_accepted_total[5m]))`** — real share submission across
+  ~20 devices, riding the production path.
+
 ### Simulation (`SIMULATION_MODE`)
 Simulated/fake data is served **only** when `SIMULATION_MODE=true` (default false). It is never a silent fallback: on a Prometheus read error the backend keeps last-known real stats and logs the error; boot does not seed fake data. Do not reintroduce a `simulateMiningStats()` fallback into the real path.
 
@@ -145,6 +156,21 @@ Boot behavior:
 
 Rule:
 - do not reintroduce runtime dependence on YAML for normal request handling
+
+### Scheduler miner list — provenance is tracked (DMI-58)
+The scheduler fetches its miner list from `GET {BACKEND_URL}/api/mining/miners` and falls back to
+`MINERS_CONFIG` (`etc/miners.yaml`, which holds example miners) only when it has never fetched a
+real one. Every load records where the list came from, in `config.miners_config_source`:
+- `database_api` / `yaml` — the intended source (healthy)
+- `stale_cache` — backend unreachable, last known good list retained rather than replaced
+- `yaml_fallback` — backend unreachable with nothing cached; likely polling placeholders
+- `none` — nothing loaded
+
+Same rule as `SIMULATION_MODE`: **a fallback must never be indistinguishable from success.** The
+source is exposed as `scheduler_config_source{source}` / `scheduler_miners_configured`, drives
+`/health` (degraded on the fallback sources) and `/status`, and is alerted on in
+`docker/prometheus/rules/scheduler_alerts.yml`. Do not make the health check re-probe the backend
+instead of reporting the loaded config, and do not let a failed fetch overwrite a good list.
 
 ## Commands
 

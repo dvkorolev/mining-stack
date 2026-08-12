@@ -32,6 +32,12 @@ miner_fan_speed = Gauge('miner_fan_speed_rpm', 'Fan speed in RPM', ['ip', 'name'
 miner_pool_accepted = Gauge('miner_pool_accepted_total', 'Total accepted shares', ['ip', 'name', 'model', 'algorithm'])
 miner_pool_rejected = Gauge('miner_pool_rejected_total', 'Total rejected shares', ['ip', 'name', 'model', 'algorithm'])
 
+# Per-pool status as the miner itself reports it (DMI-56). The `url` label is
+# the fleet's ground truth for which pools are actually in use — the blackbox
+# target list was hand-maintained, watched seven pools the farm does not mine
+# on, and produced no signal when a real pool went Dead.
+miner_pool_alive = Gauge('miner_pool_alive', 'Pool status reported by the miner (1=alive, 0=dead)', ['ip', 'name', 'url', 'pool_index'])
+
 # Pool Network Quality Metrics
 pool_network_reachable = Gauge('pool_network_reachable', 'Pool reachability (1=reachable, 0=unreachable)', ['pool', 'port'])
 pool_network_dns_resolved = Gauge('pool_network_dns_resolved', 'DNS resolution status (1=success, 0=failure)', ['pool', 'port'])
@@ -57,12 +63,86 @@ miner_gaps_filled_total = Counter('miner_gaps_filled_total', 'Count of gaps fill
 miner_fallback_trigger_total = Counter('miner_fallback_trigger_total', 'Count of fallback triggers by reason category', ['reason'])
 miner_fallback_total = Counter('miner_fallback_total', 'Count of fallback collector attempts by method and result', ['method', 'result'])
 
+# Miner-config provenance (DMI-58): which source the polled miner list came from,
+# and how many miners it holds. Together these make "monitoring the wrong list"
+# alertable — it used to be indistinguishable from a healthy collection.
+scheduler_config_source = Gauge('scheduler_config_source', 'Active miner-config source (1=active, 0=inactive)', ['source'])
+scheduler_miners_configured = Gauge('scheduler_miners_configured', 'Number of miners in the active configuration')
+
+
+def publish_config_source(source: str, miner_count: int, known_sources) -> None:
+    """
+    Publish the active miner-config source as a complete set of series.
+
+    Every known source gets a series so the inactive ones read 0 rather than
+    vanishing — an absent series and a false one look the same in a graph, and
+    alerts on `== 1` need the label to exist before the bad state occurs.
+
+    Args:
+        source: the active source (config.get_miners_config_source()).
+        miner_count: miners in the active configuration.
+        known_sources: every possible source value (config.CONFIG_SOURCES).
+    """
+    for known in known_sources:
+        scheduler_config_source.labels(source=known).set(1 if known == source else 0)
+    scheduler_miners_configured.set(miner_count)
+
 # ============================================================================
 # METRIC CLEANUP HELPERS
 # ============================================================================
 
 # Track miner label history to detect changes
 _miner_label_cache = {}  # {ip: {'name': str, 'model': str, 'algorithm': str}}
+
+# Pool series published per miner, so ones that disappear can be removed.
+_miner_pool_label_cache = {}  # {ip: {(name, url, pool_index), ...}}
+
+
+def set_miner_pools(ip: str, name: str, pools) -> None:
+    """
+    Publish the pools a miner reports, and drop the ones it no longer reports.
+
+    Cleanup matters more here than for the fixed miner gauges: a pool that is
+    reconfigured away keeps its last value forever otherwise, and a stale
+    `miner_pool_alive == 0` is indistinguishable from a pool that is genuinely
+    down right now — the same "a leftover looks like a live signal" trap as
+    DMI-54/55.
+
+    Args:
+        ip: miner address, the cache key.
+        name: miner name, part of the series labels.
+        pools: normalised records from pool_status.extract_pool_status().
+    """
+    published = set()
+    for pool in pools:
+        pool_index = str(pool['index'])
+        miner_pool_alive.labels(
+            ip=ip, name=name, url=pool['url'], pool_index=pool_index
+        ).set(1 if pool['alive'] else 0)
+        published.add((name, pool['url'], pool_index))
+
+    for stale in _miner_pool_label_cache.get(ip, set()) - published:
+        _remove_pool_series(ip, stale)
+
+    if published:
+        _miner_pool_label_cache[ip] = published
+    else:
+        _miner_pool_label_cache.pop(ip, None)
+
+
+def _remove_pool_series(ip: str, labels) -> None:
+    """Remove one pool series; missing combinations are not an error."""
+    name, url, pool_index = labels
+    try:
+        miner_pool_alive.remove(ip, name, url, pool_index)
+    except (KeyError, ValueError):
+        pass
+
+
+def remove_miner_pool_series(ip: str) -> None:
+    """Drop every pool series for a miner that is gone or unreachable."""
+    for labels in _miner_pool_label_cache.pop(ip, set()):
+        _remove_pool_series(ip, labels)
 
 def get_all_miner_metrics():
     """Return all Gauge metrics that track miners"""

@@ -1,0 +1,70 @@
+# Alerts on the collector itself, rather than on the miners it polls.
+#
+# Kept out of mining_alerts.yml on purpose: that file is regenerated from
+# etc/miners.yaml by bin/generate_prometheus_rules.py, which would drop
+# anything hand-added to it.
+#
+# DMI-58: the scheduler takes its miner list from the backend API and silently
+# fell back to the example miners in etc/miners.yaml when the backend was not
+# up yet. Collection then succeeded against the wrong list, so every existing
+# alert stayed quiet — the fleet simply stopped being monitored.
+groups:
+  - name: scheduler_config
+    interval: 30s
+    rules:
+      # Critical: polling whatever is in the YAML seed file, which ships
+      # example miners (miner-01..04 at 192.168.1.100-103).
+      - alert: SchedulerConfigYamlFallback
+        expr: scheduler_config_source{source="yaml_fallback"} == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "Scheduler is polling the YAML fallback miner list"
+          description: >-
+            The backend miner API is unreachable and no previously fetched list
+            was available, so the scheduler is polling {{ $labels.instance }}'s
+            YAML config. These are likely example miners, not the real fleet.
+
+      # Warning: backend unreachable, but the last known good list is still in
+      # use — the fleet is monitored, inventory changes are not picked up.
+      - alert: SchedulerConfigStale
+        expr: scheduler_config_source{source="stale_cache"} == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: "Scheduler cannot reach the backend miner API"
+          description: >-
+            Serving the last known good miner list for 15 minutes. Collection
+            continues, but miners added or removed in the database are not
+            reflected.
+
+      # Critical: nothing is being polled at all.
+      - alert: SchedulerNoMinersConfigured
+        expr: scheduler_miners_configured == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "Scheduler has no miners configured"
+          description: "The active miner configuration is empty — no miner is being polled."
+
+      # Warning: the list shrank sharply. Backstop for the DMI-58 failure mode
+      # (25 miners becoming 5) that does not depend on the source label being
+      # right. Fires on a real decommission too, which is worth a look anyway.
+      - alert: SchedulerMinerCountDropped
+        expr: scheduler_miners_configured < 0.8 * max_over_time(scheduler_miners_configured[24h])
+        for: 10m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: "Configured miner count dropped to {{ $value }}"
+          description: >-
+            The scheduler is polling fewer than 80% of the miners it had in the
+            last 24h. Either the fleet shrank in the database, or the collector
+            is running on the wrong configuration.

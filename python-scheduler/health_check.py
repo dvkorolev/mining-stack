@@ -5,12 +5,15 @@ Checks internal state and dependencies to provide meaningful health status
 
 import time
 import logging
-import requests
-from pathlib import Path
 from typing import Dict, List, Tuple
 from datetime import datetime, timedelta
 
-from config import MINERS_CONFIG, USE_DATABASE_CONFIG, SYSTEM_API_KEY, BACKEND_URL
+from config import (
+    MINERS_CONFIG, BACKEND_URL,
+    CONFIG_SOURCE_DATABASE, CONFIG_SOURCE_YAML,
+    CONFIG_SOURCE_STALE_CACHE, CONFIG_SOURCE_YAML_FALLBACK,
+    get_miners_config, get_miners_config_source, has_loaded_miners_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -156,85 +159,81 @@ class HealthCheck:
     
     def check_config_file(self) -> Tuple[str, str, Dict]:
         """
-        Check if miners.yaml config file is readable
-        
+        Report where the miner list actually in use came from.
+
+        DMI-58: this check used to re-probe the backend and report "Config
+        loaded from database API" whenever that probe succeeded — even while
+        the service was polling YAML placeholders loaded minutes earlier, when
+        the backend was still starting. It now reports the recorded provenance
+        of the loaded config, so a fallback can never read as healthy.
+
         Returns:
             (status, message, details)
         """
-        if USE_DATABASE_CONFIG and SYSTEM_API_KEY:
-            try:
-                response = requests.get(
-                    f"{BACKEND_URL}/api/mining/miners",
-                    headers={'X-API-Key': SYSTEM_API_KEY},
-                    timeout=2
-                )
-                if response.status_code == 200:
-                    return (
-                        HealthStatus.HEALTHY,
-                        "Config loaded from database API",
-                        {
-                            "source": "database_api",
-                            "backend_url": BACKEND_URL,
-                        }
-                    )
-            except Exception as e:
-                pass
+        source = get_miners_config_source()
+        miners = get_miners_config()
+        details = {
+            "source": source,
+            "miners_count": len(miners),
+            "backend_url": BACKEND_URL,
+            "config_path": MINERS_CONFIG,
+        }
 
-        config_path = Path(MINERS_CONFIG)
-        
-        if not config_path.exists():
-            if USE_DATABASE_CONFIG and SYSTEM_API_KEY:
-                return (
-                    HealthStatus.DEGRADED,
-                    f"Database config unavailable and YAML config not found: {MINERS_CONFIG}",
-                    {"config_path": str(config_path), "source": "database_api"}
-                )
+        # "Nothing has loaded yet" (startup) vs "loaded and empty" (a fault):
+        # both leave the list empty, and neither depends on the source.
+        if not has_loaded_miners_config():
+            return (
+                HealthStatus.DEGRADED,
+                "Miner configuration has not been loaded yet",
+                details
+            )
+
+        if not miners:
             return (
                 HealthStatus.UNHEALTHY,
-                f"Config file not found: {MINERS_CONFIG}",
-                {"config_path": str(config_path)}
+                f"No miners in the configuration (source: {source}) — nothing is being polled",
+                details
             )
-        
-        if not config_path.is_file():
-            return (
-                HealthStatus.UNHEALTHY,
-                f"Config path is not a file: {MINERS_CONFIG}",
-                {"config_path": str(config_path)}
-            )
-        
-        try:
-            # Try to read the file
-            with open(config_path, 'r') as f:
-                content = f.read()
-            
-            if not content.strip():
-                return (
-                    HealthStatus.DEGRADED,
-                    "Config file is empty",
-                    {"config_path": str(config_path)}
-                )
-            
+
+        if source == CONFIG_SOURCE_DATABASE:
             return (
                 HealthStatus.HEALTHY,
-                "Config file is readable",
-                {
-                    "config_path": str(config_path),
-                    "file_size_bytes": config_path.stat().st_size
-                }
+                f"Config loaded from database API ({len(miners)} miners)",
+                details
             )
-            
-        except PermissionError:
+
+        if source == CONFIG_SOURCE_YAML:
             return (
-                HealthStatus.UNHEALTHY,
-                f"Config file is not readable (permission denied): {MINERS_CONFIG}",
-                {"config_path": str(config_path)}
+                HealthStatus.HEALTHY,
+                f"Config loaded from {MINERS_CONFIG} ({len(miners)} miners); "
+                "database config is disabled",
+                details
             )
-        except Exception as e:
+
+        if source == CONFIG_SOURCE_STALE_CACHE:
             return (
-                HealthStatus.UNHEALTHY,
-                f"Failed to read config file: {e}",
-                {"config_path": str(config_path), "error": str(e)}
+                HealthStatus.DEGRADED,
+                f"Database API unreachable; serving the last known good miner list "
+                f"({len(miners)} miners)",
+                details
             )
+
+        if source == CONFIG_SOURCE_YAML_FALLBACK:
+            return (
+                HealthStatus.DEGRADED,
+                f"Database API unreachable; running on the YAML fallback "
+                f"({len(miners)} miners from {MINERS_CONFIG}) — these may be example "
+                "miners rather than the real fleet",
+                details
+            )
+
+        # Any source not handled above is unknown; a miner list of unknown
+        # provenance is exactly what this check exists to surface.
+        return (
+            HealthStatus.DEGRADED,
+            f"Miner configuration came from an unrecognised source: {source}",
+            details
+        )
     
     def check_profile_library(self) -> Tuple[str, str, Dict]:
         """
