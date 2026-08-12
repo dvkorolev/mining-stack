@@ -123,6 +123,12 @@ services:
     environment:
       # Auto-provision Loki data source
       - GF_DATASOURCES_DEFAULT_URL=http://loki:3100
+      # Grafana cuts the connection to a datasource after this long, so it is a
+      # second ceiling stacked on top of Loki's own. At the 30s default a wide
+      # Loki range still failed in the browser even after Loki was raised to
+      # 180s, because Grafana gave up first. Both have to clear the query.
+      # A 7-day Router Syslog range measures ~71s on this Pi.
+      - GF_DATAPROXY_TIMEOUT=180
     volumes:
       # Grafana provisioning for Loki data source (consolidated with main config)
       - ./docker/grafana/provisioning/datasources/loki.yml:/etc/grafana/provisioning/datasources/loki.yml:ro

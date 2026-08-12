@@ -3,6 +3,14 @@ auth_enabled: false
 server:
   http_listen_port: 3100
   grpc_listen_port: 9096
+  # Go kills the connection if the response is not fully written within this
+  # window, so it is effectively the ceiling on how long a query may take.
+  # At the 30s default a 7-day range died at ~70s with "i/o timeout" even
+  # though the query itself had succeeded — the client just saw a dropped
+  # connection. Wide ranges are exactly what this dashboard is for when
+  # reconstructing an outage, so the ceiling has to clear them.
+  http_server_write_timeout: 180s
+  http_server_read_timeout: 180s
 
 common:
   instance_addr: 127.0.0.1
@@ -42,7 +50,27 @@ limits_config:
   reject_old_samples: true
   reject_old_samples_max_age: 168h
   max_cache_freshness_per_query: 10m
-  split_queries_by_interval: 15m
+  # Sized for a Pi 4 serving multi-panel dashboards, not for a cluster.
+  #
+  # Every query is split into one subquery per interval, and each dashboard
+  # panel issues its own query at the same moment. At the previous 15m the
+  # Router Syslog dashboard (5 panels) generated ~120 subqueries for its
+  # default 6h range and overflowed the scheduler queue below, so two panels
+  # returned HTTP 429 "too many outstanding requests" on every load — 24h
+  # would have been ~480. At 1h the same dashboard costs ~30.
+  #
+  # Splitting finer buys parallelism this host does not have: the Pi has 4
+  # cores, so 32-way parallelism per query only fills the queue faster. The
+  # data is ~18 MB/day, small enough that coarse splits are not a problem.
+  split_queries_by_interval: 1h
+  max_query_parallelism: 8
+
+# The queue that was actually overflowing. Loki's default is 100, which two
+# concurrent dashboard panels can exhaust on their own. Queuing a subquery
+# costs a little latency; rejecting it shows the user an error, so prefer a
+# deep queue over a shallow one.
+query_scheduler:
+  max_outstanding_requests_per_tenant: 2048
 
 # Table manager for retention
 table_manager:
