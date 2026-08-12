@@ -48,6 +48,7 @@ jobs:
       - run: pip install pyyaml prometheus-client==0.19.0 requests
       - run: python -m py_compile python-scheduler/main.py python-scheduler/metrics.py python-scheduler/config.py python-scheduler/health_check.py python-scheduler/asic_profile_loader.py python-scheduler/collectors/*.py python-scheduler/parsers/*.py
       - run: python bin/test_farm_init.py
+      - run: python bin/test_wan_watchdog.py
       - run: python python-scheduler/test_metrics_cleanup.py
       # Run from the package dir: these modules import each other, and
       # asic_profile_loader and metrics, by bare name.
@@ -59,3 +60,16 @@ jobs:
         working-directory: python-scheduler
       - run: python test_expected_hashrate.py
         working-directory: python-scheduler
+
+  router-exporter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r router-exporter/requirements.txt
+      - run: python -m py_compile router-exporter/router_exporter.py router-exporter/rci.py
+      # Run from the package dir: router_exporter imports rci by bare name.
+      - run: python test_router_exporter.py
+        working-directory: router-exporter

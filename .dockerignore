@@ -51,3 +51,16 @@ logs
 # Deployment specific
 deploy-pi.sh
 RASPBERRY_PI_DEPLOYMENT.md
+
+# Build context bulk (added 2026-08-12 with the watchdog image, which is the
+# only build using the repository root as its context — backend and frontend
+# use their own subdirectory contexts, so this does not affect them).
+data/
+venv/
+*/venv/
+.claude/
+docs/
+frontend/build/
+backend/dist/
+*.db
+*.db-journal

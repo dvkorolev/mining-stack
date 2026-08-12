@@ -1,7 +1,21 @@
 apiVersion: 1
 
+# Recreate rather than update. Grafana cannot change the UID of an existing
+# datasource through provisioning -- it fails with "data source not found" and
+# leaves the old generated UID in place, so every dashboard referencing the
+# pinned one breaks. Deleting first makes the pinning take effect on an existing
+# install, and is a no-op on a fresh one.
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
 datasources:
   - name: Prometheus
+    # Pinned so dashboards can reference it by a UID that is the same on every
+    # install. Without this Grafana generates one (PBFA97CFB590B2093 here), and a
+    # dashboard carrying that value works on this Pi and nowhere else -- which
+    # matters precisely when rebuilding the machine.
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090

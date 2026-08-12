@@ -1,0 +1,170 @@
+{
+  "uid": "router-syslog",
+  "title": "Router Syslog",
+  "tags": ["logs", "network", "router"],
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": { "from": "now-6h", "to": "now" },
+  "description": "The Keenetic ships its syslog to Loki on the Pi (DMI-44) because the router keeps it in RAM only and wipes it on every reboot. This has been the deciding evidence in every outage investigated so far. Note the blind spot: promtail runs on the Pi, so if the Pi is down these lines are lost.",
+  "templating": {
+    "list": [
+      {
+        "name": "app",
+        "label": "Source",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "definition": "label_values(app)",
+        "query": "label_values(app)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 1,
+        "sort": 1,
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+      },
+      {
+        "name": "search",
+        "label": "Search",
+        "type": "textbox",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Uplink events",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Modem power cycles",
+      "description": "KeeneticOS power-cycles the USB modem on its own when the uplink fails. It has never restored service: on 2026-08-12 it ran ~134 times over 2h29m and the link only came back after the router itself was restarted. Treat a sustained bar here as an outage in progress, not as a recovery in progress.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 1 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({job=\"keenetic-syslog\"} |= \"power cycle\" [$__interval]))",
+          "legendFormat": "power cycles",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": { "tooltip": { "mode": "single", "sort": "none" }, "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["sum", "max"] } },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 70, "showPoints": "never", "spanNulls": false },
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" }, { "value": 1, "color": "orange" } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "Connectivity events",
+      "description": "InternetChecker is unreliable -- it has missed both a recovery and an entire outage. Corroborate against the fleet share rate before believing it.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{job=\"keenetic-syslog\"} |~ \"(?i)InternetChecker|power cycle|link down|link up|IPv4 connection|unplugged|plugged\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true }
+    },
+    {
+      "id": 4,
+      "type": "row",
+      "title": "Volume and severity",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Log volume by source",
+      "description": "A quiet router is a healthy router. Reference: ~560 lines/day when idle, against 11k and 27k on the outage days of 08-08 and 08-09.",
+      "gridPos": { "h": 7, "w": 16, "x": 0, "y": 9 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum by (app) (count_over_time({job=\"keenetic-syslog\", app=~\"$app\"} [$__interval]))",
+          "legendFormat": "{{app}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum", "max"] } },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 60, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "piechart",
+      "title": "By severity",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 9 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum by (severity) (count_over_time({job=\"keenetic-syslog\"} [$__range]))",
+          "legendFormat": "{{severity}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "options": { "legend": { "displayMode": "table", "placement": "right", "values": ["value"] }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Everything",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Router log",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 17 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{job=\"keenetic-syslog\", app=~\"$app\"} |~ \"$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "showTime": true, "showLabels": true, "sortOrder": "Descending", "wrapLogMessage": true }
+    }
+  ]
+}

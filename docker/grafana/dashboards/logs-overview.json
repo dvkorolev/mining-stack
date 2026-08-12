@@ -25,7 +25,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "gridPos": {
         "h": 8,
@@ -48,7 +48,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "{container_name=~\"$container\"} |~ \"$search\" | json | level=~\"$level\" | line_format \"{{.level}} [{{.service}}] {{.message}}\"",
@@ -62,7 +62,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "fieldConfig": {
         "defaults": {
@@ -181,7 +181,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "sum by (level) (count_over_time({container_name=~\"$container\"} | json | level=~\"$level\" [$__interval]))",
@@ -195,7 +195,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "fieldConfig": {
         "defaults": {
@@ -237,7 +237,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "sum by (container_name) (count_over_time({container_name=~\"$container\"} [$__range]))",
@@ -251,7 +251,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "gridPos": {
         "h": 8,
@@ -274,7 +274,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "{container_name=\"mining-stack-python-scheduler-1\"} | json | level=~\"ERROR|WARN\" | line_format \"{{.level}} {{.message}}\"",
@@ -288,7 +288,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "gridPos": {
         "h": 8,
@@ -311,7 +311,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "{container_name=\"mining-stack-python-scheduler-1\"} |~ \"Fallback|fallback|CGI|zombie|hung|mismatch\" | json | line_format \"{{.level}} {{.message}}\"",
@@ -325,7 +325,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "gridPos": {
         "h": 8,
@@ -348,7 +348,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "{container_name=\"mining-stack-backend-1\"} | json | level=~\"ERROR|WARN\" | line_format \"{{.level}} {{.message}}\"",
@@ -362,7 +362,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "fieldConfig": {
         "defaults": {
@@ -412,7 +412,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "sum(count_over_time({container_name=~\".*\"} | json | level=\"ERROR\" [5m]))",
@@ -426,7 +426,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "fieldConfig": {
         "defaults": {
@@ -476,7 +476,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "sum(count_over_time({container_name=~\".*\"} | json | level=\"WARN\" [5m]))",
@@ -490,7 +490,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "fieldConfig": {
         "defaults": {
@@ -536,7 +536,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "sum(count_over_time({container_name=\"mining-stack-python-scheduler-1\"} |~ \"Fallback triggered\" [5m]))",
@@ -550,7 +550,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "fieldConfig": {
         "defaults": {
@@ -596,7 +596,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "Loki"
+            "uid": "loki"
           },
           "editorMode": "code",
           "expr": "sum(count_over_time({container_name=\"mining-stack-python-scheduler-1\"} |~ \"Collection complete\" [5m]))",
@@ -622,7 +622,7 @@
         },
         "datasource": {
           "type": "loki",
-          "uid": "Loki"
+          "uid": "loki"
         },
         "definition": "label_values(container_name)",
         "hide": 0,

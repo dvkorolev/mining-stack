@@ -4,38 +4,48 @@ This directory contains pre-configured Grafana dashboards for the mining monitor
 
 ## Available Dashboards
 
-### 1. Mining Overview Dashboard
-**File**: `mining-overview.json` (to be created)
+All of these are provisioned automatically from this directory. The list below was
+rewritten 2026-08-12: it previously described dashboards "to be created" under names
+that never existed, while the real files sat next to it unmentioned.
 
-**Panels**:
-- Total Hashrate (time series)
-- Active Miners Count
-- Pool Distribution
-- Temperature Heatmap
-- Rejected Shares Rate
-- Power Consumption
+| File | UID | What it answers |
+|---|---|---|
+| `mining-overview.json` | `mining-farm-overview` | Fleet hashrate, active miners, power, temperature |
+| `per-miner-details.json` | `per-miner-details` | One machine at a time: boards, fans, shares |
+| `scrypt-miners.json` | `scrypt-miners` | The SCRYPT side of the fleet, in MH/s (see `ALGORITHM_SEPARATION.md`) |
+| `pool-network-quality.json` | `pool-network-quality` | Latency, packet loss and DNS to the pools |
+| `logs-overview.json` | `mining-logs` | Container logs from the stack's own services |
+| `router-syslog.json` | `router-syslog` | The Keenetic's syslog: modem power cycles, connectivity events, volume |
+| `network-traffic.json` | `network-traffic` | Uplink health and where the metered 4G traffic goes |
 
-**Recommended**: Set as the default home dashboard in Grafana settings.
+### Router Syslog
 
-### 2. System Health Dashboard
-**File**: `system-health.json` (to be created)
+The router keeps its log in RAM and wipes it on every reboot, so it is shipped to Loki
+on the Pi (DMI-44). This has been the deciding evidence in every outage investigated so
+far. Two things to know before reading it:
 
-**Panels**:
-- Service Status (python-scheduler, backend, prometheus)
-- Collection Success Rate
-- API Response Times
-- Memory Usage
-- CPU Usage
-- Alert Summary
+- **Modem power cycles are not a recovery in progress.** KeeneticOS power-cycles the USB
+  modem by itself when the uplink fails, and it has never restored service — on
+  2026-08-12 it ran ~134 times over 2 h 29 m and the link only returned once the router
+  itself was restarted. A sustained bar on that panel means an outage is ongoing.
+- **`InternetChecker` is unreliable.** It has missed both a recovery and an entire
+  outage. Corroborate against the fleet share rate.
+- Blind spot: promtail runs on the Pi, so if the Pi is down these lines are lost.
 
-### 3. Logs Dashboard
-**File**: `logs-dashboard.json` (to be created)
+### Network Traffic
 
-**Panels**:
-- Recent Logs (Loki)
-- Error Rate
-- Log Volume by Service
-- Critical Events Timeline
+Fed by `router-exporter` (DMI-47), which polls the router over SNMP for byte counters
+and over its RCI API for signal and session state. It exists because the site could not
+answer "where does the traffic go" — the miners were assumed to be the consumers, and
+on 2026-08-12 they turned out to account for ~150 MB/day out of 2.4 GB.
+
+Caveats built into the panel descriptions, repeated here because they are easy to
+misread:
+
+- `router_uplink_up` is the **USB link to the dongle**, not the 4G session. The router
+  sits behind the dongle's own NAT and cannot see the session at all.
+- Per-host counters **under-report badly** — 181 MB attributed to a desktop that the AP
+  interface showed receiving 4.80 GB. Use them to identify a device, not to measure one.
 
 ## Creating Dashboards
 
