@@ -50,7 +50,9 @@ groups:
           algorithm: sha256
         annotations:
           summary: "Miner {{ $labels.name }} (SHA-256) hashrate critically low"
-          description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} TH/s (expected: {{ $labels.expected_hashrate }} TH/s, threshold: 50% below)"
+          # No `expected_hashrate` label exists on any series; the rated figure lives in
+          # the miner_expected_hashrate_ths metric, so state the threshold instead.
+          description: "Miner {{ $labels.name }} ({{ $labels.ip }}, {{ $labels.model }}) is hashing at {{ $value | printf \"%.1f\" }} TH/s, below 50% of the rated figure for its model."
       
       # Critical: Hashrate dropped significantly (50% below expected) - SCRYPT
       - alert: MinerHashrateCriticalSCRYPT
@@ -98,7 +100,8 @@ groups:
           algorithm: sha256
         annotations:
           summary: "Miner {{ $labels.name }} (SHA-256) hashrate below expected"
-          description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} TH/s (expected: {{ $labels.expected_hashrate }} TH/s, threshold: 20% below)"
+          # See the note on MinerHashrateCriticalSHA256 about $labels.expected_hashrate.
+          description: "Miner {{ $labels.name }} ({{ $labels.ip }}, {{ $labels.model }}) is hashing at {{ $value | printf \"%.1f\" }} TH/s, between 50% and 80% of the rated figure for its model."
       
       # Warning: Hashrate below expected - SCRYPT
       - alert: MinerHashrateWarningSCRYPT

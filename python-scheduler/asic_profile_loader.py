@@ -228,7 +228,23 @@ class ASICProfileLibrary:
                 if profile:
                     logger.debug(f"Matched '{model}' to profile '{profile_id}' (pattern)")
                     return profile
-        
+
+        # Retry with underscores read as spaces.
+        #
+        # Model strings reach this method in two shapes. Callers in main.py pass the
+        # miner's own string ("M30S++ VH90 (Stock)"), while _update_metrics() in the
+        # pyasic collector first rewrites spaces to underscores for use as a Prometheus
+        # label and looks the profile up with that ("M30S++_VH90_(Stock)"). Without this
+        # step the underscored form can never hit an `exact` rule, so the same miner
+        # resolves differently depending on which caller asked — silently, since a miss
+        # just falls through to legacy behaviour.
+        if '_' in model:
+            spaced = model.replace('_', ' ')
+            if spaced != model:
+                profile = self.get_profile(spaced, algorithm)
+                if profile:
+                    return profile
+
         # If algorithm override is provided, try to find any profile with that algorithm
         if algorithm_override:
             for profile in self.profiles.values():
@@ -309,3 +325,34 @@ def reload_library():
     global _library
     _library = ASICProfileLibrary()
     return _library
+
+
+def expected_hashrate_ths(model: str, algorithm_override: str = None) -> Optional[float]:
+    """
+    Rated hashrate in TH/s for a SHA-256 model, or None when it is not known.
+
+    Backs the `miner_expected_hashrate_ths` metric (DMI-59). None means "do not
+    publish a series", which happens in three distinct cases:
+
+    - the model matches no profile;
+    - the profile states no hashrate range, as with whatsminer_generic, which
+      covers miners reporting no model at all. Publishing a guess there would let
+      the degradation alerts fire on an invented figure;
+    - the miner is SCRYPT. Those profiles express expected hashrate in MH/s, and
+      returning it from a function named `_ths` would assert a unit the number
+      does not carry -- see ALGORITHM_SEPARATION.md.
+
+    Lives here rather than in the collector so it is testable: importing
+    collectors.pyasic_collector pulls in pyasic, which needs Python 3.10+.
+    """
+    # An explicit override wins outright, matching _is_scrypt_miner()'s precedence.
+    # get_profile() cannot be relied on for this: it tries exact and pattern rules
+    # first and only consults the override if both miss, so a model declared scrypt
+    # in config would still resolve to its sha256 profile here.
+    if algorithm_override and algorithm_override.lower() != 'sha256':
+        return None
+
+    profile = get_library().get_profile(model, algorithm_override)
+    if profile is None or profile.algorithm != 'sha256':
+        return None
+    return profile.get_expected_hashrate()
