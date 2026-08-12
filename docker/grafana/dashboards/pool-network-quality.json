@@ -23,6 +23,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
       "type": "timeseries",
       "title": "Pool Connection Time (TCP Latency)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "pool_network_connect_time_ms",
         "legendFormat": "{{pool}}:{{port}}"
@@ -74,6 +75,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
       "type": "stat",
       "title": "Pool DNS Resolution",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "pool_network_dns_resolved",
         "legendFormat": "{{pool}}:{{port}}"
@@ -118,6 +120,7 @@
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
       "type": "table",
       "title": "Pool Network Statistics",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
           "expr": "pool_network_reachable",

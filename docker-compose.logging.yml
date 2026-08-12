@@ -118,6 +118,22 @@ services:
       # Promtail will collect logs from containers with this label
       logging: "promtail"
 
+  # Watchdog - its log IS the incident record (DMI-49)
+  wan-watchdog:
+    labels:
+      # Without this its lines never reach Loki, and the one moment they are
+      # wanted is right after it restarts the router -- when the question is
+      # what it saw and why it acted. Its own container log does not survive a
+      # rebuild, so the decision trail has to live in Loki.
+      logging: "promtail"
+
+  # Router exporter - the only thing watching the uplink (DMI-47)
+  router-exporter:
+    labels:
+      # Scrape failures against the router show up here and nowhere else; the
+      # metrics go silent but do not explain themselves.
+      logging: "promtail"
+
   # Grafana - Updated to include Loki data source
   grafana:
     environment:

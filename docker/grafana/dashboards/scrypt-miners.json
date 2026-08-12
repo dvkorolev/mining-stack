@@ -29,6 +29,7 @@
       "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
       "type": "stat",
       "title": "Total SCRYPT Hashrate (GH/s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "sum(max by (ip) (miner_hashrate_mhs{algorithm=\"scrypt\"}))/1000",
         "legendFormat": "Total GH/s",
@@ -65,6 +66,7 @@
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
       "type": "stat",
       "title": "Active SCRYPT Miners",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "count(miner_state{algorithm=\"scrypt\"} == 2)",
         "legendFormat": "Online",
@@ -98,6 +100,7 @@
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
       "type": "stat",
       "title": "Average Power (SCRYPT)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "avg(miner_power_watts{algorithm=\"scrypt\"})",
         "legendFormat": "Avg Power",
@@ -133,6 +136,7 @@
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
       "type": "stat",
       "title": "Efficiency (MH/W)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "sum(miner_hashrate_mhs{algorithm=\"scrypt\"}) / sum(miner_power_watts{algorithm=\"scrypt\"})",
         "legendFormat": "MH/W",
@@ -168,6 +172,7 @@
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
       "type": "timeseries",
       "title": "SCRYPT Hashrate Over Time (GH/s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "miner_hashrate_mhs{algorithm=\"scrypt\"}/1000",
         "legendFormat": "{{name}} ({{ip}})",
@@ -215,6 +220,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
       "type": "timeseries",
       "title": "SCRYPT Power Consumption (W)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "miner_power_watts{algorithm=\"scrypt\"}",
         "legendFormat": "{{name}} ({{ip}})",
@@ -259,6 +265,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
       "type": "timeseries",
       "title": "SCRYPT Temperature (°C)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "miner_temp_max_c{algorithm=\"scrypt\"}",
         "legendFormat": "{{name}} ({{ip}})",
@@ -304,6 +311,7 @@
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 20},
       "type": "table",
       "title": "SCRYPT Miners Detailed Stats",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
           "expr": "miner_hashrate_mhs{algorithm=\"scrypt\"}/1000",
@@ -545,6 +553,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 30},
       "type": "bargauge",
       "title": "SCRYPT Hashrate by Miner (GH/s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "miner_hashrate_mhs{algorithm=\"scrypt\"}/1000",
         "legendFormat": "{{name}}",
@@ -580,6 +589,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 30},
       "type": "bargauge",
       "title": "SCRYPT Efficiency by Miner (MH/W)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "miner_hashrate_mhs{algorithm=\"scrypt\"} / miner_power_watts{algorithm=\"scrypt\"}",
         "legendFormat": "{{name}}",

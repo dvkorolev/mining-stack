@@ -23,6 +23,7 @@
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
       "type": "timeseries",
       "title": "SHA-256 Hashrate by Miner (TH/s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
           "expr": "max by (ip, name) (miner_hashrate_ths{algorithm=\"sha256\"})",
@@ -68,6 +69,7 @@
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 10},
       "type": "timeseries",
       "title": "SHA-256 Power Consumption by Miner (W)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "max by (ip, name) (miner_power_watts{algorithm=\"sha256\"})",
         "legendFormat": "{{name}} ({{ip}})",
@@ -111,6 +113,7 @@
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 20},
       "type": "timeseries",
       "title": "SHA-256 Rejection Rate by Miner (%) - Lifetime",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "100 * (max by (ip, name) (miner_pool_rejected_total{algorithm=\"sha256\"}) / (max by (ip, name) (miner_pool_accepted_total{algorithm=\"sha256\"}) + max by (ip, name) (miner_pool_rejected_total{algorithm=\"sha256\"})))",
         "legendFormat": "{{name}} ({{ip}})",
@@ -162,6 +165,7 @@
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 30},
       "type": "timeseries",
       "title": "SHA-256 Temperature by Miner (°C)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{
         "expr": "max by (ip, name) (miner_temp_max_c{algorithm=\"sha256\"})",
         "legendFormat": "{{name}} ({{ip}})",
@@ -214,6 +218,7 @@
       "gridPos": {"h": 12, "w": 24, "x": 0, "y": 40},
       "type": "table",
       "title": "SHA-256 Detailed Miner Statistics",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
           "expr": "max by (ip, name, model, algorithm) (miner_hashrate_ths{algorithm=\"sha256\"})",
