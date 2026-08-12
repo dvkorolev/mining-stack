@@ -415,7 +415,7 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum(count_over_time({container_name=~\".*\"} | json | level=\"ERROR\" [5m]))",
+          "expr": "sum(count_over_time({container_name=~\"$container\"} | json | level=\"ERROR\" [5m]))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -479,7 +479,7 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum(count_over_time({container_name=~\".*\"} | json | level=\"WARN\" [5m]))",
+          "expr": "sum(count_over_time({container_name=~\"$container\"} | json | level=\"WARN\" [5m]))",
           "queryType": "instant",
           "refId": "A"
         }

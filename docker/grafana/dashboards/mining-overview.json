@@ -31,6 +31,7 @@
         "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
         "type": "stat",
         "title": "Total Hashrate (SHA-256)",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "targets": [{
           "expr": "sum(max by (ip) (miner_hashrate_ths{algorithm=\"sha256\"}))",
           "legendFormat": "SHA-256"
@@ -62,6 +63,7 @@
         "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
         "type": "stat",
         "title": "Active Miners",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "targets": [{
           "expr": "count(max by (ip) (miner_scrape_status) >= 1)",
           "legendFormat": "Active"
@@ -93,6 +95,7 @@
         "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
         "type": "stat",
         "title": "Total Power",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "targets": [{
           "expr": "sum(max by (ip) (miner_power_watts)) / 1000",
           "legendFormat": "Power"
@@ -124,6 +127,7 @@
         "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
         "type": "stat",
         "title": "Avg Efficiency",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "targets": [{
           "expr": "avg(max by (ip) (miner_efficiency_j_th))",
           "legendFormat": "Efficiency"
@@ -155,6 +159,7 @@
         "gridPos": {"h": 4, "w": 6, "x": 0, "y": 4},
         "type": "stat",
         "title": "Total Hashrate (SCRYPT)",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "targets": [{
           "expr": "sum(max by (ip) (miner_hashrate_mhs{algorithm=\"scrypt\"}))",
           "legendFormat": "SCRYPT"
@@ -186,6 +191,7 @@
         "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
         "type": "timeseries",
         "title": "Farm Hashrate Over Time (SHA-256)",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "targets": [{
           "expr": "sum(max by (ip) (miner_hashrate_ths{algorithm=\"sha256\"}))",
           "legendFormat": "SHA-256 Hashrate"
@@ -234,6 +240,7 @@
         "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
         "type": "timeseries",
         "title": "Power Consumption Over Time",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "targets": [{
           "expr": "sum(max by (ip) (miner_power_watts)) / 1000",
           "legendFormat": "Total Power"
@@ -284,6 +291,7 @@
         "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
         "type": "timeseries",
         "title": "Farm Rejection Rate - Lifetime",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "targets": [{
           "expr": "100 * (sum(max by (ip) (miner_pool_rejected_total)) / (sum(max by (ip) (miner_pool_accepted_total)) + sum(max by (ip) (miner_pool_rejected_total))))",
           "legendFormat": "Rejection Rate"
@@ -334,6 +342,7 @@
         "gridPos": {"h": 12, "w": 24, "x": 0, "y": 20},
         "type": "table",
         "title": "Miner Status",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "targets": [
           {
             "expr": "max by (ip, name, model, algorithm) (miner_hashrate_ths{algorithm=\"sha256\"})",
