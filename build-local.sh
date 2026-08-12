@@ -77,6 +77,32 @@ verify_arch ${REGISTRY}/python-scheduler:${IMAGE_TAG}
 docker push ${REGISTRY}/python-scheduler:${IMAGE_TAG}
 echo -e "${GREEN}✓ Python-scheduler pushed to registry${NC}"
 
+# Build and push router-exporter (DMI-47)
+echo -e "\n${YELLOW}Building router-exporter...${NC}"
+docker buildx build \
+  --platform ${PLATFORM} \
+  --tag ${REGISTRY}/router-exporter:${IMAGE_TAG} \
+  --load \
+  -f router-exporter/Dockerfile \
+  router-exporter/
+verify_arch ${REGISTRY}/router-exporter:${IMAGE_TAG}
+docker push ${REGISTRY}/router-exporter:${IMAGE_TAG}
+echo -e "${GREEN}✓ Router-exporter pushed to registry${NC}"
+
+# Build and push wan-watchdog (DMI-49).
+# Context is the repository root: the image needs bin/wan_watchdog.py and the RCI
+# client it shares with router-exporter, which live in different directories.
+echo -e "\n${YELLOW}Building wan-watchdog...${NC}"
+docker buildx build \
+  --platform ${PLATFORM} \
+  --tag ${REGISTRY}/wan-watchdog:${IMAGE_TAG} \
+  --load \
+  -f watchdog/Dockerfile \
+  .
+verify_arch ${REGISTRY}/wan-watchdog:${IMAGE_TAG}
+docker push ${REGISTRY}/wan-watchdog:${IMAGE_TAG}
+echo -e "${GREEN}✓ Wan-watchdog pushed to registry${NC}"
+
 echo -e "\n${GREEN}=== Build and Push Complete ===${NC}"
 echo -e "Images pushed to: ${REGISTRY}"
 echo -e "Pi will pull from: ${MAC_IP}:5001"

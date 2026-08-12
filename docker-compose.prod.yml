@@ -180,9 +180,7 @@ services:
   # Uplink health and traffic accounting for the Keenetic router (DMI-47).
   # Needs LAN reachability to the router, so it must not be isolated from it.
   router-exporter:
-    build:
-      context: ./router-exporter
-      dockerfile: Dockerfile
+    image: 100.121.189.88:5001/router-exporter:latest
     platform: linux/arm64
     container_name: router-exporter
     deploy:
@@ -225,9 +223,7 @@ services:
   # and needs no depends_on: it probes the internet directly and treats a missing
   # Prometheus as "unknown" rather than as a fault.
   wan-watchdog:
-    build:
-      context: .
-      dockerfile: watchdog/Dockerfile
+    image: 100.121.189.88:5001/wan-watchdog:latest
     platform: linux/arm64
     container_name: wan-watchdog
     deploy:
