@@ -35,13 +35,19 @@ groups:
       # first deploy the DG1+'s two SCRYPT backups (ports 3434) showed as "100%
       # dead across the fleet", which is true and useless. Three miners is the
       # smallest sample where "most of the fleet" means anything.
+      #
+      # Restricted to primary pools for the same reason BackupPoolDead is info:
+      # a backup dead across the fleet means failover is broken, which is worth
+      # recording but costs nothing while the primaries hold. Without this the
+      # same fact -- a dead backup -- would be info per miner and critical in
+      # aggregate, which is incoherent. Backups are covered by BackupPoolDead.
       - alert: PoolDeadAcrossFleet
         expr: |
           (
-            count by (url) (miner_pool_alive == 0)
-              / count by (url) (miner_pool_alive) > 0.5
+            count by (url) (miner_pool_alive{pool_index="0"} == 0)
+              / count by (url) (miner_pool_alive{pool_index="0"}) > 0.5
           )
-          and count by (url) (miner_pool_alive) > 2
+          and count by (url) (miner_pool_alive{pool_index="0"}) > 2
         for: 10m
         labels:
           severity: critical
