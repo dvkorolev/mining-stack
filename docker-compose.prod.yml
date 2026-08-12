@@ -171,6 +171,44 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Uplink health and traffic accounting for the Keenetic router (DMI-47).
+  # Needs LAN reachability to the router, so it must not be isolated from it.
+  router-exporter:
+    build:
+      context: ./router-exporter
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    container_name: router-exporter
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+    ports:
+      - "9101:9101"
+    environment:
+      - ROUTER_HOST=${ROUTER_HOST:-192.168.2.1}
+      - ROUTER_USER=${ROUTER_USER:-admin}
+      # Required. The exporter refuses to start without it rather than silently
+      # reporting router_up 0 forever.
+      - ROUTER_PASSWORD=${ROUTER_PASSWORD:?ROUTER_PASSWORD must be set}
+      - ROUTER_SNMP_COMMUNITY=${ROUTER_SNMP_COMMUNITY:-public}
+      - ROUTER_UPLINK_INTERFACE=${ROUTER_UPLINK_INTERFACE:-CdcEthernet2}
+    networks:
+      - mining-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9101/metrics', timeout=8)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   alertmanager:
     image: prom/alertmanager:latest
     platform: linux/arm64

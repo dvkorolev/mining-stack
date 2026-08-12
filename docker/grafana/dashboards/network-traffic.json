@@ -1,0 +1,230 @@
+{
+  "uid": "network-traffic",
+  "title": "Network Traffic & Uplink",
+  "tags": ["network", "uplink", "traffic"],
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "interface",
+        "label": "Interface",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(router_interface_rx_bytes_total, interface)",
+        "query": "label_values(router_interface_rx_bytes_total, interface)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 1,
+        "sort": 1,
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Uplink health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Uplink",
+      "description": "router_uplink_up is the USB link to the dongle, not the 4G session. The router cannot see the session at all -- it sits behind the dongle's own NAT. Judge real connectivity by the fleet share rate.",
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
+      "targets": [
+        { "expr": "router_uplink_up", "legendFormat": "link", "refId": "A" }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+            { "type": "value", "options": { "1": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 1, "color": "green" } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Exporter",
+      "description": "0 when the SNMP or RCI poll failed. Traffic counters stop updating without this being obvious anywhere else.",
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
+      "targets": [ { "expr": "router_up", "legendFormat": "router_up", "refId": "A" } ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "POLL FAILED", "color": "red", "index": 0 } } },
+            { "type": "value", "options": { "1": { "text": "OK", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 1, "color": "green" } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "gauge",
+      "title": "Signal level",
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 1 },
+      "targets": [ { "expr": "router_uplink_signal_level", "legendFormat": "level", "refId": "A" } ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 5,
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 2, "color": "orange" }, { "value": 3, "color": "yellow" }, { "value": 4, "color": "green" } ] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Radio quality",
+      "description": "RSRP is power, RSRQ and CINR are quality. Observed range at this site: RSRP -99 to -103 dBm, CINR 6 to 14 dB -- workable but with little margin.",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 1 },
+      "targets": [
+        { "expr": "router_uplink_rsrp_dbm", "legendFormat": "RSRP (dBm)", "refId": "A" },
+        { "expr": "router_uplink_rsrq_db", "legendFormat": "RSRQ (dB)", "refId": "B" },
+        { "expr": "router_uplink_cinr_db", "legendFormat": "CINR (dB)", "refId": "C" },
+        { "expr": "router_uplink_rssi_dbm", "legendFormat": "RSSI (dBm)", "refId": "D" }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "min", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Traffic",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "WAN throughput",
+      "description": "The metered 4G link. Everything here is billed.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "targets": [
+        { "expr": "rate(router_interface_rx_bytes_total{interface=\"CdcEthernet2\"}[5m])", "legendFormat": "download", "refId": "A" },
+        { "expr": "rate(router_interface_tx_bytes_total{interface=\"CdcEthernet2\"}[5m])", "legendFormat": "upload", "refId": "B" }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "mean", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true, "axisLabel": "bytes/sec" },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Throughput out to the LAN, by interface",
+      "description": "Which segment consumes the WAN. On 2026-08-12 the 2.4 GHz AP accounted for 4.80 of 5.81 GB, while all twenty miners together used ~150 MB/day.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "targets": [
+        { "expr": "rate(router_interface_tx_bytes_total{interface=~\"$interface\"}[5m])", "legendFormat": "{{interface}}", "refId": "A" }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 30, "showPoints": "never", "spanNulls": true, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "WAN volume, last 24h",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 15 },
+      "targets": [
+        { "expr": "increase(router_interface_rx_bytes_total{interface=\"CdcEthernet2\"}[24h])", "legendFormat": "download", "refId": "A" },
+        { "expr": "increase(router_interface_tx_bytes_total{interface=\"CdcEthernet2\"}[24h])", "legendFormat": "upload", "refId": "B" }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" }, { "value": 3000000000, "color": "yellow" }, { "value": 8000000000, "color": "orange" } ] } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "barchart",
+      "title": "Volume by interface, last 24h",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 15 },
+      "targets": [
+        { "expr": "sort_desc(increase(router_interface_tx_bytes_total{interface=~\"$interface\"}[24h]))", "legendFormat": "{{interface}}", "refId": "A", "instant": true, "format": "table" }
+      ],
+      "options": { "orientation": "horizontal", "xTickLabelRotation": 0, "showValue": "auto", "legend": { "showLegend": false } },
+      "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "palette-classic" } }, "overrides": [] }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Top talkers, last 24h",
+      "description": "Per-host counters come from the router and under-report badly -- on 2026-08-12 they attributed 181 MB to a desktop the AP interface showed receiving 4.80 GB. Use this to identify a device, not to measure it.",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 15 },
+      "targets": [
+        { "expr": "topk(10, increase(router_host_rx_bytes_total[24h]))", "legendFormat": "{{name}}", "refId": "A", "instant": true, "format": "table" }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true }, "renameByName": { "Value": "downloaded", "name": "host", "ip": "address" } } },
+        { "id": "sortBy", "options": { "fields": {}, "sort": [ { "field": "downloaded", "desc": true } ] } }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [ { "matcher": { "id": "byName", "options": "downloaded" }, "properties": [ { "id": "unit", "value": "bytes" } ] } ]
+      }
+    }
+  ]
+}
