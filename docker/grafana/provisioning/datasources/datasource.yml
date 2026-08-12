@@ -8,6 +8,18 @@ apiVersion: 1
 deleteDatasources:
   - name: Prometheus
     orgId: 1
+  # A second, hand-created datasource named `prometheus` (lowercase) existed on
+  # the Pi, pointing at http://localhost:9090 -- nothing, from inside Grafana's
+  # container. Its name collided with the UID pinned below, and Grafana resolved
+  # a dashboard's `uid: prometheus` to it by NAME, so every panel on the Network
+  # Traffic dashboard failed with "An error occurred within the plugin"
+  # (plugin.requestFailureError, connection refused).
+  #
+  # Listed here so a rebuilt install cannot inherit it. Deletion runs before the
+  # datasources below are created, so this is safe even if a future Grafana
+  # matches names case-insensitively -- the real one is recreated immediately.
+  - name: prometheus
+    orgId: 1
 
 datasources:
   - name: Prometheus

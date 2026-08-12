@@ -41,6 +41,7 @@
       "title": "Uplink",
       "description": "router_uplink_up is the USB link to the dongle, not the 4G session. The router cannot see the session at all -- it sits behind the dongle's own NAT. Judge real connectivity by the fleet share rate.",
       "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "expr": "router_uplink_up", "legendFormat": "link", "refId": "A" }
       ],
@@ -67,6 +68,7 @@
       "title": "Exporter",
       "description": "0 when the SNMP or RCI poll failed. Traffic counters stop updating without this being obvious anywhere else.",
       "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [ { "expr": "router_up", "legendFormat": "router_up", "refId": "A" } ],
       "options": {
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
@@ -89,6 +91,7 @@
       "type": "gauge",
       "title": "Signal level",
       "gridPos": { "h": 5, "w": 4, "x": 8, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [ { "expr": "router_uplink_signal_level", "legendFormat": "level", "refId": "A" } ],
       "fieldConfig": {
         "defaults": {
@@ -106,6 +109,7 @@
       "title": "Radio quality",
       "description": "RSRP is power, RSRQ and CINR are quality. Observed range at this site: RSRP -99 to -103 dBm, CINR 6 to 14 dB -- workable but with little margin.",
       "gridPos": { "h": 5, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "expr": "router_uplink_rsrp_dbm", "legendFormat": "RSRP (dBm)", "refId": "A" },
         { "expr": "router_uplink_rsrq_db", "legendFormat": "RSRQ (dB)", "refId": "B" },
@@ -138,6 +142,7 @@
       "title": "WAN throughput",
       "description": "The metered 4G link. Everything here is billed.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "expr": "rate(router_interface_rx_bytes_total{interface=\"CdcEthernet2\"}[5m])", "legendFormat": "download", "refId": "A" },
         { "expr": "rate(router_interface_tx_bytes_total{interface=\"CdcEthernet2\"}[5m])", "legendFormat": "upload", "refId": "B" }
@@ -161,6 +166,7 @@
       "title": "Throughput out to the LAN, by interface",
       "description": "Which segment consumes the WAN. On 2026-08-12 the 2.4 GHz AP accounted for 4.80 of 5.81 GB, while all twenty miners together used ~150 MB/day.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "expr": "rate(router_interface_tx_bytes_total{interface=~\"$interface\"}[5m])", "legendFormat": "{{interface}}", "refId": "A" }
       ],
@@ -182,6 +188,7 @@
       "type": "stat",
       "title": "WAN volume, last 24h",
       "gridPos": { "h": 5, "w": 8, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "expr": "increase(router_interface_rx_bytes_total{interface=\"CdcEthernet2\"}[24h])", "legendFormat": "download", "refId": "A" },
         { "expr": "increase(router_interface_tx_bytes_total{interface=\"CdcEthernet2\"}[24h])", "legendFormat": "upload", "refId": "B" }
@@ -202,6 +209,7 @@
       "type": "barchart",
       "title": "Volume by interface, last 24h",
       "gridPos": { "h": 5, "w": 8, "x": 8, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "expr": "sort_desc(increase(router_interface_tx_bytes_total{interface=~\"$interface\"}[24h]))", "legendFormat": "{{interface}}", "refId": "A", "instant": true, "format": "table" }
       ],
@@ -214,6 +222,7 @@
       "title": "Top talkers, last 24h",
       "description": "Per-host counters come from the router and under-report badly -- on 2026-08-12 they attributed 181 MB to a desktop the AP interface showed receiving 4.80 GB. Use this to identify a device, not to measure it.",
       "gridPos": { "h": 5, "w": 8, "x": 16, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "expr": "topk(10, increase(router_host_rx_bytes_total[24h]))", "legendFormat": "{{name}}", "refId": "A", "instant": true, "format": "table" }
       ],
