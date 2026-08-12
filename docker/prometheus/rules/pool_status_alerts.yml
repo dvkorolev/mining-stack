@@ -29,10 +29,19 @@ groups:
 
       # Critical: a pool is dead across most of the fleet, which points at the
       # pool or the uplink rather than at one machine.
+      #
+      # The `> 2` guard is not cosmetic. Without it a URL configured on a single
+      # miner fires this as a fleet-wide emergency off a sample of one: on the
+      # first deploy the DG1+'s two SCRYPT backups (ports 3434) showed as "100%
+      # dead across the fleet", which is true and useless. Three miners is the
+      # smallest sample where "most of the fleet" means anything.
       - alert: PoolDeadAcrossFleet
         expr: |
-          count by (url) (miner_pool_alive == 0)
-            / count by (url) (miner_pool_alive) > 0.5
+          (
+            count by (url) (miner_pool_alive == 0)
+              / count by (url) (miner_pool_alive) > 0.5
+          )
+          and count by (url) (miner_pool_alive) > 2
         for: 10m
         labels:
           severity: critical
@@ -44,16 +53,39 @@ groups:
             report it Dead. Check the pool and the uplink before touching
             individual miners.
 
-      # Warning: a single miner cannot reach a pool the rest of the fleet can.
-      # Usually that miner's own configuration or network path.
-      - alert: PoolDeadOnMiner
-        expr: miner_pool_alive == 0
-        for: 30m
+      # Critical: the pool a miner is actually mining on is dead. Backups exist,
+      # but a miner that has failed over is earning at whatever the backup pays
+      # and nobody would otherwise notice.
+      - alert: PrimaryPoolDead
+        expr: miner_pool_alive{pool_index="0"} == 0
+        for: 15m
         labels:
-          severity: warning
+          severity: critical
           component: pool
         annotations:
-          summary: "Pool {{ $labels.url }} is dead on {{ $labels.name }}"
+          summary: "Primary pool dead on {{ $labels.name }}"
           description: >-
-            {{ $labels.name }} ({{ $labels.ip }}) has reported pool
-            {{ $labels.url }} as Dead for 30 minutes.
+            {{ $labels.name }} ({{ $labels.ip }}) reports its primary pool
+            {{ $labels.url }} as Dead. It is either failed over to a backup or
+            not mining at all.
+
+      # Info: a backup pool is dead. Worth knowing, because failover will not
+      # work, but it costs nothing right now and must not read as an incident.
+      #
+      # Deliberately not a warning: 13 of the fleet's backups were dead on the
+      # day this shipped while all 19 primaries were alive and the farm ran at
+      # full hashrate. Alerting on that at warning severity would bury the
+      # things that do need action -- the mistake MinerMissingChips makes
+      # today with 21 permanently-firing false positives (DMI-62).
+      - alert: BackupPoolDead
+        expr: miner_pool_alive{pool_index!="0"} == 0
+        for: 6h
+        labels:
+          severity: info
+          component: pool
+        annotations:
+          summary: "Backup pool {{ $labels.url }} is dead on {{ $labels.name }}"
+          description: >-
+            {{ $labels.name }} ({{ $labels.ip }}) has reported backup pool
+            {{ $labels.url }} as Dead for six hours. The miner is unaffected
+            until it needs to fail over.
