@@ -16,9 +16,9 @@
         "name": "app",
         "label": "Source",
         "type": "query",
-        "datasource": { "type": "loki", "uid": "Loki" },
-        "definition": "label_values({job=\"keenetic-syslog\"}, app)",
-        "query": "label_values({job=\"keenetic-syslog\"}, app)",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "definition": "label_values(app)",
+        "query": "label_values(app)",
         "includeAll": true,
         "multi": true,
         "refresh": 1,
@@ -50,10 +50,10 @@
       "title": "Modem power cycles",
       "description": "KeeneticOS power-cycles the USB modem on its own when the uplink fails. It has never restored service: on 2026-08-12 it ran ~134 times over 2h29m and the link only came back after the router itself was restarted. Treat a sustained bar here as an outage in progress, not as a recovery in progress.",
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 1 },
-      "datasource": { "type": "loki", "uid": "Loki" },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "Loki" },
+          "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
           "expr": "sum(count_over_time({job=\"keenetic-syslog\"} |= \"power cycle\" [$__interval]))",
           "legendFormat": "power cycles",
@@ -77,10 +77,10 @@
       "title": "Connectivity events",
       "description": "InternetChecker is unreliable -- it has missed both a recovery and an entire outage. Corroborate against the fleet share rate before believing it.",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 1 },
-      "datasource": { "type": "loki", "uid": "Loki" },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "Loki" },
+          "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
           "expr": "{job=\"keenetic-syslog\"} |~ \"(?i)InternetChecker|power cycle|link down|link up|IPv4 connection|unplugged|plugged\"",
           "queryType": "range",
@@ -103,10 +103,10 @@
       "title": "Log volume by source",
       "description": "A quiet router is a healthy router. Reference: ~560 lines/day when idle, against 11k and 27k on the outage days of 08-08 and 08-09.",
       "gridPos": { "h": 7, "w": 16, "x": 0, "y": 9 },
-      "datasource": { "type": "loki", "uid": "Loki" },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "Loki" },
+          "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
           "expr": "sum by (app) (count_over_time({job=\"keenetic-syslog\", app=~\"$app\"} [$__interval]))",
           "legendFormat": "{{app}}",
@@ -128,10 +128,10 @@
       "type": "piechart",
       "title": "By severity",
       "gridPos": { "h": 7, "w": 8, "x": 16, "y": 9 },
-      "datasource": { "type": "loki", "uid": "Loki" },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "Loki" },
+          "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
           "expr": "sum by (severity) (count_over_time({job=\"keenetic-syslog\"} [$__range]))",
           "legendFormat": "{{severity}}",
@@ -154,10 +154,10 @@
       "type": "logs",
       "title": "Router log",
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 17 },
-      "datasource": { "type": "loki", "uid": "Loki" },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "Loki" },
+          "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
           "expr": "{job=\"keenetic-syslog\", app=~\"$app\"} |~ \"$search\"",
           "queryType": "range",

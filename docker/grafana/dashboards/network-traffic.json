@@ -15,7 +15,7 @@
         "name": "interface",
         "label": "Interface",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "definition": "label_values(router_interface_rx_bytes_total, interface)",
         "query": "label_values(router_interface_rx_bytes_total, interface)",
         "includeAll": true,
