@@ -23,11 +23,18 @@ profiles:
         - "Whatsminer M50S++"
         - "Whatsminer M50S VL30"
         - "Whatsminer M50S++ VL30"
+        # The fleet reports bare model strings with a "(Stock)" suffix and no
+        # manufacturer prefix -- see the patterns below.
+        - "M50S VH50 (Stock)"
+        - "M50S++ VL30 (Stock)"
       # Regex patterns
       patterns:
         - "^Whatsminer M50S"
         - "M50S.*(VL30|VL20)"
-    
+        # Bare form as reported by the miners themselves, e.g. "M50S VH50 (Stock)".
+        # Must stay ahead of the plain-M50 profile, which guards with (?!S).
+        - "^M50S"
+
     # Collection strategy (ordered by preference)
     drivers:
       - type: "pyasic"
@@ -40,7 +47,13 @@ profiles:
         config:
           api_port: 4028
           timeout: 10
-    
+      # Web-interface fallback, used when pyasic cannot reach the miner.
+      # Without this the profile-driven fallback in main.py has nothing to try.
+      - type: "whatsminer_cgi"
+        priority: 3
+        config:
+          timeout: 10
+
     # Parser configuration
     parser:
       type: "whatsminer"
@@ -82,9 +95,13 @@ profiles:
         - "Whatsminer M30S"
         - "Whatsminer M30S+"
         - "Whatsminer M30S++"
+        - "M30S++ VH90 (Stock)"
+        - "M30S++ VH40 (Stock)"
       patterns:
         - "^Whatsminer M30S"
-    
+        # Bare form as reported by the miners themselves, e.g. "M30S++ VH90 (Stock)".
+        - "^M30S"
+
     drivers:
       - type: "pyasic"
         priority: 1
@@ -96,7 +113,11 @@ profiles:
         config:
           api_port: 4028
           timeout: 10
-    
+      - type: "whatsminer_cgi"
+        priority: 3
+        config:
+          timeout: 10
+
     parser:
       type: "whatsminer"
       quirks:
@@ -117,6 +138,115 @@ profiles:
       hashrate_max: 120
       power_min: 2800
       power_max: 3500
+      temp_max: 85
+
+  whatsminer_m50:
+    name: "Whatsminer M50 Series"
+    manufacturer: "MicroBT"
+    algorithm: "sha256"
+
+    # The plain M50 (no trailing S) is a different machine from the M50S and had
+    # no profile at all, which left five of the fleet's miners unmatched.
+    match:
+      exact:
+        - "Whatsminer M50"
+        - "M50 VH50 (Stock)"
+        - "M50 VH70 (Stock)"
+        - "M50 VH80 (Stock)"
+      patterns:
+        # (?!S) keeps "M50S..." out of this profile regardless of evaluation order.
+        - "^M50(?!S)"
+        - "^Whatsminer M50(?!S)"
+
+    drivers:
+      - type: "pyasic"
+        priority: 1
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "whatsminer_cgi"
+        priority: 3
+        config:
+          timeout: 10
+
+    parser:
+      type: "whatsminer"
+      quirks:
+        hashrate_field: "MHS av"
+        hashrate_unit: "TH/s"
+        hashrate_scale: 1.0
+        temp_source: "board"
+        temp_fields: ["Temperature"]
+        power_field: "Power"
+        power_unit: "W"
+
+    credentials:
+      username: "admin"
+      password: "admin"
+
+    # Range checked against the live fleet 2026-08-12: VH50 122, VH70 106-124,
+    # VH80 104 TH/s. Zombie-board detection triggers below half the midpoint.
+    expected:
+      hashrate_min: 100
+      hashrate_max: 126
+      power_min: 2900
+      power_max: 3500
+      temp_max: 85
+
+  whatsminer_generic:
+    name: "Whatsminer (model not reported)"
+    manufacturer: "MicroBT"
+    algorithm: "sha256"
+
+    # Some miners report just "WhatsMiner (Stock)" with no model or variant. That
+    # is enough to pick the right driver, parser and algorithm, but NOT enough to
+    # guess a hashrate: the range across this vendor's models spans 70-160 TH/s.
+    # Deliberately exact-only and with no `expected` hashrate, so the zombie-board
+    # check in main.py stays disabled rather than firing on an invented number.
+    match:
+      exact:
+        - "WhatsMiner (Stock)"
+        - "Whatsminer (Stock)"
+
+    drivers:
+      - type: "pyasic"
+        priority: 1
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "whatsminer_cgi"
+        priority: 3
+        config:
+          timeout: 10
+
+    parser:
+      type: "whatsminer"
+      quirks:
+        hashrate_field: "MHS av"
+        hashrate_unit: "TH/s"
+        hashrate_scale: 1.0
+        temp_source: "board"
+        temp_fields: ["Temperature"]
+        power_field: "Power"
+        power_unit: "W"
+
+    credentials:
+      username: "admin"
+      password: "admin"
+
+    expected:
+      power_min: 2800
+      power_max: 3800
       temp_max: 85
 
   # ============================================================================

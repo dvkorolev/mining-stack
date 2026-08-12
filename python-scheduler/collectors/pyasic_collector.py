@@ -12,11 +12,11 @@ from pyasic import get_miner
 
 from config import MAX_CONCURRENT_REQUESTS
 from parsers.cgminer_parser import parse_cgminer_response
-from asic_profile_loader import get_library
+from asic_profile_loader import get_library, expected_hashrate_ths
 from metrics import (
     miner_hashrate, miner_power, miner_temp_max, miner_is_mining,
     miner_uptime, miner_efficiency, miner_fault_light, miner_errors_count,
-    miner_scrape_status, miner_state, miner_hashrate_mhs,
+    miner_scrape_status, miner_state, miner_hashrate_mhs, miner_expected_hashrate,
     miner_board_hashrate, miner_board_temp, miner_board_chips_count,
     miner_board_chips_expected, miner_fan_speed, miner_pool_accepted,
     miner_pool_rejected, collection_duration, collection_success,
@@ -270,7 +270,14 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     else:
         # SHA-256: hashrate is in TH/s
         miner_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(hashrate)
-    
+        # Publish the model's rated hashrate so the SHA-256 degradation alerts have
+        # something to compare against (DMI-59). Only when the profile actually states
+        # one: whatsminer_generic covers miners that report no model, and inventing a
+        # figure for those would make the alerts fire on a guess.
+        expected_hashrate = expected_hashrate_ths(model, algorithm)
+        if expected_hashrate:
+            miner_expected_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(expected_hashrate)
+
     power = float(data.get('power', 0) or 0)
     temperature = float(data.get('temperature', 0) or 0)
     uptime = float(data.get('uptime', 0) or 0)

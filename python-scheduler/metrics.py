@@ -56,6 +56,19 @@ collection_timestamp = Gauge('mining_collection_timestamp_seconds', 'Last collec
 miner_state = Gauge('miner_state', 'Miner state (0=faulty, 1=idle, 2=mining)', ['ip', 'name', 'model', 'algorithm'])
 miner_hashrate_mhs = Gauge('miner_hashrate_mhs', 'Miner hashrate in MH/s (SCRYPT only)', ['ip', 'name', 'model', 'algorithm'])
 
+# Rated hashrate for the miner's model, from asic_profiles.yaml (DMI-59).
+#
+# The SHA-256 hashrate alerts in docker/prometheus/rules/mining_alerts.yml compare
+# against this and are gated on `miner_expected_hashrate_ths > 0`; nothing published
+# it, so both rules were permanently silent. The label set must stay identical to
+# miner_hashrate_ths, because the rules combine the two with `and`, which matches on
+# the full label set.
+#
+# SHA-256 only, deliberately. The profile's expected range for a SCRYPT miner is in
+# MH/s, and publishing that under a name ending in `_ths` would assert a unit the
+# value does not have -- the exact conflation ALGORITHM_SEPARATION.md warns about.
+miner_expected_hashrate = Gauge('miner_expected_hashrate_ths', 'Rated hashrate for the miner model in TH/s (SHA-256 only)', ['ip', 'name', 'model', 'algorithm'])
+
 # Gap-filling observability
 miner_gaps_filled_total = Counter('miner_gaps_filled_total', 'Count of gaps filled by CGMiner', ['type'])
 
@@ -149,6 +162,7 @@ def get_all_miner_metrics():
     return [
         miner_hashrate,
         miner_hashrate_mhs,
+        miner_expected_hashrate,
         miner_power,
         miner_temp_max,
         miner_is_mining,

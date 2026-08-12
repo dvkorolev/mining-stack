@@ -414,13 +414,22 @@ async def collect_all_metrics():
                         drivers = profile.get_ordered_drivers()
                         logger.debug(f"Profile '{profile.id}' has {len(drivers)} drivers for {miner['name']}")
                         
-                        # Skip pyasic (priority 1) since it already failed, try next drivers
+                        # Skip pyasic (priority 1) since it already failed, try next drivers.
+                        # 'cgminer' is skipped too: pyasic already speaks the CGMiner API natively,
+                        # so retrying it here would repeat the attempt that just failed.
                         for driver in drivers:
                             driver_type = driver.get('type')
-                            if driver_type == 'pyasic':
+                            if driver_type in ('pyasic', 'cgminer'):
                                 continue  # Already tried
-                            
-                            if driver_type == 'antminer_cgi':
+
+                            if driver_type == 'whatsminer_cgi':
+                                logger.info(f"  Trying Whatsminer CGI fallback (web interface) for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
+                                fallback_attempts += 1
+                                fallback_data = await collect_whatsminer_cgi(miner)
+                                fallback_method = 'whatsminer_cgi'
+                                if fallback_data:
+                                    break
+                            elif driver_type == 'antminer_cgi':
                                 logger.info(f"  Trying Antminer CGI fallback for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
                                 fallback_attempts += 1
                                 fallback_data = await collect_antminer_cgi(miner)
