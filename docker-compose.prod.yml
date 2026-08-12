@@ -209,6 +209,48 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Restarts the router when the uplink stays down (DMI-49).
+  #
+  # SHIPS DISARMED. With WAN_WATCHDOG_ARM unset it only logs what it would have
+  # done, which is the right default for a fresh install: arming is a decision
+  # about rebooting a production router, not something to inherit from a file.
+  #
+  # Runs on the Pi rather than the router so it survives the reboot it triggers,
+  # and needs no depends_on: it probes the internet directly and treats a missing
+  # Prometheus as "unknown" rather than as a fault.
+  wan-watchdog:
+    build:
+      context: .
+      dockerfile: watchdog/Dockerfile
+    platform: linux/arm64
+    container_name: wan-watchdog
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 128M
+    environment:
+      - WAN_WATCHDOG_ARM=${WAN_WATCHDOG_ARM:-false}
+      - ROUTER_HOST=${ROUTER_HOST:-192.168.2.1}
+      - ROUTER_USER=${ROUTER_USER:-admin}
+      # Only needed once armed; the watchdog refuses to start armed without it
+      # rather than running with an action that would fail when called upon.
+      - ROUTER_PASSWORD=${ROUTER_PASSWORD:-}
+      - PROMETHEUS_URL=http://prometheus:9090
+      - WAN_WATCHDOG_STATE=/var/lib/mining-stack/wan_watchdog.json
+    volumes:
+      # The action budget must survive restarts, or a crash-looping container
+      # gets a fresh one each time and can reboot the router repeatedly.
+      - watchdog_state:/var/lib/mining-stack
+    networks:
+      - mining-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   alertmanager:
     image: prom/alertmanager:latest
     platform: linux/arm64
@@ -289,3 +331,5 @@ volumes:
   prometheus_data:
   grafana-storage:
   alertmanager_data:
+  # Action budget and link state for the WAN watchdog; see DMI-49.
+  watchdog_state:

@@ -442,8 +442,14 @@ def diagnose_unavailable() -> Diagnosis:
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Watch the site's WAN uplink and recover it autonomously.")
+    # Env as well as flag, so the container needs no shell wrapper. Anything
+    # other than an explicit affirmative leaves it disarmed: a typo in an env
+    # var must not be what decides whether the site's router gets rebooted.
     p.add_argument("--arm", action="store_true",
-                   help="actually perform power actions (default: describe only)")
+                   default=os.environ.get("WAN_WATCHDOG_ARM", "").strip().lower()
+                   in ("1", "true", "yes", "on"),
+                   help="actually perform recovery actions (default: describe only). "
+                        "Can also be set with WAN_WATCHDOG_ARM=true")
     p.add_argument("--once", action="store_true",
                    help="run a single check and exit, for testing")
     p.add_argument("--probe", action="append", default=None, metavar="HOST:PORT",
