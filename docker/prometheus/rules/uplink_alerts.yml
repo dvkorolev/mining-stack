@@ -1,0 +1,54 @@
+# Uplink availability, measured from the fleet's own share submission.
+#
+# Rationale (DMI-46/56): the only trustworthy availability signal at this site is
+# sum(rate(miner_pool_accepted_total[5m])) — real shares accepted by the pool, riding the
+# production path across ~20 independent devices. Synthetic probing of a pool measures the
+# pool's tolerance of us, not our connectivity; reading probe_success{job="pool-tcp-check"}
+# that way produced a phantom 25% outage rate and a wrong outage diagnosis.
+#
+# What these rules are for: the 2026-08-09 15:00–16:30 UTC outage went unnoticed for four days
+# and was only found by reading history. Nothing alerted, because every existing rule watches
+# individual miners — and during an uplink loss the miners are all still reachable on the LAN,
+# still report is_mining=1, and look perfectly healthy. Only the share counters stop moving.
+#
+# Both rules are gated on miner_scrape_status == 2 so that a miner whose gauges are stale in
+# scheduler memory (DMI-55) cannot manufacture a share-stall that isn't happening.
+groups:
+  - name: uplink
+    interval: 30s
+    rules:
+      # Critical: the whole fleet has stopped landing shares while it is still mining.
+      # This is the signature of an uplink or pool-wide failure rather than a miner fault.
+      - alert: FleetNoSharesAccepted
+        expr: |
+          sum(rate(miner_pool_accepted_total[5m])) == 0
+          and count(miner_scrape_status == 2) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: uplink
+        annotations:
+          summary: "Fleet has accepted no shares for 10 minutes"
+          description: >-
+            No miner has landed a share in the last 10 minutes, yet the miners are still
+            reachable and mining. The fleet is producing hashes that earn nothing. Most likely
+            the WAN is down; at this site the usual cause is the mobile balance running out,
+            which does not self-heal. Check the SIM balance first, then the modem.
+
+      # Warning: one miner is mining into nothing while the rest of the fleet is fine.
+      # Points at that miner's pool configuration or credentials, not at the uplink.
+      - alert: MinerNoSharesAccepted
+        expr: |
+          rate(miner_pool_accepted_total[15m]) == 0
+          and miner_scrape_status == 2
+          and miner_is_mining == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} is mining but landing no shares"
+          description: >-
+            Miner {{ $labels.name }} ({{ $labels.ip }}) has accepted no shares for 30 minutes
+            while reporting that it is mining. At this fleet's hashrate a healthy miner lands
+            several shares per minute, so this is a pool or credentials problem on that machine.
