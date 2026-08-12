@@ -48,4 +48,5 @@ jobs:
       - run: pip install pyyaml prometheus-client==0.19.0
       - run: python -m py_compile python-scheduler/main.py python-scheduler/metrics.py python-scheduler/collectors/*.py
       - run: python bin/test_farm_init.py
+      - run: python bin/test_wan_watchdog.py
       - run: python python-scheduler/test_metrics_cleanup.py
