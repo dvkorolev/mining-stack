@@ -52,6 +52,20 @@ scrape_configs:
     scrape_interval: 30s
     scrape_timeout: 10s
 
+  # Keenetic router - uplink health and traffic accounting (DMI-47)
+  #
+  # Answers the two questions the site could not answer live: is the 4G link
+  # healthy, and where does the traffic actually go. Byte counters come from the
+  # router's IF-MIB over SNMP; signal and session state come from its RCI API.
+  - job_name: "router"
+    static_configs:
+      - targets: ["router-exporter:9101"]
+    metrics_path: /metrics
+    # Polling the router costs three SNMP walks plus two RCI calls, so keep it
+    # slower than the fleet scrape. Traffic counters do not need finer resolution.
+    scrape_interval: 60s
+    scrape_timeout: 30s
+
   # Grafana - Visualization service
   - job_name: "grafana"
     static_configs:

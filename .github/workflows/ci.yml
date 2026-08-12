@@ -49,3 +49,16 @@ jobs:
       - run: python -m py_compile python-scheduler/main.py python-scheduler/metrics.py python-scheduler/collectors/*.py
       - run: python bin/test_farm_init.py
       - run: python python-scheduler/test_metrics_cleanup.py
+
+  router-exporter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r router-exporter/requirements.txt
+      - run: python -m py_compile router-exporter/router_exporter.py router-exporter/rci.py
+      # Run from the package dir: router_exporter imports rci by bare name.
+      - run: python test_router_exporter.py
+        working-directory: router-exporter
