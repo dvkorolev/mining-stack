@@ -3,17 +3,17 @@
 Repository review and improvement plan. Originally analysis-only; now also the
 living roadmap, kept in sync with shipped work and the Linear "Mining Stack" project.
 
-Date: 2026-06-17 (original review) · **Last refreshed: 2026-08-08 (post-deploy)**
+Date: 2026-06-17 (original review) · **Last refreshed: 2026-08-12 (post-deploy)**
 Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
 
-> **Status at a glance (main `214e5f8`)**
+> **Status at a glance (main `3775920`, deployed and verified on the Pi)**
 > - ✅ **Done & merged:** P0 (Pi-drift backport), **Phase 0** (test harness + CI), Phase 1 (security S1–S5), Phase 2 (data-path clarity), **Phase 4 cleanup complete (C1–C5)**, **Phase 3.3** (`mining.service.ts` decomposition, DMI-36..41).
-> - ✅ **Operational:** subnet-move recovery — DMI-19 (MAC-keyed reconcile tool) + DMI-20 (live Pi DB remap) + **DMI-43** (deploy-script host discovery) + **DMI-44** (router syslog → Loki) + **DMI-53** (router log flood removed, 2026-08-08).
-> - ⏳ **In progress:** **Phase 3** (decompose large modules + SQLite schema versioning). 3.1 (DMI-28), 3.2 (DMI-29..35, `database.service.ts`) and 3.3 (DMI-36..41, `mining.service.ts`) done; **3.4 (`telegram.service.ts`) is next and last**.
-> - 🔧 **Open ops items:** **DMI-45** (hashrate shortfall — diagnosed, now a hardware-repair list) · **DMI-46** (2026-08-07 outage — **resolved: balance depletion, not an unstable link**) · **DMI-47..51** (site fault-tolerance; **DMI-49's premise revised**, its watchdog written and pushed but unmerged) · **DMI-52** (miner error codes / ambient temp / fan RPM as metrics) · **DMI-55** (dead miners' gauges inflate fleet totals) · **DMI-56** (pool monitoring watches the wrong pools) · **DMI-57** (retest the Fibocom + external antenna with the working SIM) · 🚨 **DMI-58** (scheduler can silently monitor 5 example miners after any restart — **Urgent, not yet fixed**).
-> - ✅ **Site is up and stable.** Measured over 15 days from miner share submission: **96.2% availability, 7 stalls, all on 2026-08-07/08** — one balance-depletion event, not a chronic fault. See the DMI-46 correction below before trusting any older availability figure in this document.
-> - ✅ **Deployed 2026-08-08 — the ~6-week image backlog is closed.** Everything from Phase 3.3 onward plus DMI-43/44/54 now runs on the Pi. The CORS blocker was cleared first (the Pi's `.env` had `CORS_ORIGIN=*` under `NODE_ENV=production`, which S3 turns into "no credentialed CORS" and would have broken UI login). Verified after rollout: scheduler `healthy` (was `degraded`), zero collection failures, fleet 1901.6 TH/s, all endpoints 200. Deploy mechanics and traps are in `CLAUDE.local.md`.
+> - ✅ **Operational:** DMI-19/20 (subnet-move recovery) · **DMI-43** (deploy-script host discovery) · **DMI-44** (router syslog → Loki) · **DMI-53** (router log flood removed) · **DMI-54** (stale-series crash) · **DMI-56** (pool health read from the miners) · **DMI-58** (scheduler config provenance) · **DMI-59/60** (SHA-256 hashrate alerting actually binds) · **DMI-61** (the Pi can now witness its own failures).
+> - ⏳ **In progress:** **Phase 3** — 3.1 (DMI-28), 3.2 (DMI-29..35) and 3.3 (DMI-36..41) done; **3.4 (`telegram.service.ts`) is next and last**.
+> - 🔧 **Open ops items:** **DMI-62** (21 permanently-firing false `MinerMissingChips` — the largest source of alert noise) · **DMI-47** (uplink observability: exporter + alert shipped, SIM/session state still unmeasured) · **DMI-49** (watchdog shipped but **deliberately disarmed** — arming is an open decision) · **DMI-45** (hashrate shortfall — a hardware-repair list) · **DMI-52** (error codes / ambient temp / fan RPM) · **DMI-55** (dead miners' gauges inflate fleet totals) · **DMI-57** (retest the Fibocom + external antenna) · DMI-50/51 (remaining fault-tolerance layers).
+> - 🚨 **The site has no automatic WAN recovery, and the diagnosis of why has been corrected twice.** Both August outages ended only when a human restarted the router. The router's own built-in modem power-cycling fired **134 times in 2h29m on 2026-08-12 and recovered nothing.** See DMI-46 below before trusting any earlier account.
+> - ✅ **Deployed 2026-08-12.** Fleet 2009 TH/s / 62 kW / 20 miners scraped; scheduler `config_source: database_api` with 25 miners and **0 placeholders**; 0 "No profile found"; 17 `miner_expected_hashrate_ths` series live; 57 `miner_pool_alive` series live; watchdog running and disarmed. Deploy mechanics and traps are in `CLAUDE.local.md`.
 
 ---
 
@@ -29,16 +29,18 @@ Three first-party services + a monitoring stack:
 | `backend` | Node, Express, TypeScript | REST + WebSocket API, SQLite store, JWT auth, Telegram bot, miner control |
 | `frontend` | React 18, TypeScript (CRA), MUI, Redux Toolkit | Dashboard UI |
 | monitoring | Prometheus, Grafana, Alertmanager, blackbox-exporter | Scraping, dashboards, alerting |
+| `router-exporter` | Python, stdlib + `prometheus_client` | Reads the Keenetic over RCI/SNMP; exports uplink health and traffic accounting (DMI-47) |
+| `watchdog` | Python, stdlib | Restarts the router when the fleet stops landing shares — **disarmed by default** (DMI-49) |
 
-Orchestration: `docker-compose.prod.yml` (+ `docker-compose.logging.yml`, `docker-compose.dockerhub.yml` on the Pi). `Makefile` wraps common compose actions.
+Orchestration: `docker-compose.prod.yml` (+ `docker-compose.logging.yml`, `docker-compose.dockerhub.yml` on the Pi). `Makefile` wraps common compose actions. Both new services are built on the Mac for `linux/arm64` and pulled from the registry like the rest — deliberately **not** `build:` directives, since the Pi has no build context.
 
-**Service size (LOC, indicative of where complexity concentrates):**
-- `backend/src/services/telegram.service.ts` — 2369
-- `backend/src/services/database.service.ts` — 1595
-- `backend/src/services/mining.service.ts` — 1470
-- `python-scheduler/main.py` — 1013
-- `python-scheduler/collectors/pyasic_collector.py` — 720
+**Service size (LOC, measured 2026-08-12 — indicative of where complexity still concentrates):**
+- `backend/src/services/telegram.service.ts` — **2369** ← the only untouched monolith; Phase 3.4
+- `python-scheduler/main.py` — 999
 - `frontend/src/pages/Miners.tsx` — 958
+- `backend/src/services/database.service.ts` — 804 *(was 1595; facade over 7 repositories, Phase 3.2)*
+- `python-scheduler/collectors/pyasic_collector.py` — 720
+- `backend/src/services/mining.service.ts` — 308 *(was 1470; facade over `services/mining/`, Phase 3.3)*
 
 ---
 
@@ -65,6 +67,33 @@ Step by step:
 
 **Two metric namespaces exist:** the scheduler exposes `miner_*`; the backend's own `/metrics` endpoint exposes a different `mining_*` / `alert_queue_*` set (`server.ts:122`). Not wrong, but worth knowing they are distinct.
 
+### Which signals are trustworthy — read this before adding a metric or an alert
+
+Nearly every wrong conclusion recorded in this document came from the same mistake: **trusting a
+proxy signal instead of the production path.** The list is long enough to be a pattern, not bad luck.
+
+| Rejected signal | What it actually measured | Cost |
+|---|---|---|
+| `probe_success{job="pool-tcp-check"}` | the pool's tolerance of bare TCP connects from a prober | a phantom 75.5% availability and a whole wrong outage diagnosis (DMI-46, DMI-56) |
+| Tailscale reachability | whether the DERP path has re-established | lagged real recovery by **56 min** on 2026-08-12; produces routine false "site is down" |
+| `Network::InternetChecker` | an unreliable router-side ping check | missed one recovery and one entire event |
+| `router_uplink_up` | the USB link to the dongle | stayed up through a 2h29m total outage |
+| count of `miner_scrape_status` series | a value that oscillates 20↔25 by design | would produce false alarms in both directions |
+| a single ICMP reply | nothing durable | a false "the Pi is back" notification |
+
+**The one signal that has never been wrong: `sum(rate(miner_pool_accepted_total[5m]))`** — real share
+submission across ~20 devices, riding the production path end to end. Prefer it, and prefer anything
+built the same way: measured *through* the system that matters, aggregated over many independent
+sources.
+
+Two rules follow, and both are already load-bearing in the code:
+
+1. **A fallback must never be indistinguishable from success** (Phase 2/P2.1, DMI-58). If the source
+   of a value can vary, publish the source alongside the value.
+2. **Absent is not zero.** A fabricated `0` on a counter reads as "nothing happened", which is a
+   different claim from "not measured". The router exporter omits interfaces it cannot read rather
+   than zeroing them, for exactly this reason.
+
 ---
 
 ## 3. Likely risk areas
@@ -84,9 +113,9 @@ Ordered by severity. File:line references included.
 - **R3 — Simulation path wired into the production code path** — ✅ **RESOLVED** (Phase 2, P2.1). Fake data is served only when `SIMULATION_MODE=true` (default false); never a silent fallback. Reintroducing a `simulateMiningStats()` fallback is explicitly disallowed.
 
 ### Operability / maintainability
-- **M1 — Very large modules** concentrate risk and are hard to test: `telegram.service.ts` (2369), `database.service.ts` (1595), `mining.service.ts` (1470), `Miners.tsx` (958).
-- **M2 — No automated test suite.** `backend` `npm test` is a stub; only `python-scheduler/test_profile_integration.py` (a standalone script) exists. No safety net for refactors.
-- **M3 — No schema/migration versioning visible** for SQLite beyond ad-hoc migrate scripts (`backend/scripts/migrate-*.js`, `src/scripts/migrate-*.ts`). Schema drift between environments is easy.
+- **M1 — Very large modules** — 🟡 **mostly addressed.** `database.service.ts` 1595 → 804 (Phase 3.2) and `mining.service.ts` 1470 → 308 (Phase 3.3), both as facades with zero callsite changes. Remaining: `telegram.service.ts` (2369, Phase 3.4) and `Miners.tsx` (958, not scheduled).
+- **M2 — No automated test suite** — ✅ **RESOLVED** (Phase 0, DMI-25). `npm test` is real (`npm run build && node --test test/`), CI gates backend build+tests, frontend build, and the scheduler on every PR and push. Coverage has grown with each slice: repository tests (41), mining-service tests, `metrics.py`/collector tests (DMI-54), watchdog tests (DMI-49), profile-matcher tests (DMI-60), router-exporter parser tests (DMI-47). All stdlib — no new test dependencies.
+- **M3 — No schema/migration versioning** — ✅ **RESOLVED** (Phase 3.1, DMI-28). `backend/src/db/migrations.ts` uses `PRAGMA user_version` + an ordered `MIGRATIONS` array. 🟡 Residual: legacy ad-hoc `ALTER`s remain in `initializeDatabase` (~L396-426) and should be folded into `migrations.ts`.
 
 ---
 
@@ -156,24 +185,44 @@ Not in the original review (environmental, surfaced 2026-06-20 when the Pi's `et
   - **Inventory drift:** three DB records are bound to the wrong physical machines (model and MAC disagree with what the hardware reports). Fix must be a PK-safe in-place `UPDATE` — miner IP is the primary key and `miner_stats_history` has an `ON DELETE CASCADE` FK — and is deliberately deferred to a field-by-field review.
   - An on-site repair worklist was produced for whoever visits the farm; ~357 TH/s is recoverable with hand tools.
   - **Pending:** adding the unmonitored miner to the Pi's inventory (script prepared and collision-checked, DB backed up, awaiting execution), then MAC backfill and cleanup of the stale records. No repo code changes — this is a live-DB operation like DMI-20.
-- **DMI-46** — post-mortem of the 2026-08-07 outage. **Resolved 2026-08-08: the cause was the mobile balance running out.** The account was topped up and the link returned immediately, with nothing touched on the router or the Pi.
-  - **⚠️ A conclusion recorded here on 2026-08-07 has been retracted.** That version said the uplink "demonstrably drops on its own", citing ~77% availability and drops every 45–90 min. It was measured from `probe_success` against `stratum.slushpool.com` — a metric that fails ~25% of the time by itself, because pools drop repeated bare TCP connects from an address that never speaks stratum. It measured the pool's tolerance of us, not our connectivity. The owner caught it: pool-side statistics show no errors, which is impossible if the link were down a quarter of the time.
-  - **Correct metric: `sum(rate(miner_pool_accepted_total[5m]))`** — the miners' own share submission, which rides the production path and aggregates 20 independent devices. Over 15 days: **96.2% availability, 7 stalls ≥3 min, every one of them on 2026-08-07/08.** The other 13 days contain no outage at all.
-  - One coherent event, not a chronic condition: short cuts from 14:50 on 07.08, growing longer through the evening, then total loss 23:35 → 11:05 until payment. That is what a depleting mobile balance looks like.
-  - Throughout, **neither the router nor the Pi rebooted** — the router kept ACKing LAN DHCP mid-outage and the Pi's `uptime` spanned the whole period.
-  - The `ip ssh security-level` hypothesis remains unproven either way, and is no longer needed as an explanation.
-  - **`Network::InternetChecker` is not usable as a signal** — it missed a recovery on 07.08 and an entire event on 08.08. A watchdog must not be built on it.
-  - Correction to a note elsewhere: `ping-check` **monitoring is enabled**; only the power-cycle action is disabled. The consequence still stands — this link does not self-heal.
-  - **Separate, smaller, real issue:** inbound Tailscale reachability flaps for a few minutes while mining is unaffected (2026-08-08 13:35–13:41; router logged UPnP churn on `udp 41641` mid-window). Likely the triple NAT — Keenetic → the dongle's own NAT at `192.168.1.1` → carrier CGNAT. "Site is down" seen from the Mac often means only this; check the share rate before believing it.
-  - **Highest-value fix is not an engineering one:** carrier low-balance SMS or auto-payment. Balance exhaustion is the only failure this site has actually suffered, and it is predictable with a long lead time.
+  - **Still-degraded machines as of 2026-08-12,** now visible because DMI-59/60 made the SHA-256 alerts bind for the first time:
+    - **`rebuildm303`** — 0 TH/s on every board while reporting `is_mining=1`, restarting every ~26 s. Caught by `MinerHashrateCriticalSHA256` on its first-ever firing.
+    - **`.58`** — still at 0.0 TH/s (unchanged from the diagnosis above).
+    - **`.121`** — reports **175.4 TH/s** against a model rated ~100. Either the inventory record names the wrong model or the miner is misreporting; both matter, because this figure feeds fleet totals and every ratio-based alert. Worth resolving alongside the inventory drift above.
+    - Five miners remain permanently unreachable. Their series are published with `miner_scrape_status = -2` and culled/recreated on a cycle — see the DMI-58 warning about counting series.
+- **DMI-46** — post-mortem of the August outages. **The diagnosis has now been retracted twice.** Read this entry top to bottom before citing any availability figure or cause from an earlier revision of this document.
+  - **Retraction 1 (2026-08-08):** the 2026-08-07 version claimed the uplink "demonstrably drops on its own" — ~77% availability, drops every 45–90 min. That came from `probe_success` against `stratum.slushpool.com`, which fails ~25% of the time by itself because pools drop repeated bare TCP connects from an address that never speaks stratum. It measured the pool's tolerance of us, not our connectivity. The owner caught it: pool-side statistics showed no errors, impossible if the link were down a quarter of the time.
+  - **Retraction 2 (2026-08-12): it was not balance exhaustion either.** The 08-08 revision concluded "the mobile balance ran out" and called it the only failure this site has suffered. The owner confirms there was money on the SIM, and that they **restarted the router by hand** several times during the event because the link would not come back. That fact was not in the earlier analysis at all, and it changes the conclusion completely.
+  - **Correct availability metric: `sum(rate(miner_pool_accepted_total[5m]))`** — the miners' own share submission. It rides the production path and aggregates ~20 independent devices. This part of the 08-08 revision stands and should be the only signal used.
+  - **The 2026-08-12 outage is the first one fully instrumented, and it is unambiguous** (persistent journal from DMI-61 + router syslog in Loki from DMI-44). 12:40 → 15:09 MSK, 2h29m, fleet share rate flat at zero:
+    - The modem hung **enumerating as a CD-ROM** (`MM200-1 CD-ROM`, `sr0`) and never reached modem mode. `ndm` logged "has not completed IPv4 connection" **106 times**.
+    - KeeneticOS's built-in USB-modem recovery power-cycled it **134 times over the whole window and restored nothing.**
+    - The link came back **40 seconds after the owner restarted the router by hand.**
+  - 🚨 **Therefore: the built-in modem power-cycle does not recover this failure.** An earlier revision of this file credited it with the 2026-08-09 recovery. That was wrong — a manual router restart preceded it there too. There is currently **no automatic recovery on this site at all**; every outage so far has ended with a person present. This is the strongest argument for arming DMI-49.
+  - **`Network::InternetChecker` is not usable as a signal** — it missed a recovery on 07.08 and an entire event on 08.08.
+  - **Tailscale is not usable as a recovery signal either.** On 08-12 it lagged the real restoration by **56 minutes** while the fleet was already submitting shares. "The site is down" seen from the Mac means, more often than not, only that the DERP path has not re-established. Check the share rate first.
+  - **Why the router cannot see any of this:** the topology is a triple NAT — Keenetic `192.168.2.x` → the dongle's own NAT at `192.168.1.1` → carrier CGNAT `10.x`. The Keenetic only ever observes the USB link to the dongle, which never goes down; `show interface CdcEthernet2` uptime is **not** 4G session uptime. Real session state lives in the dongle and is currently unread (DMI-47).
+  - **Remaining open question:** what hangs the modem. Volume caps, tethering detection (`ip adjust-ttl send 64` exists on the absent Fibocom profile and *not* on the active `CdcEthernet2`) and carrier-side registration trouble are all still live hypotheses. Answering it needs the dongle's own session data or the operator's usage figures — not more inference from the router.
   - Also identified incidentally: `.54` is a Windows PC (`DESKTOP-QEB032M`), not a miner — closing an open DMI-45 question; and the DHCP log yields a full MAC↔IP map for the fleet, useful for the DMI-45 inventory reconciliation.
 - **DMI-53** — ✅ **DONE 2026-08-08.** The router's Entware AdGuard VPN netfilter hook (`/opt/etc/ndm/netfilter.d/001-adguardvpn.sh`) failed on every netfilter reload and at times produced ~95% of the router's entire syslog volume, burying real events and writing continuously into Loki on the Pi's microSD.
   - **`chmod -x` does not disable an `ndm` hook** — `ndm` runs everything in `/opt/etc/ndm/*.d/` through an interpreter and ignores the execute bit (verified: the hook kept firing for 20 minutes afterwards). Moving the file out of the directory is what works: it now lives at `/opt/backup/001-adguardvpn.sh.disabled`. Reversible with `mv`.
   - Verified by comparing the `adguardvpn` line rate against the rest of the syslog — a clean 5-minute window afterwards showed 0 hook lines while ordinary logging continued. Measuring silence alone would have proved nothing.
   - Shell access route worth remembering: the NDMS CLI's `exec sh` drops into Entware's BusyBox with the ordinary `admin` login. Entware's dropbear on port 222 uses a *separate* Unix user database and is a dead end.
-- **DMI-49 — WAN watchdog: first slice written and pushed, but ⚠️ its premise was revised 2026-08-08.** The ticket was scoped against a link believed to drop several times per hour; that belief came from the retracted measurement above, and the link is in fact 96.2% available with no chronic instability. The 21–23 min self-heal envelope its thresholds are calibrated against turns out to be a sample of one event. Since the only real failure here is balance exhaustion — which the design already classifies as an upstream fault to *alert* on rather than power-cycle — the alerting half should ship first and the power-switching half should wait for evidence of a hang that power actually fixes. Found during the router audit: the modem's USB port reports `power-control: yes`, so the Keenetic can cut modem power itself, possibly removing the need for the smart strip. Code below is unaffected and safe (dry-run unless `--arm`); nothing needs reverting.
-  - Branch `feature/dmi-49-wan-watchdog`, commit `c47431c`, not merged. `bin/wan_watchdog.py` + 15 stdlib tests, wired into the scheduler CI job. Waits **45 minutes** before its first action — deliberately above the measured 21–23 min self-heal envelope, since acting inside that window interrupts a recovery already under way (exactly the behaviour that made the owner disable Keenetic's ~90-second `ping-check`). Escalation ladder with settle periods, a rolling action budget that backs off instead of looping, and an upstream-fault verdict that alerts rather than cycling power (an unpaid account looks like a healthy radio with no traffic; power cannot fix it). Safe by construction: dry-run unless `--arm`, a logging-only default backend, a Tuya backend that raises rather than silently no-op'ing, and a constructor that refuses to start if the router socket is also the Pi's own. **Cannot be verified end-to-end until the strip is installed** — its local key is only extractable while the strip is still cloud-paired.
-- **DMI-47..51** — site fault-tolerance, designed 2026-08-07 from hardware already on hand (a smart power strip with individually switchable sockets, a spare USB 4G modem, the Pi's on-board Wi-Fi). Layered rather than monolithic; the explicit decision was **not** to make the Pi the site router — it is the device most likely to be down when you need it, and collapsing router and monitoring into one box removes the independent path that makes remote recovery possible. Two design constraints drive the whole plan: the control channel must never share a power feed with the device it power-cycles, and the smart-strip's local key is only extractable while the strip is still cloud-paired. Start with DMI-47.
+- **DMI-49 — WAN watchdog: shipped, deployed, running, and deliberately DISARMED.** Merged (`aedf2ca`), containerised (`watchdog/Dockerfile`), built for arm64 and pulled from the registry like every other service, so a clean install brings it back with no manual steps. It runs on the Pi today and does nothing but log.
+  - **Recalibrated 2026-08-12 after the outage evidence.** The original design waited **45 minutes** before acting, sized against a "21–23 min self-heal envelope" that turned out to be a sample of one — and, per the DMI-46 correction, was not a self-heal at all. Nothing on this site heals itself. First action now happens at **10 minutes** of confirmed dead uplink.
+  - **Rung 0 of the ladder is now "restart the router over RCI"** — the only action ever observed to work. Power-cycling the modem (rung 1) is demoted below it, because 134 built-in cycles fixed nothing on 08-12.
+  - Safe by construction, unchanged: dry-run unless armed, a logging-only default backend, a Tuya backend that raises rather than silently no-op'ing, a rolling action budget that backs off instead of looping, and a LAN-health guard so it will not restart the router when the fault is local. The guard is three-valued — an *unknown* LAN verdict must not block action, or an outage that also breaks the check would disable recovery exactly when it is needed.
+  - ⚠️ **Arming is an open decision for the owner.** `WAN_WATCHDOG_ARM=true` is the whole change. The case for: both outages cost hours and ended only because someone was there; at 2009 TH/s the 08-12 event alone was ~2.5 h of lost production, and the watchdog would have cut it to ~10 min. The case against: an automatic router restart is a real action on the only management path into the site, and it has never run live.
+  - Still open from the original scope: `diagnose()` returns `UNKNOWN` for the upstream-fault case. Distinguishing "modem hung" from "carrier gave us nothing" needs DMI-47's dongle data; until then the watchdog cannot tell an unpaid SIM from a hung modem and will restart the router either way.
+- **DMI-47 — uplink observability. Half shipped 2026-08-12; the half that matters most is still missing.**
+  - ✅ **Shipped:** a `router-exporter` service (`router-exporter/`, arm64 image, in `docker-compose.prod.yml`) that reads the Keenetic over its **RCI HTTP API** and over SNMP, exporting `router_uplink_up`, `router_uplink_rsrp/rsrq/cinr`, `router_interface_{rx,tx}_bytes_total` and `router_host_{rx,tx}_bytes_total`. Plus a `FleetNoSharesAccepted` alert on the one trustworthy signal, and two Grafana dashboards (Router Syslog, Network Traffic).
+  - **Design rule applied throughout: an interface whose counters cannot be read is omitted, never zeroed.** A fabricated `0` on a byte counter reads as "no traffic", which is a different claim from "not measured" — the same failure mode as DMI-58 and `SIMULATION_MODE`.
+  - ⚠️ **`router_uplink_up` is the USB link to the dongle, not the 4G session.** It stayed up through the entire 08-12 outage. Do not alert on it as connectivity; it is context, and the panel descriptions say so.
+  - ⚠️ **Per-host byte counters under-report** — they only count what the router itself forwards, so they must not be reconciled against the WAN total.
+  - **Grafana trap found while shipping these, now fixed permanently (`95fc36f`).** Both dashboards rendered "No data" because datasource UIDs are generated per install, and a dashboard referencing a datasource by *name* where a UID is expected gets a 404 from `/api/ds/query`. Fixed by pinning `uid: prometheus` / `uid: loki` in provisioning — which alone still failed with "data source not found" until a `deleteDatasources` block was added, since provisioning will not change the UID of an existing datasource. Any dashboard added from now on must reference the pinned UIDs. (One manually-created `prometheus` datasource with a generated UID still exists on the Pi outside provisioning; harmless, but it should go at the next clean install.)
+  - ❌ **Still missing: SIM balance and 4G session state.** This is the whole reason the ticket exists and the blocker for DMI-49's `diagnose()`. The dongle is reachable from the Pi at `http://status.megafon.ru/` (DNS-hijacked to `192.168.1.1`) but its ZTE `goform` API needs a login handshake the SPA performs and a script has not reproduced. Next step is a browser session (credentials in `CLAUDE.local.md`) to capture the exchange — not more scripted guessing.
+  - **Measured incidentally, and it answered a live question from the owner:** WAN traffic is 5.81 GB over 2.7 days, of which **4.80 GB went out over the 2.4 GHz Wi-Fi AP** to two client devices. All 20 miners together use ~150 MB/day. The volume-cap hypothesis for the outages is not supported by the miners' own consumption; the Wi-Fi key was changed and WPS disabled as a result (details in `CLAUDE.local.md`).
+- **DMI-48, DMI-50, DMI-51** — remaining site fault-tolerance layers (second modem as an independent control channel; whether the miners themselves need WAN failover; moving the Pi off microSD to USB-SSD), designed 2026-08-07 from hardware already on hand (a smart power strip with individually switchable sockets, a spare USB 4G modem, the Pi's on-board Wi-Fi). Layered rather than monolithic; the explicit decision was **not** to make the Pi the site router — it is the device most likely to be down when you need it, and collapsing router and monitoring into one box removes the independent path that makes remote recovery possible. Two design constraints drive the plan: the control channel must never share a power feed with the device it power-cycles, and the smart-strip's local key is only extractable while the strip is still cloud-paired. Found during the router audit: the modem's USB port reports `power-control: yes`, so the Keenetic can cut modem power itself — possibly removing the need for the strip entirely.
 - **DMI-52** — collect miner error codes, ambient temperature, fan RPM and PSU input voltage as Prometheus metrics (`miner_error_code`, `miner_env_temp_c`, `miner_fan_rpm{in,out}`, `miner_psu_vin_v`). Every DMI-45 finding came from the same port-4028 API that already feeds the existing metrics — none of it was visible in monitoring, so a fleet that had been degrading for weeks looked merely "slow". Alerts should self-calibrate against each miner's own reported `Factory GHS` rather than a hand-maintained model table, so inventory drift like DMI-45's cannot break detection.
 
 - **DMI-54** — ✅ **DONE 2026-08-08: fixed, merged (`214e5f8`), deployed and verified live.**
@@ -181,24 +230,60 @@ Not in the original review (environmental, surfaced 2026-06-20 when the Pi's `et
   - *What that cost:* the run was never marked successful (`/health` stuck at `degraded`), failure streaks were never persisted, and the stale-series cleanup had **never worked** at all. Metric values and the backend push were unaffected, since both happen earlier in the cycle — which is why the fleet data still looked right and nobody noticed.
   - *The fix:* removal goes through a new `remove_miner_series()`, which recovers the full label set from the collector's cache. The collector's failure branch also now records labels — it did not, so the repaired cleanup would have stayed a no-op for exactly the unreachable miners it targets. Plus 11 stdlib tests, and CI gained `prometheus-client` and now compiles `metrics.py` and the collectors.
   - *Verified after deploy:* scheduler `healthy`, `last_collection: successful`, and both `Incorrect label count` and `Collection failed` at **zero** in the logs. Fleet unchanged at 1901.6 TH/s.
-- **DMI-58** — 🚨 **URGENT, open: the scheduler can silently monitor five example miners instead of the fleet.** It fetches its entire miner list from the backend API but `docker-compose.prod.yml` gives it no `depends_on` for `backend`. On the 2026-08-08 deploy it started first, could not resolve the `backend` host, and fell back to the placeholders bundled in `etc/miners.yaml` (`miner-01`…`miner-04` at `192.168.1.100-103`). The real 25 were not polled.
-  - **The dangerous part is that nothing reports a problem.** `/health` said `healthy` and "last collection successful" — collection *was* succeeding, against the wrong list. The `config_file` check even reported "Config loaded from database API", because it re-probes the backend live rather than reporting the source actually in use; by the time anything looks, the backend is up and the probe passes. Prometheus meanwhile served the previous process's series until they aged out, so dashboards looked normal.
-  - **Not deploy-specific:** the same race can occur on any stack restart and on every Pi reboot — precisely when nobody is watching.
-  - Mitigated on the spot by restarting the scheduler (25 series restored, verified). The race itself is unfixed.
-  - **Until it is fixed, after any restart check:** `curl -s localhost:8000/metrics | grep -c '^miner_scrape_status{'` → must be 25, not 5.
-  - Fix needs more than `depends_on`: the fallback must become loud (degraded health + a `scheduler_config_source` metric), the health check must stop lying, and last-known-good config should not be replaced by placeholders during a transient backend outage. This is the same "a fallback must never be indistinguishable from success" rule the project already adopted for `SIMULATION_MODE` in Phase 2/P2.1 — it simply was not applied here.
+- **DMI-58** — ✅ **DONE 2026-08-12: fixed, merged (`2694857`), deployed and verified live.**
+  - *The bug:* the scheduler fetches its entire miner list from the backend API, but `docker-compose.prod.yml` gave it no `depends_on` for `backend`. On the 2026-08-08 deploy it started first, could not resolve the `backend` host, and fell back to the placeholders bundled in `etc/miners.yaml` (`miner-01`…`miner-04` at `192.168.1.100-103`). The real 25 were not polled. Not deploy-specific — the same race can occur on any stack restart and on every Pi reboot, precisely when nobody is watching.
+  - *What made it dangerous:* nothing reported a problem. `/health` said `healthy` and "last collection successful" — collection *was* succeeding, against the wrong list. The `config_file` check even reported "Config loaded from database API", because it re-probed the backend live instead of reporting the source actually in use.
+  - *The fix:* every load now records its provenance in `config.miners_config_source` — `database_api` / `yaml` (healthy) vs `stale_cache` / `yaml_fallback` / `none` (degraded). Exposed as `scheduler_config_source{source}` and `scheduler_miners_configured`, surfaced in `/health` and `/status`, and alerted on in `docker/prometheus/rules/scheduler_alerts.yml`. A failed fetch now **retains the last known good list** rather than replacing it with placeholders. Same rule the project adopted for `SIMULATION_MODE` in Phase 2/P2.1 — it simply had not been applied here.
+  - *Verified after deploy:* `config_source: database_api`, 25 miners, **0 placeholder IPs**.
+  - ⚠️ **Never verify this by counting series.** The count is unstable by design and oscillates between **20 and 25** — 5 miners are permanently unreachable, their series are published with `miner_scrape_status = -2`, culled after N consecutive failures (DMI-54), then recreated on the next attempt. Both values were observed within an hour on 2026-08-12. An earlier revision of this file said "must be 25"; that was wrong and would have produced false alarms. Check `/health`'s `config_file.source`, or grep for the placeholder range `192.168.1.10[0-3]` and require zero.
 - **DMI-55** — dead miners' gauges live in the scheduler's process memory and are never cleared, so a machine that stopped responding weeks ago still contributes its last hashrate, power and temperature to every fleet aggregate. Deliberately split from DMI-54 to keep that a pure crash fix: this one changes dashboard numbers and alert inputs, and needs a decision on semantics (delete the series vs. expose staleness explicitly) rather than a mechanical patch.
-- **DMI-56** — the `pool-tcp-check` blackbox job watches seven pools **the farm does not use, and none of the ones it does.** Six have returned exactly 0.0% for a full month (two hostnames no longer resolve; three point at Cloudflare addresses that do not carry port 3333). The fleet actually mines **EMCD** (`gate.emcd.network:3333`; the pool login itself is site-specific and lives in `CLAUDE.local.md`), which is unmonitored — and `eu.emcd.network` reporting `Dead` on the miners is a real signal currently invisible. The seventh target (slushpool) is the one that produced the retracted availability figure in DMI-46, so **none of the seven should survive as a health signal**. Related: `miner_pools` in the Pi's SQLite is empty although the miners report their pools on request, so there is no recorded ground truth for the target list to drift from. The pool login also identifies the miner's owner, which is how owners read their own statistics.
+- **DMI-56** — ✅ **DONE 2026-08-12: fixed, merged (`d494376`), deployed and verified live.**
+  - *The bug:* the `pool-tcp-check` blackbox job watched seven pools **the farm does not use, and none of the ones it does.** Six returned exactly 0.0% for a full month (two hostnames no longer resolve; three point at Cloudflare addresses that do not carry port 3333). The fleet actually mines **EMCD** (`gate.emcd.network:3333`), which was unmonitored. The seventh target (slushpool) is the one that produced the retracted availability figure in DMI-46.
+  - *The fix:* pool health now comes **from the miners themselves** — `miner_pool_alive{ip,name,url,pool_index}`, built from each miner's own reported pool list. A miner holds a real stratum session, so its verdict cannot be confused with a pool refusing bare TCP connects from a prober. The blackbox target list is now deliberately empty, with `docker/prometheus/targets/README.md` explaining why before anyone adds to it. 57 series live after deploy.
+  - *Rules in `docker/prometheus/rules/pool_status_alerts.yml`:* `MinerNoLivePool` (critical), `PrimaryPoolDead` (critical), `PoolDeadAcrossFleet` (critical), `BackupPoolDead` (info, 6h).
+  - **Two defects were caught in these rules *after* deploy and fixed same-day** — both worth remembering, because they are the classic shapes of a bad alert:
+    - `PoolDeadAcrossFleet` fired "100% dead across the fleet" **off a sample of one** — a URL configured on a single miner. Fixed with a `> 2` sample-size guard (`d063dbf`). A ratio without a denominator check is not a fleet-wide signal.
+    - It then fired **critical** on a backup pool while the per-miner `BackupPoolDead` called the same fact **info**. Incoherent by construction. Fixed by restricting it to `pool_index="0"` (`3775920`).
+  - *Settled state after both fixes:* `MinerNoLivePool` 0, `PrimaryPoolDead` 0, `PoolDeadAcrossFleet` 0, `BackupPoolDead` 13 at info — 13 dead backups while all primaries are alive and the farm runs at full hashrate, which is exactly the kind of fact that must not read as an incident.
+- **DMI-59** — ✅ **DONE 2026-08-12 (`fa7c075`), deployed and verified.** `miner_expected_hashrate_ths` was **never exported**, so both SHA-256 hashrate-degradation rules could never bind and had been silently dead the whole time. Prometheus binary operators match on the *full* label set, so the new gauge carries exactly the labels of `miner_hashrate_ths`; it is registered for stale cleanup alongside the others. 17 series live after deploy, and `MinerHashrateCriticalSHA256` fired **for the first time ever** — catching `rebuildm303` at 0 TH/s on every board while reporting `is_mining=1`.
+- **DMI-60** — ✅ **DONE 2026-08-12 (`7249730`), deployed and verified.** `asic_profiles.yaml` matched almost none of the fleet: **18 of 20 miners fell through to no profile**, which is also what starved DMI-59's metric. Added bare-form exacts and patterns for the model strings the miners actually report, an `M50` family, and an exact-only `whatsminer_generic` with **no** expected hashrate — an unknown model must not get a fabricated rating.
+  - The load-bearing part of this change was **not** the matcher. Fixing matching alone would have silently removed the `whatsminer_cgi` fallback collector from 18 miners, because `main.py`'s fallback loop did not know that driver type. The profile change and the loop change had to ship together. 0 "No profile found" after deploy.
+- **DMI-61** — ✅ **DONE 2026-08-12 (Pi-side, no repo change).** The Pi could not witness its own failures, which is why the 08-07 and 08-09 outages were unanalysable:
+  - **The journal did not survive reboots.** Raspberry Pi OS ships `Storage=volatile`, so everything lived in tmpfs. `/var/log/journal` existed but was empty, which makes it *look* persistent — check the effective value, not the directory. Fixed with a `50-` drop-in (the shipped file is `40-`). ⚠️ Restarting journald is **not** enough: `systemd-journal-flush.service` is `static` and already ran at boot: finish with `journalctl --flush`.
+  - **No RTC and no `fake-hwclock`,** so every boot started at 2026-04-24 and `journalctl --list-boots` reported one nonsense four-month "boot" that hid every real reboot. First line of the now-persistent journal: `System clock wrong by 9257742 seconds` — 107 days. ⚠️ The SysV-compat `fake-hwclock.service` is masked on this image and will abort a `set -e` script; the units that matter are `fake-hwclock-load/save/save.timer`.
+  - Both gotchas are recorded in `CLAUDE.local.md`. This is what made the 08-12 post-mortem possible at all.
+- **DMI-62** — 🔧 **OPEN, and the highest-value alerting fix available.** `MinerMissingChips` produces **21 permanently-firing false positives** — roughly half the entire alert list — because chip counts are never collected while expected counts are. The cost is not the rule itself: a list that is half noise trains everyone to stop reading it, which is the only thing standing between a real fault and a silent one. Same class of problem as the `BackupPoolDead` severity decision above, and it should be fixed before any new alert is added.
 - **DMI-57** — retest the **Fibocom L850** (Cat.9, in a Vertell VT-STATION with the Petra BB MIMO external antenna) using the *current working Megafon SIM*. Only one modem is physically attached today — a Megafon dongle-router (`05c6:f00e`, MM200-1); the Fibocom's profile survives in the config as `UsbLte0` (`8087:095a`, Intel) but the device is absent. The earlier swap that condemned the antenna changed **two variables at once** — modem/antenna *and* SIM/operator — and Yota is an MVNO on Megafon's own radio, so it never isolated the antenna. `ip adjust-ttl send 64` exists on `UsbLte0` alone, the standard tethering-detection workaround, suggesting the old "constant errors" may have been operator policy. Possible bonus: the Fibocom presents as a plain modem, removing the dongle's NAT layer and perhaps the Tailscale flapping. Requires someone on site, and must be measured with the share rate — not pool probes.
 
 Site-specific network/ops details (router credentials, Tailscale footguns, 4G constraints, deploy preflight) live in the git-ignored `CLAUDE.local.md`, not here.
 
 ---
 
-## Implementation steps (for Kimi)
+## What to pick up next
 
-**Next up: Phase 3 — maintainability** (see Phase 3 above): decompose the largest backend services along clear seams (now safe — Phase 0 CI is in place) and introduce explicit SQLite schema versioning (incl. the operationally-added `mac` column). This is a multi-session workstream; split into independently shippable slices, each green on CI.
-Completed & merged to main: P0, **Phase 0** (DMI-25), Phase 1 (S1–S5), Phase 2 (P2.1–P2.3), **Phase 4 (C1–C5, DMI-21/22/23/26/27)**, and the DMI-19/20 operational stream.
+Ordered by value, not by ticket number.
+
+1. **DMI-62 — kill the 21 false `MinerMissingChips` alerts.** Half the alert list is noise; nothing
+   else in monitoring pays off until reading the list is worth doing. Cheap and self-contained.
+2. **Decide whether to arm the watchdog (DMI-49).** One env var. The site currently has no automatic
+   WAN recovery at all, and both August outages ended only because a person was on site. This is the
+   owner's call, not an engineering one — the code is deployed and waiting.
+3. **DMI-47 — read the dongle.** SIM balance and 4G session state are the last unmeasured part of the
+   only failure mode that has actually taken this site down. It also unblocks DMI-49's `diagnose()`,
+   which today cannot tell a hung modem from an unpaid SIM. Next concrete step: log into
+   `http://status.megafon.ru/` from a browser and capture the auth exchange.
+4. **Phase 3.4 — `telegram.service.ts` (~2369 LOC).** The last and highest-risk decomposition slice.
+   Purely repo work, no site dependency, so it is the natural filler between the ops items above.
+5. **DMI-45 follow-through** — the inventory drift and the `.121` model/hashrate contradiction, both
+   of which corrupt fleet totals.
+
+Completed & merged to main: P0, **Phase 0** (DMI-25), Phase 1 (S1–S5), Phase 2 (P2.1–P2.3),
+**Phase 3.1–3.3**, **Phase 4 (C1–C5)**, the DMI-19/20 subnet-move stream, and the 2026-08-12
+observability/alerting batch (DMI-54/56/58/59/60/61 + the DMI-47/49 slices above).
+
+> **Housekeeping the next clean install should absorb:** the Pi's bind-mounted `etc/pools.yaml` still
+> lists the seven unused DMI-56 pools (it is outside the deploy rsync), and the stray manually-created
+> Grafana datasource noted under DMI-47 should not be recreated.
 
 ---
 
