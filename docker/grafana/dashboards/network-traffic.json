@@ -1,28 +1,46 @@
 {
   "uid": "network-traffic",
   "title": "Network Traffic & Uplink",
-  "tags": ["network", "uplink", "traffic"],
+  "tags": [
+    "network",
+    "uplink",
+    "traffic"
+  ],
   "schemaVersion": 38,
   "version": 1,
   "editable": true,
   "graphTooltip": 1,
   "timezone": "browser",
   "refresh": "1m",
-  "time": { "from": "now-24h", "to": "now" },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
         "name": "interface",
         "label": "Interface",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "definition": "label_values(router_interface_rx_bytes_total, interface)",
         "query": "label_values(router_interface_rx_bytes_total, interface)",
         "includeAll": true,
         "multi": true,
         "refresh": 1,
         "sort": 1,
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        }
       }
     ]
   },
@@ -31,7 +49,12 @@
       "id": 1,
       "type": "row",
       "title": "Uplink health",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "collapsed": false,
       "panels": []
     },
@@ -40,13 +63,31 @@
       "type": "stat",
       "title": "Uplink",
       "description": "router_uplink_up is the USB link to the dongle, not the 4G session. The router cannot see the session at all -- it sits behind the dongle's own NAT. Judge real connectivity by the fleet share rate.",
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "router_uplink_up", "legendFormat": "link", "refId": "A" }
+        {
+          "expr": "router_uplink_up",
+          "legendFormat": "link",
+          "refId": "A"
+        }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "background",
         "graphMode": "none",
         "textMode": "auto"
@@ -54,10 +95,40 @@
       "fieldConfig": {
         "defaults": {
           "mappings": [
-            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
-            { "type": "value", "options": { "1": { "text": "UP", "color": "green", "index": 1 } } }
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "UP",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
           ],
-          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 1, "color": "green" } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -67,21 +138,71 @@
       "type": "stat",
       "title": "Exporter",
       "description": "0 when the SNMP or RCI poll failed. Traffic counters stop updating without this being obvious anywhere else.",
-      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [ { "expr": "router_up", "legendFormat": "router_up", "refId": "A" } ],
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "router_up",
+          "legendFormat": "router_up",
+          "refId": "A"
+        }
+      ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "background",
         "graphMode": "none"
       },
       "fieldConfig": {
         "defaults": {
           "mappings": [
-            { "type": "value", "options": { "0": { "text": "POLL FAILED", "color": "red", "index": 0 } } },
-            { "type": "value", "options": { "1": { "text": "OK", "color": "green", "index": 1 } } }
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "POLL FAILED",
+                  "color": "red",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
           ],
-          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 1, "color": "green" } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -90,49 +211,447 @@
       "id": 4,
       "type": "gauge",
       "title": "Signal level",
-      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [ { "expr": "router_uplink_signal_level", "legendFormat": "level", "refId": "A" } ],
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "router_uplink_signal_level",
+          "legendFormat": "level",
+          "refId": "A"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "min": 0,
           "max": 5,
-          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 2, "color": "orange" }, { "value": 3, "color": "yellow" }, { "value": 4, "color": "green" } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 2,
+                "color": "orange"
+              },
+              {
+                "value": 3,
+                "color": "yellow"
+              },
+              {
+                "value": 4,
+                "color": "green"
+              }
+            ]
+          }
         },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true }
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "description": "The modem's own 0-5 rollup of the four figures below. Convenient, but it hides which of them is the problem - use it as a glance, not as the diagnosis."
+    },
+    {
+      "id": 12,
+      "type": "text",
+      "title": "How to read the radio figures",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Standard LTE bands - **higher is better in all four**, and all four are negative except CINR.\n\n| | 🔴 poor | 🟠 weak | 🟡 fair | 🟢 good |\n|---|---|---|---|---|\n| **RSRP** dBm | < -100 | -100 .. -90 | -90 .. -80 | ≥ -80 |\n| **RSRQ** dB | < -20 | -20 .. -15 | -15 .. -10 | ≥ -10 |\n| **CINR** dB | < 0 | 0 .. 13 | 13 .. 20 | ≥ 20 |\n| **RSSI** dBm | < -85 | -85 .. -75 | -75 .. -65 | ≥ -65 |\n\nRSRP is *how much* signal arrives, CINR is *how clean* it is. Read them together: a strong but noisy cell still gives poor throughput.\n\n**Baseline measured at this site on 2026-08-12: RSRP -99 to -103, CINR 6 to 14.** Below that is a change worth explaining, not the usual state. Swapping the SIM into the Fibocom modem with the external antenna is filed as DMI-57."
+      }
+    },
+    {
+      "id": 13,
+      "type": "gauge",
+      "title": "RSRP - signal power (dBm)",
+      "description": "How much of the cell's reference signal reaches the modem. The single best indicator of whether the antenna sees the tower. Poor below -100 dBm.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "router_uplink_rsrp_dbm",
+          "legendFormat": "{{interface}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": -120,
+          "max": -60,
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": -100,
+                "color": "orange"
+              },
+              {
+                "value": -90,
+                "color": "yellow"
+              },
+              {
+                "value": -80,
+                "color": "green"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 14,
+      "type": "gauge",
+      "title": "RSRQ - signal quality (dB)",
+      "description": "Reference signal quality: how much of the received power is actually our cell rather than interference and load. Poor below -20 dB.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "router_uplink_rsrq_db",
+          "legendFormat": "{{interface}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": -25,
+          "max": -5,
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": -20,
+                "color": "orange"
+              },
+              {
+                "value": -15,
+                "color": "yellow"
+              },
+              {
+                "value": -10,
+                "color": "green"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 15,
+      "type": "gauge",
+      "title": "CINR / SINR - signal vs noise (dB)",
+      "description": "Carrier to interference-plus-noise. This is what sets the achievable data rate: below ~5 dB the modem drops to the slowest modulation and throughput collapses even with a strong RSRP.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "router_uplink_cinr_db",
+          "legendFormat": "{{interface}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": -5,
+          "max": 30,
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0,
+                "color": "orange"
+              },
+              {
+                "value": 13,
+                "color": "yellow"
+              },
+              {
+                "value": 20,
+                "color": "green"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 16,
+      "type": "gauge",
+      "title": "RSSI - total received power (dBm)",
+      "description": "Total power in the band, our cell plus everything else. Useful only next to RSRP: a high RSSI with a low RSRP means most of what the antenna hears is not ours.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "router_uplink_rssi_dbm",
+          "legendFormat": "{{interface}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": -100,
+          "max": -50,
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": -85,
+                "color": "orange"
+              },
+              {
+                "value": -75,
+                "color": "yellow"
+              },
+              {
+                "value": -65,
+                "color": "green"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
     },
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Radio quality",
-      "description": "RSRP is power, RSRQ and CINR are quality. Observed range at this site: RSRP -99 to -103 dBm, CINR 6 to 14 dB -- workable but with little margin.",
-      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "title": "Radio quality - trend",
+      "description": "The gauges above show now; this shows the direction. RSRP and RSSI on the left axis, RSRQ and CINR on the right - they differ by an order of magnitude and share one axis only by accident of both being decibels.",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "router_uplink_rsrp_dbm", "legendFormat": "RSRP (dBm)", "refId": "A" },
-        { "expr": "router_uplink_rsrq_db", "legendFormat": "RSRQ (dB)", "refId": "B" },
-        { "expr": "router_uplink_cinr_db", "legendFormat": "CINR (dB)", "refId": "C" },
-        { "expr": "router_uplink_rssi_dbm", "legendFormat": "RSSI (dBm)", "refId": "D" }
+        {
+          "expr": "router_uplink_rsrp_dbm",
+          "legendFormat": "RSRP (dBm)",
+          "refId": "A"
+        },
+        {
+          "expr": "router_uplink_rsrq_db",
+          "legendFormat": "RSRQ (dB)",
+          "refId": "B"
+        },
+        {
+          "expr": "router_uplink_cinr_db",
+          "legendFormat": "CINR (dB)",
+          "refId": "C"
+        },
+        {
+          "expr": "router_uplink_rssi_dbm",
+          "legendFormat": "RSSI (dBm)",
+          "refId": "D"
+        }
       ],
       "options": {
-        "tooltip": { "mode": "multi", "sort": "none" },
-        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "min", "max"] }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "min",
+            "max"
+          ]
+        }
       },
       "fieldConfig": {
         "defaults": {
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
-          "color": { "mode": "palette-classic" }
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "left"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RSRQ (dB)"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CINR (dB)"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 6,
       "type": "row",
       "title": "Traffic",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
       "collapsed": false,
       "panels": []
     },
@@ -141,21 +660,57 @@
       "type": "timeseries",
       "title": "WAN throughput",
       "description": "The metered 4G link. Everything here is billed.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "rate(router_interface_rx_bytes_total{interface=\"CdcEthernet2\"}[5m])", "legendFormat": "download", "refId": "A" },
-        { "expr": "rate(router_interface_tx_bytes_total{interface=\"CdcEthernet2\"}[5m])", "legendFormat": "upload", "refId": "B" }
+        {
+          "expr": "rate(router_interface_rx_bytes_total{interface=\"CdcEthernet2\"}[5m])",
+          "legendFormat": "download",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(router_interface_tx_bytes_total{interface=\"CdcEthernet2\"}[5m])",
+          "legendFormat": "upload",
+          "refId": "B"
+        }
       ],
       "options": {
-        "tooltip": { "mode": "multi", "sort": "none" },
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "mean", "max"] }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "Bps",
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true, "axisLabel": "bytes/sec" },
-          "color": { "mode": "palette-classic" }
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisLabel": "bytes/sec"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": []
       }
@@ -165,20 +720,54 @@
       "type": "timeseries",
       "title": "Throughput out to the LAN, by interface",
       "description": "Which segment consumes the WAN. On 2026-08-12 the 2.4 GHz AP accounted for 4.80 of 5.81 GB, while all twenty miners together used ~150 MB/day.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "rate(router_interface_tx_bytes_total{interface=~\"$interface\"}[5m])", "legendFormat": "{{interface}}", "refId": "A" }
+        {
+          "expr": "rate(router_interface_tx_bytes_total{interface=~\"$interface\"}[5m])",
+          "legendFormat": "{{interface}}",
+          "refId": "A"
+        }
       ],
       "options": {
-        "tooltip": { "mode": "multi", "sort": "desc" },
-        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "Bps",
-          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 30, "showPoints": "never", "spanNulls": true, "stacking": { "mode": "normal", "group": "A" } },
-          "color": { "mode": "palette-classic" }
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 30,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": []
       }
@@ -187,52 +776,205 @@
       "id": 9,
       "type": "stat",
       "title": "WAN volume, last 24h",
-      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 15 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "increase(router_interface_rx_bytes_total{interface=\"CdcEthernet2\"}[24h])", "legendFormat": "download", "refId": "A" },
-        { "expr": "increase(router_interface_tx_bytes_total{interface=\"CdcEthernet2\"}[24h])", "legendFormat": "upload", "refId": "B" }
+        {
+          "expr": "increase(router_interface_rx_bytes_total{interface=\"CdcEthernet2\"}[24h])",
+          "legendFormat": "download",
+          "refId": "A"
+        },
+        {
+          "expr": "increase(router_interface_tx_bytes_total{interface=\"CdcEthernet2\"}[24h])",
+          "legendFormat": "upload",
+          "refId": "B"
+        }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "value",
         "graphMode": "area",
         "textMode": "value_and_name"
       },
       "fieldConfig": {
-        "defaults": { "unit": "bytes", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" }, { "value": 3000000000, "color": "yellow" }, { "value": 8000000000, "color": "orange" } ] } },
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 3000000000,
+                "color": "yellow"
+              },
+              {
+                "value": 8000000000,
+                "color": "orange"
+              }
+            ]
+          }
+        },
         "overrides": []
       }
     },
     {
       "id": 10,
       "type": "barchart",
-      "title": "Volume by interface, last 24h",
-      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 15 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "title": "Sent to each interface, last 24h",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "sort_desc(increase(router_interface_tx_bytes_total{interface=~\"$interface\"}[24h]))", "legendFormat": "{{interface}}", "refId": "A", "instant": true, "format": "table" }
+        {
+          "expr": "sort_desc(increase(router_interface_tx_bytes_total{interface=~\"$interface\"}[24h]) > 0)",
+          "legendFormat": "{{interface}}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
       ],
-      "options": { "orientation": "horizontal", "xTickLabelRotation": 0, "showValue": "auto", "legend": { "showLegend": false } },
-      "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "palette-classic" } }, "overrides": [] }
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "showValue": "auto",
+        "legend": {
+          "showLegend": false
+        },
+        "xField": "Interface"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Which interface carried how much out of the router - i.e. what each segment downloaded over the metered 4G link. Interfaces with no traffic are filtered out by the query.",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true
+            },
+            "indexByName": {
+              "interface": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "interface": "Interface",
+              "Value": "sent"
+            }
+          }
+        }
+      ]
     },
     {
       "id": 11,
       "type": "table",
       "title": "Top talkers, last 24h",
       "description": "Per-host counters come from the router and under-report badly -- on 2026-08-12 they attributed 181 MB to a desktop the AP interface showed receiving 4.80 GB. Use this to identify a device, not to measure it.",
-      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 15 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "topk(10, increase(router_host_rx_bytes_total[24h]))", "legendFormat": "{{name}}", "refId": "A", "instant": true, "format": "table" }
+        {
+          "expr": "topk(10, increase(router_host_rx_bytes_total[24h]))",
+          "legendFormat": "{{name}}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
       ],
       "transformations": [
-        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true }, "renameByName": { "Value": "downloaded", "name": "host", "ip": "address" } } },
-        { "id": "sortBy", "options": { "fields": {}, "sort": [ { "field": "downloaded", "desc": true } ] } }
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true
+            },
+            "renameByName": {
+              "Value": "downloaded",
+              "name": "host",
+              "ip": "address"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "downloaded",
+                "desc": true
+              }
+            ]
+          }
+        }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto" } },
-        "overrides": [ { "matcher": { "id": "byName", "options": "downloaded" }, "properties": [ { "id": "unit", "value": "bytes" } ] } ]
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "downloaded"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
       }
     }
   ]
