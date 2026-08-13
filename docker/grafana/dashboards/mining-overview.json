@@ -406,6 +406,7 @@
           }
         ],
         "fieldConfig": {
+          "defaults": {},
           "overrides": [
             {
               "matcher": {"id": "byName", "options": "Temp (°C)"},
