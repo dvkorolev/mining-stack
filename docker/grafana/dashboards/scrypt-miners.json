@@ -493,9 +493,14 @@
               {
                 "id": "mappings",
                 "value": [
-                  {"type": "value", "value": "0", "text": "Offline", "color": "dark-red"},
-                  {"type": "value", "value": "1", "text": "Error", "color": "dark-orange"},
-                  {"type": "value", "value": "2", "text": "Online", "color": "dark-green"}
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {"text": "Faulty", "color": "dark-red", "index": 0},
+                      "1": {"text": "Idle", "color": "dark-orange", "index": 1},
+                      "2": {"text": "Mining", "color": "dark-green", "index": 2}
+                    }
+                  }
                 ]
               },
               {

@@ -96,8 +96,13 @@
             }
           },
           "mappings": [
-            {"type": "value", "value": "0", "text": "Failed", "color": "red"},
-            {"type": "value", "value": "1", "text": "Resolved", "color": "green"}
+            {
+              "type": "value",
+              "options": {
+                "0": {"text": "Failed", "color": "red", "index": 0},
+                "1": {"text": "Resolved", "color": "green", "index": 1}
+              }
+            }
           ],
           "thresholds": {
             "mode": "absolute",
@@ -131,7 +136,7 @@
         {
           "expr": "pool_network_dns_resolved",
           "format": "table",
-          "instant": "true",
+          "instant": true,
           "refId": "B"
         },
         {
@@ -168,6 +173,7 @@
         }
       ],
       "fieldConfig": {
+        "defaults": {},
         "overrides": [
           {
             "matcher": {"id": "byName", "options": "Reachable"},
@@ -175,8 +181,13 @@
               {
                 "id": "mappings",
                 "value": [
-                  {"type": "value", "value": "0", "text": "❌ No"},
-                  {"type": "value", "value": "1", "text": "✅ Yes"}
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {"text": "❌ No", "index": 0},
+                      "1": {"text": "✅ Yes", "index": 1}
+                    }
+                  }
                 ]
               },
               {
@@ -201,8 +212,13 @@
               {
                 "id": "mappings",
                 "value": [
-                  {"type": "value", "value": "0", "text": "❌ No"},
-                  {"type": "value", "value": "1", "text": "✅ Yes"}
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {"text": "❌ No", "index": 0},
+                      "1": {"text": "✅ Yes", "index": 1}
+                    }
+                  }
                 ]
               },
               {
