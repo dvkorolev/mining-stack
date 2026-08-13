@@ -8,14 +8,47 @@ Run standalone (no pytest needed):
     python router-exporter/test_router_exporter.py
 """
 
+import json
+import threading
 import unittest
 
+import rci
 from router_exporter import (
     build_interface_series,
     parse_hosts,
     parse_snmp_walk,
     parse_uplink,
 )
+
+
+class FakeOpener:
+    """Stands in for the urllib opener. Nothing here touches a network."""
+
+    def __init__(self, *results):
+        self._results = list(results)
+        self.requests = []
+
+    def open(self, request, timeout=None):
+        self.requests.append(request)
+        result = self._results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+
+        class Response:
+            def __init__(self, payload):
+                self._body = json.dumps(payload).encode()
+
+            def read(self):
+                return self._body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        return Response(result)
+
 
 # Trimmed real `snmpwalk -Oqn` output.
 IF_DESCR = """
@@ -183,6 +216,81 @@ class HostParsingTest(unittest.TestCase):
     def test_empty_response_is_not_an_error(self):
         self.assertEqual(parse_hosts({}), [])
         self.assertEqual(parse_hosts({"host": []}), [])
+
+
+class RciCommandTests(unittest.TestCase):
+    """A rejected command comes back as HTTP 200 (DMI-49).
+
+    The router buries the refusal in a nested `status` array, so anything that
+    trusts the transport reads "not found" as success. Fixture below is the real
+    response to a misspelled command, captured 2026-08-13.
+    """
+
+    REJECTED = {"system": {"status": [{
+        "status": "error", "code": "1179781", "ident": "Core::Configurator",
+        "message": 'not found: "system/definitely-not-a-command" [http/rci].'}]}}
+    ACCEPTED = {"show": {"version": {"title": "5.0.10"}}}
+    OK_STATUS = {"system": {"status": [{"status": "ok", "message": "done"}]}}
+
+    def _client(self, *results):
+        client = rci.RciClient.__new__(rci.RciClient)
+        client.base = "http://router"
+        client.user = "admin"
+        client.password = "x"
+        client.timeout = 1
+        client._lock = threading.Lock()
+        client._opener = FakeOpener(*results)
+        return client
+
+    def test_error_status_inside_a_200_raises(self):
+        client = self._client(self.REJECTED)
+        with self.assertRaises(rci.RciError) as caught:
+            client.command({"system": {"definitely-not-a-command": {}}})
+        self.assertIn("not found", str(caught.exception))
+
+    def test_accepted_command_returns_the_payload(self):
+        client = self._client(self.ACCEPTED)
+        self.assertEqual(client.command({"show": {"version": {}}}), self.ACCEPTED)
+
+    def test_a_non_error_status_is_not_treated_as_failure(self):
+        client = self._client(self.OK_STATUS)
+        self.assertEqual(client.command({"system": {"reboot": {}}}), self.OK_STATUS)
+
+    def test_command_is_posted_as_json_to_rci(self):
+        client = self._client(self.ACCEPTED)
+        client.command({"show": {"version": {}}})
+        request = client._opener.requests[0]
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.full_url, "http://router/rci/")
+        self.assertEqual(json.loads(request.data), {"show": {"version": {}}})
+
+    def test_disconnect_is_success_only_when_expected(self):
+        # A router executing `reboot` never answers; that silence is the win.
+        client = self._client(OSError("connection reset"))
+        self.assertIsNone(client.command({"system": {"reboot": {}}},
+                                         expect_disconnect=True))
+
+    def test_disconnect_otherwise_raises(self):
+        client = self._client(OSError("connection reset"))
+        with self.assertRaises(rci.RciError):
+            client.command({"show": {"version": {}}})
+
+
+class StatusErrorTests(unittest.TestCase):
+    def test_finds_an_error_nested_at_the_top_level(self):
+        payload = {"status": [{"status": "error", "message": "not found"}]}
+        self.assertEqual(len(rci.status_errors(payload)), 1)
+
+    def test_ignores_ok_and_message_statuses(self):
+        payload = {"status": [{"status": "ok"}, {"status": "message"}]}
+        self.assertEqual(rci.status_errors(payload), [])
+
+    def test_walks_into_lists(self):
+        payload = {"a": [{"b": {"status": [{"status": "critical", "message": "x"}]}}]}
+        self.assertEqual(len(rci.status_errors(payload)), 1)
+
+    def test_a_clean_response_has_no_errors(self):
+        self.assertEqual(rci.status_errors({"show": {"version": {"title": "5"}}}), [])
 
 
 if __name__ == "__main__":
