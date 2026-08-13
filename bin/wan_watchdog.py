@@ -191,12 +191,22 @@ class RciRestarter(RouterRestarter):
         self._client._authenticate()
 
     def restart(self) -> None:
-        # The router drops the connection as it goes down, so a transport error
-        # here is the expected outcome rather than a failure.
-        try:
-            self._client.get("system/reboot")
-        except Exception as exc:
-            LOG.info("router closed the connection while rebooting (%s) - expected", exc)
+        # POST, not GET. GET /rci/<path> reads a configuration node and runs
+        # nothing, so the earlier get("system/reboot") returned {} and rebooted
+        # nothing at all -- proven on 2026-08-13 by issuing it against the live
+        # router and watching the uptime counter keep climbing (DMI-49).
+        #
+        # The old blanket `except Exception` is gone with it. It was there to
+        # tolerate the connection dropping as the router goes down, but it also
+        # swallowed the case where nothing happened, which is precisely the
+        # failure it needed to surface. `expect_disconnect` narrows that
+        # tolerance to silence alone: a rejection now raises.
+        response = self._client.command({"system": {"reboot": {}}},
+                                        expect_disconnect=True)
+        if response is None:
+            LOG.info("router closed the connection while rebooting - expected")
+        else:
+            LOG.info("router accepted the reboot: %s", response)
 
 
 class TuyaBackend(PowerBackend):

@@ -304,6 +304,57 @@ class SafetyTests(unittest.TestCase):
             backend.cycle("router", 30)
 
 
+class RciRestarterTests(unittest.TestCase):
+    """Rung 0 spent a night armed while doing nothing at all (DMI-49).
+
+    It called `get("system/reboot")`. GET reads a configuration node and runs
+    nothing, so the router answered `{}`, the wrapping `except Exception` saw no
+    exception, and a complete no-op reported success. Confirmed on the live
+    router: uptime kept climbing across the call.
+
+    These tests pin the two properties that would have caught it -- that the
+    reboot goes out as a command, and that a refusal is not mistaken for one.
+    """
+
+    def _restarter(self, client):
+        restarter = ww.RciRestarter.__new__(ww.RciRestarter)   # skip the network
+        restarter._client = client
+        return restarter
+
+    def test_reboot_is_issued_as_a_command_not_a_read(self):
+        class Client:
+            def __init__(self):
+                self.commands = []
+
+            def command(self, body, expect_disconnect=False):
+                self.commands.append((body, expect_disconnect))
+                return None
+
+            def get(self, path):
+                raise AssertionError("a reboot must not be issued as a GET")
+
+        client = Client()
+        self._restarter(client).restart()
+        self.assertEqual(client.commands,
+                         [({"system": {"reboot": {}}}, True)])
+
+    def test_silence_is_accepted_as_success(self):
+        # A router that is rebooting has nobody left to answer with.
+        class Client:
+            def command(self, body, expect_disconnect=False):
+                return None
+
+        self._restarter(Client()).restart()   # must not raise
+
+    def test_a_rejection_is_not_mistaken_for_a_reboot(self):
+        class Client:
+            def command(self, body, expect_disconnect=False):
+                raise RuntimeError('not found: "system/reboot"')
+
+        with self.assertRaises(RuntimeError):
+            self._restarter(Client()).restart()
+
+
 class StatePersistenceTests(unittest.TestCase):
     def test_state_survives_a_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
