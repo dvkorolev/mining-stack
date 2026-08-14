@@ -7,7 +7,7 @@ Date: 2026-06-17 (original review) · **Last refreshed: 2026-08-14**
 Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
 
-> **Status at a glance (main `29c1431`; the 2026-08-14 fixes are deployed and verified on the Pi but still sit on `fix/dmi-55-62-series-hygiene` (`c48a093`), awaiting the owner's merge)**
+> **Status at a glance (main `d4fb26c`, deployed and verified on the Pi)**
 > - ✅ **Done & merged:** P0 (Pi-drift backport), **Phase 0** (test harness + CI), Phase 1 (security S1–S5), Phase 2 (data-path clarity), **Phase 4 cleanup complete (C1–C5)**, **Phase 3.3** (`mining.service.ts` decomposition, DMI-36..41).
 > - ✅ **Operational:** DMI-19/20 (subnet-move recovery) · **DMI-43** (deploy-script host discovery) · **DMI-44** (router syslog → Loki) · **DMI-53** (router log flood removed) · **DMI-54** (stale-series crash) · **DMI-56** (pool health read from the miners) · **DMI-58** (scheduler config provenance) · **DMI-59/60** (SHA-256 hashrate alerting actually binds) · **DMI-61** (the Pi can now witness its own failures).
 > - ⏳ **In progress:** **Phase 3** — 3.1 (DMI-28), 3.2 (DMI-29..35) and 3.3 (DMI-36..41) done; **3.4 (`telegram.service.ts`) is next and last**.
@@ -362,10 +362,10 @@ Completed & merged to main: P0, **Phase 0** (DMI-25), Phase 1 (S1–S5), Phase 2
 observability/alerting batch (DMI-54/56/58/59/60/61 + the DMI-47/49 slices above), and the
 2026-08-13 dashboard and watchdog fixes (`a5ad314`, `9ae1aa5`, `7af8b1f`).
 
-Done and deployed but **not yet merged**: the 2026-08-14 series-hygiene batch (DMI-55/62/63,
-`c48a093` on `fix/dmi-55-62-series-hygiene`). It is live on the Pi — the scheduler was recreated
-from the new image and Prometheus reloaded its rules — so `main` is currently *behind* production
-for `python-scheduler` and the alert rules.
+Also merged: the 2026-08-14 series-hygiene batch (DMI-55/62/63, `c48a093` + `31e2c9c`, merged as
+`d4fb26c`). It was deployed and verified on the Pi before the merge rather than after — the
+scheduler was recreated from the new image and Prometheus reloaded its rules — so `main` and
+production agree.
 
 > **Housekeeping the next clean install should absorb:** the Pi's bind-mounted `etc/pools.yaml` still
 > lists the seven unused DMI-56 pools (it is outside the deploy rsync). The stray Grafana datasource
