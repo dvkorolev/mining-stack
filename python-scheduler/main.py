@@ -42,9 +42,9 @@ from metrics import (
     pool_network_ping_min, pool_network_ping_max,
     pool_network_packet_loss, collection_duration,
     collection_success, collection_timestamp,
-    miner_scrape_status, miner_state,
     miner_fallback_trigger_total, miner_fallback_total,
-    remove_miner_series, remove_miner_pool_series, publish_config_source
+    remove_miner_series, remove_miner_pool_series, publish_config_source,
+    remove_miner_board_series, remove_miner_fan_series, get_stale_value_metrics
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
 from collectors.antminer_cgi_collector import collect_antminer_cgi
@@ -560,10 +560,23 @@ async def collect_all_metrics():
                     streak = service_state.increment_failure_streak(miner['ip'], miner['name'], miner['model'])
                     
                     if streak >= FAILURE_THRESHOLD:
+                        # Drop every reading this miner is no longer producing, and
+                        # keep `miner_scrape_status` alone -- it carries the -2 that
+                        # says we know this machine and it is not answering. The
+                        # reverse of this used to be true, which both inflated the
+                        # fleet aggregates with a dead miner's last hashrate and
+                        # silenced MinerOffline entirely (DMI-55; get_stale_value_metrics
+                        # explains why).
+                        #
                         # Labels (incl. `algorithm`) come from the cache the collector
                         # fills for this miner; a hand-built subset would not match what
                         # was registered, and prometheus_client rejects a short one.
-                        remove_miner_series(miner['ip'], [miner_scrape_status, miner_state])
+                        remove_miner_series(miner['ip'], get_stale_value_metrics())
+                        # Board and fan series carry `slot`/`fan_id` instead of
+                        # `algorithm`, so they need their own removal path and were
+                        # missed by every earlier cleanup.
+                        remove_miner_board_series(miner['ip'])
+                        remove_miner_fan_series(miner['ip'])
                         # A miner this far past the failure threshold is telling
                         # us nothing about its pools either; leaving the last
                         # `alive` reading behind would report a live pool from a

@@ -16,11 +16,16 @@ from prometheus_client import REGISTRY
 from metrics import (
     _miner_label_cache,
     get_all_miner_metrics,
+    get_stale_value_metrics,
     miner_hashrate,
     miner_scrape_status,
     miner_state,
+    remove_miner_board_series,
+    remove_miner_fan_series,
     remove_miner_series,
     remove_old_miner_labels,
+    set_miner_boards,
+    set_miner_fans,
     update_miner_label_cache,
 )
 
@@ -62,7 +67,7 @@ class RemoveMinerSeriesTest(unittest.TestCase):
 
         remove_miner_series(ip, [miner_scrape_status, miner_state])
 
-        # main.py deliberately clears only these two; the value gauges stay put.
+        # The helper touches exactly what it is handed and nothing else.
         self.assertEqual(sample('miner_hashrate_ths', ip, name, model), 1)
 
     def test_defaults_to_every_miner_gauge(self):
@@ -151,6 +156,150 @@ class RemoveOldMinerLabelsTest(unittest.TestCase):
         update_miner_label_cache(ip, 'new-name', model, ALGO)
 
         self.assertIsNone(sample('miner_hashrate_ths', ip, 'old-name', model))
+
+
+class StaleValueMetricsTest(unittest.TestCase):
+    """DMI-55: what a failed miner leaves behind, and what it must not."""
+
+    def test_scrape_status_is_the_one_gauge_that_survives(self):
+        stale = get_stale_value_metrics()
+
+        self.assertNotIn(miner_scrape_status, stale)
+        self.assertIn(miner_hashrate, stale)
+        self.assertIn(miner_state, stale)
+        # Everything else in the miner set is fair game.
+        self.assertEqual(len(stale), len(get_all_miner_metrics()) - 1)
+
+    def test_a_failed_miner_keeps_its_tombstone_and_loses_its_readings(self):
+        # The shape main.py produces once a miner crosses FAILURE_THRESHOLD.
+        ip, name, model = '10.0.1.1', 'gone', 'M30S++_VH90_(Stock)'
+        update_miner_label_cache(ip, name, model, ALGO)
+        self.addCleanup(_miner_label_cache.pop, ip, None)
+        self.addCleanup(remove_miner_series, ip)
+        for metric in get_all_miner_metrics():
+            metric.labels(ip=ip, name=name, model=model, algorithm=ALGO).set(105)
+        miner_scrape_status.labels(
+            ip=ip, name=name, model=model, algorithm=ALGO
+        ).set(-2)
+
+        remove_miner_series(ip, get_stale_value_metrics())
+
+        # The dead miner stops inflating every fleet aggregate...
+        self.assertIsNone(sample('miner_hashrate_ths', ip, name, model))
+        self.assertIsNone(sample('miner_power_watts', ip, name, model))
+        self.assertIsNone(sample('miner_state', ip, name, model))
+        # ...while still announcing itself as unreachable, which is what
+        # MinerOffline alerts on. Removing this was why that alert, whose
+        # entire job is "this miner is gone", never fired.
+        self.assertEqual(sample('miner_scrape_status', ip, name, model), -2)
+
+
+def board_sample(metric_name, ip, name, model, slot):
+    return REGISTRY.get_sample_value(
+        metric_name, {'ip': ip, 'name': name, 'model': model, 'slot': slot})
+
+
+def fan_sample(ip, name, model, fan_id):
+    return REGISTRY.get_sample_value(
+        'miner_fan_speed_rpm',
+        {'ip': ip, 'name': name, 'model': model, 'fan_id': fan_id})
+
+
+class BoardAndFanPublishingTest(unittest.TestCase):
+    """DMI-62: a reading the miner never gave must not be published as zero."""
+
+    NAME = 'worker'
+    MODEL = 'M30S++_VH90_(Stock)'
+
+    def publish(self, ip, boards):
+        self.addCleanup(remove_miner_board_series, ip)
+        set_miner_boards(ip, self.NAME, self.MODEL, boards)
+
+    def test_a_board_that_reports_nothing_gets_no_series(self):
+        # The live fleet's shape: pyasic identifies three hashboards but fills
+        # none of the fields. 18 of 19 miners looked exactly like this while
+        # hashing at or above their rated speed.
+        ip = '10.0.2.1'
+        self.publish(ip, {str(s): {'hashrate': None, 'temp': None,
+                                   'chips': None, 'expected_chips': None}
+                          for s in range(3)})
+
+        for slot in ('0', '1', '2'):
+            self.assertIsNone(board_sample('miner_board_chips_count', ip,
+                                           self.NAME, self.MODEL, slot))
+            self.assertIsNone(board_sample('miner_board_hashrate_ths', ip,
+                                           self.NAME, self.MODEL, slot))
+            self.assertIsNone(board_sample('miner_board_temp_c', ip,
+                                           self.NAME, self.MODEL, slot))
+
+    def test_a_real_zero_is_still_published(self):
+        # The distinction the whole change rests on: a board that answers
+        # "zero chips" is a fault worth alerting on and must survive.
+        ip = '10.0.2.2'
+        self.publish(ip, {'0': {'chips': 0, 'expected_chips': 78}})
+
+        self.assertEqual(
+            board_sample('miner_board_chips_count', ip, self.NAME, self.MODEL, '0'), 0)
+        self.assertEqual(
+            board_sample('miner_board_chips_expected', ip, self.NAME, self.MODEL, '0'), 78)
+
+    def test_fields_are_judged_one_by_one(self):
+        # A miner that reports temperature but not chips publishes the
+        # temperature and stays silent about the chips.
+        ip = '10.0.2.3'
+        self.publish(ip, {'0': {'temp': 71.5, 'chips': None}})
+
+        self.assertEqual(
+            board_sample('miner_board_temp_c', ip, self.NAME, self.MODEL, '0'), 71.5)
+        self.assertIsNone(
+            board_sample('miner_board_chips_count', ip, self.NAME, self.MODEL, '0'))
+
+    def test_a_slot_that_stops_being_reported_is_removed(self):
+        ip = '10.0.2.4'
+        self.publish(ip, {'0': {'hashrate': 35.0}, '1': {'hashrate': 35.0}})
+
+        set_miner_boards(ip, self.NAME, self.MODEL, {'0': {'hashrate': 35.0}})
+
+        self.assertEqual(
+            board_sample('miner_board_hashrate_ths', ip, self.NAME, self.MODEL, '0'), 35.0)
+        self.assertIsNone(
+            board_sample('miner_board_hashrate_ths', ip, self.NAME, self.MODEL, '1'))
+
+    def test_removal_clears_every_board_gauge(self):
+        ip = '10.0.2.5'
+        set_miner_boards(ip, self.NAME, self.MODEL,
+                         {'0': {'hashrate': 35.0, 'temp': 70.0,
+                                'chips': 78, 'expected_chips': 78}})
+
+        remove_miner_board_series(ip)
+
+        for metric_name in ('miner_board_hashrate_ths', 'miner_board_temp_c',
+                            'miner_board_chips_count', 'miner_board_chips_expected'):
+            self.assertIsNone(
+                board_sample(metric_name, ip, self.NAME, self.MODEL, '0'))
+
+    def test_an_unreported_fan_speed_is_not_a_stopped_fan(self):
+        ip = '10.0.3.1'
+        self.addCleanup(remove_miner_fan_series, ip)
+
+        set_miner_fans(ip, self.NAME, self.MODEL, {'0': 4200, '1': None})
+
+        self.assertEqual(fan_sample(ip, self.NAME, self.MODEL, '0'), 4200)
+        # 0 RPM would read as a stopped fan and raise MinerFanSpeedCritical.
+        self.assertIsNone(fan_sample(ip, self.NAME, self.MODEL, '1'))
+
+    def test_fan_removal_clears_the_series(self):
+        ip = '10.0.3.2'
+        set_miner_fans(ip, self.NAME, self.MODEL, {'0': 4200, 'psu': 3100})
+
+        remove_miner_fan_series(ip)
+
+        self.assertIsNone(fan_sample(ip, self.NAME, self.MODEL, '0'))
+        self.assertIsNone(fan_sample(ip, self.NAME, self.MODEL, 'psu'))
+
+    def test_cleanup_of_an_unknown_miner_is_a_safe_noop(self):
+        remove_miner_board_series('10.255.255.253')
+        remove_miner_fan_series('10.255.255.253')
 
 
 if __name__ == '__main__':

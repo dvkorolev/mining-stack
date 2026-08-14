@@ -110,6 +110,21 @@ _miner_label_cache = {}  # {ip: {'name': str, 'model': str, 'algorithm': str}}
 # Pool series published per miner, so ones that disappear can be removed.
 _miner_pool_label_cache = {}  # {ip: {(name, url, pool_index), ...}}
 
+# Board and fan series published per miner, same purpose as the pool cache.
+_miner_board_label_cache = {}  # {ip: {(name, model, slot), ...}}
+_miner_fan_label_cache = {}    # {ip: {(name, model, fan_id), ...}}
+
+# The board gauges all carry the same label set, so one cache serves all four.
+_BOARD_METRICS = (miner_board_hashrate, miner_board_temp,
+                  miner_board_chips_count, miner_board_chips_expected)
+
+# Which board reading feeds which gauge. A key absent from a board's record --
+# or present as None -- publishes nothing.
+_BOARD_FIELDS = (('hashrate', miner_board_hashrate),
+                 ('temp', miner_board_temp),
+                 ('chips', miner_board_chips_count),
+                 ('expected_chips', miner_board_chips_expected))
+
 
 def set_miner_pools(ip: str, name: str, pools) -> None:
     """
@@ -157,6 +172,111 @@ def remove_miner_pool_series(ip: str) -> None:
     for labels in _miner_pool_label_cache.pop(ip, set()):
         _remove_pool_series(ip, labels)
 
+
+def set_miner_boards(ip: str, name: str, model: str, boards) -> None:
+    """
+    Publish per-board gauges — and only the readings the miner actually gave.
+
+    Args:
+        ip: miner address, the cache key.
+        name, model: the remaining board labels.
+        boards: {slot: {'hashrate': …, 'temp': …, 'chips': …,
+                 'expected_chips': …}}. Any field may be missing or None,
+                 and each is judged on its own: a board that reports a
+                 temperature but not a chip count publishes the temperature
+                 and stays silent about the chips.
+
+    A missing value is not published at all. The collector used to write
+    `board.chips or 0`, which turned "pyasic told us nothing" into a
+    confident zero — so 18 healthy machines reported every hashboard at zero
+    chips, zero hashrate and zero temperature, indistinguishable from a
+    genuinely dead board, and 21 MinerMissingChips alerts fired permanently
+    against miners hashing above their rated speed (DMI-62).
+
+    Absent is not zero. A board the miner does not describe gets no series,
+    which reads as "not reported" everywhere downstream, and the chip-count
+    rule compares only boards that actually answered.
+    """
+    published = set()
+    for slot, readings in boards.items():
+        slot = str(slot)
+        for field, metric in _BOARD_FIELDS:
+            value = readings.get(field)
+            if value is None:
+                continue
+            metric.labels(ip=ip, name=name, model=model, slot=slot).set(value)
+            published.add((name, model, slot))
+
+    for stale in _miner_board_label_cache.get(ip, set()) - published:
+        _remove_board_series(ip, stale)
+
+    if published:
+        _miner_board_label_cache[ip] = published
+    else:
+        _miner_board_label_cache.pop(ip, None)
+
+
+def set_miner_fans(ip: str, name: str, model: str, fans) -> None:
+    """
+    Publish fan speeds the miner reported, dropping fans it no longer reports.
+
+    Args:
+        ip: miner address, the cache key.
+        name, model: the remaining fan labels.
+        fans: {fan_id: rpm}. A None rpm is not published.
+
+    Same rule as set_miner_boards, and it matters more here: 0 RPM is a
+    stopped fan, which MinerFanSpeedCritical treats as an emergency. A fan
+    whose speed the miner did not report must not raise that alarm.
+    """
+    published = set()
+    for fan_id, rpm in fans.items():
+        if rpm is None:
+            continue
+        fan_id = str(fan_id)
+        miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id=fan_id).set(rpm)
+        published.add((name, model, fan_id))
+
+    for stale in _miner_fan_label_cache.get(ip, set()) - published:
+        _remove_fan_series(ip, stale)
+
+    if published:
+        _miner_fan_label_cache[ip] = published
+    else:
+        _miner_fan_label_cache.pop(ip, None)
+
+
+def _remove_board_series(ip: str, labels) -> None:
+    """Remove one board's series from every board gauge."""
+    name, model, slot = labels
+    for metric in _BOARD_METRICS:
+        try:
+            metric.remove(ip, name, model, slot)
+        except (KeyError, ValueError):
+            pass
+
+
+def _remove_fan_series(ip: str, labels) -> None:
+    """Remove one fan series; a missing combination is not an error."""
+    name, model, fan_id = labels
+    try:
+        miner_fan_speed.remove(ip, name, model, fan_id)
+    except (KeyError, ValueError):
+        pass
+
+
+def remove_miner_board_series(ip: str) -> None:
+    """Drop every board series for a miner that is gone or unreachable."""
+    for labels in _miner_board_label_cache.pop(ip, set()):
+        _remove_board_series(ip, labels)
+
+
+def remove_miner_fan_series(ip: str) -> None:
+    """Drop every fan series for a miner that is gone or unreachable."""
+    for labels in _miner_fan_label_cache.pop(ip, set()):
+        _remove_fan_series(ip, labels)
+
+
 def get_all_miner_metrics():
     """Return all Gauge metrics that track miners"""
     return [
@@ -175,6 +295,31 @@ def get_all_miner_metrics():
         miner_pool_accepted,
         miner_pool_rejected,
     ]
+
+
+def get_stale_value_metrics():
+    """
+    Miner gauges whose value means nothing once the scrape that produced it failed.
+
+    Everything except `miner_scrape_status`, which is deliberately kept: it is
+    the record that we know this miner and it is not answering, and it is the
+    only series that says so.
+
+    The cleanup used to do exactly the opposite — remove `miner_scrape_status`
+    and `miner_state`, keep the eleven value-carrying gauges. That inverted the
+    intent twice over (DMI-55):
+
+      * a miner dead for weeks kept contributing its last hashrate, power and
+        temperature to every fleet aggregate, and the error grew with each
+        machine that dropped off;
+      * MinerOffline (`miner_scrape_status <= 0`, for 5m) never fired at all.
+        The collector republishes the -2 each cycle and the cleanup removed it
+        again moments later, so the `for` timer reset forever. The one alert
+        whose entire job is "this miner is gone" was silenced by the cleanup
+        meant to protect it — and the appearing/disappearing series is also
+        what made the scraped miner count oscillate between 20 and 25.
+    """
+    return [m for m in get_all_miner_metrics() if m is not miner_scrape_status]
 
 def remove_old_miner_labels(ip: str, old_name: str, old_model: str, old_algorithm: str):
     """Remove metrics with old labels when a miner's name/model changes"""

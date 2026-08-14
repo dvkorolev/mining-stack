@@ -31,9 +31,11 @@ groups:
           summary: "Fleet has accepted no shares for 10 minutes"
           description: >-
             No miner has landed a share in the last 10 minutes, yet the miners are still
-            reachable and mining. The fleet is producing hashes that earn nothing. Most likely
-            the WAN is down; at this site the usual cause is the mobile balance running out,
-            which does not self-heal. Check the SIM balance first, then the modem.
+            reachable and mining. The fleet is producing hashes that earn nothing. The uplink
+            is the first thing to check — but not the router, which sees only the USB link to
+            the dongle and reports it healthy right through an outage. Read the 4G session on
+            the dongle itself, and the operator's data allowance; the August 2026 outages
+            happened with money on the SIM and recovered on their own.
 
       # Warning: one miner is mining into nothing while the rest of the fleet is fine.
       # Points at that miner's pool configuration or credentials, not at the uplink.
@@ -52,3 +54,39 @@ groups:
             Miner {{ $labels.name }} ({{ $labels.ip }}) has accepted no shares for 30 minutes
             while reporting that it is mining. At this fleet's hashrate a healthy miner lands
             several shares per minute, so this is a pool or credentials problem on that machine.
+
+  # The uplink is metered 4G, so its capacity is a shared resource the fleet competes for.
+  # Volume is attributed per LAN host by the router (router_host_* from `show/ip/hotspot`).
+  - name: uplink_consumers
+    interval: 60s
+    rules:
+      # A machine that is not part of the fleet has become a major consumer of the link.
+      #
+      # Threshold, from measurement on 2026-08-14 rather than taste: the whole WAN carried
+      # 714 MB in 24h, of which all 19 miners together took ~180 MB (~9 MB each), while a
+      # single spare workstation sharing the rack room took 203 MB — 28% of the link on its
+      # own. 500 MB is 2.5x that host's normal draw, so it does not flap, and roughly a
+      # quarter of the 1.8 GB/day a Wi-Fi client pulled in early August, so it fires with
+      # plenty of room before a repeat.
+      #
+      # router_host_* under-reports (the exporter says so). That biases this rule towards
+      # firing late, never early — the safe direction for a threshold.
+      - alert: NonFleetHostConsumingUplink
+        expr: |
+          sum by (name, ip, mac) (
+            increase(router_host_rx_bytes_total{name!~"WhatsMiner.*|Antminer.*|DG1.*|raspberrypi.*"}[24h])
+            + increase(router_host_tx_bytes_total{name!~"WhatsMiner.*|Antminer.*|DG1.*|raspberrypi.*"}[24h])
+          ) > 500e6
+        for: 30m
+        labels:
+          severity: warning
+          component: uplink
+        annotations:
+          summary: "{{ $labels.name }} used {{ $value | humanize1024 }}B of the metered uplink in 24h"
+          description: >-
+            {{ $labels.name }} ({{ $labels.ip }}) is not a miner, yet it has moved
+            {{ $value | humanize1024 }}B over the 4G link in the last 24 hours — against
+            roughly 9 MB per miner. The link is metered and the fleet depends on it.
+            This rule says how much and by which host; it cannot say what the traffic is,
+            because the router attributes volume per host and not per destination. To find
+            out what is being transferred, look at the host itself.
