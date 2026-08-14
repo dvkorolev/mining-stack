@@ -14,6 +14,12 @@ groups:
           description: "Miner {{ $labels.name }} ({{ $labels.ip }}) has been unreachable for 5 minutes."
           
       # Critical: High temperature
+      #
+      # ⚠️ This watches miner_temp_max_c, which is the *board* (PCB) temperature.
+      # The chips on that board run 20-30 °C hotter — see MinerBoardChipTempCritical
+      # below, which is the rule that catches an overheating hashboard. This one is
+      # kept unchanged deliberately: redefining what miner_temp_max_c means would
+      # silently move every threshold built on it.
       - alert: MinerHighTemperature
         expr: miner_temp_max_c > 85
         for: 2m
@@ -22,7 +28,39 @@ groups:
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} temperature critical"
-          description: "Miner {{ $labels.name }} temperature is {{ $value }}°C (threshold: 85°C)"
+          description: "Miner {{ $labels.name }} board temperature is {{ $value }}°C (threshold: 85°C). Chip temperature is higher — check the per-board figures."
+
+      # Critical: a hashboard's chips are running hot (DMI-64)
+      #
+      # This is the reading nothing watched until 2026-08-14. `miner_temp_max_c`
+      # reports the board, and on this fleet the hottest chip on that board runs
+      # 20-30 °C above it — so a machine reporting a comfortable 79 °C was found
+      # with chips at 109 °C, under every threshold that existed.
+      #
+      # Thresholds from the fleet's own distribution, measured 2026-08-14 across
+      # the 12 miners whose firmware reports chip temperature. Hottest board per
+      # miner: 90.3, 90.6, 93.4, 94.2, 95.3, 96.9, 96.9, 97.2, 97.7, 102.2, 102.9,
+      # 109.4 — a body sitting at 90-98 and three machines clearly outside it. 100
+      # is therefore "out of family for this farm", not a number from taste.
+      # ⚠️ It is *not* a vendor limit: the MicroBT datasheet has not been read.
+      # Confirm the real protection point and adjust, rather than trusting this.
+      #
+      # Alerts per board rather than per miner on purpose — the slot label is the
+      # actionable part, since it points at which board to inspect.
+      - alert: MinerBoardChipTempCritical
+        expr: miner_board_chip_temp_c > 105
+        for: 5m
+        labels:
+          severity: critical
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} board {{ $labels.slot }} chips at {{ $value | printf \"%.1f\" }}°C"
+          description: >-
+            Board {{ $labels.slot }} on {{ $labels.name }} ({{ $labels.ip }}) reports its
+            hottest chip at {{ $value | printf "%.1f" }}°C, well outside this fleet's normal
+            90-98°C. Sustained chip temperature at this level shortens board life and
+            eventually throttles the miner. Check that board's airflow and fans first;
+            the farm-wide cause found in DMI-45 was ventilation and ambient temperature.
           
       # Critical: Miner stopped mining
       - alert: MinerNotMining
@@ -74,6 +112,22 @@ groups:
     interval: 30s
     rules:
       # Warning: Temperature elevated
+      # Warning band for the chip temperature above (DMI-64). Bounded at the top so
+      # a board past 105 raises MinerBoardChipTempCritical alone, not both.
+      - alert: MinerBoardChipTempHigh
+        expr: miner_board_chip_temp_c > 100 and miner_board_chip_temp_c <= 105
+        for: 10m
+        labels:
+          severity: warning
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} board {{ $labels.slot }} chips at {{ $value | printf \"%.1f\" }}°C"
+          description: >-
+            Board {{ $labels.slot }} on {{ $labels.name }} ({{ $labels.ip }}) is running its
+            chips at {{ $value | printf "%.1f" }}°C against a fleet norm of 90-98°C. Not an
+            emergency, but it is the early stage of the path MinerBoardChipTempCritical
+            describes, and it usually means airflow rather than the board itself.
+
       - alert: MinerTemperatureHigh
         expr: miner_temp_max_c > 75 and miner_temp_max_c <= 85
         for: 5m

@@ -268,15 +268,38 @@ class BoardAndFanPublishingTest(unittest.TestCase):
     def test_removal_clears_every_board_gauge(self):
         ip = '10.0.2.5'
         set_miner_boards(ip, self.NAME, self.MODEL,
-                         {'0': {'hashrate': 35.0, 'temp': 70.0,
+                         {'0': {'hashrate': 35.0, 'temp': 70.0, 'chip_temp': 93.3,
                                 'chips': 78, 'expected_chips': 78}})
 
         remove_miner_board_series(ip)
 
         for metric_name in ('miner_board_hashrate_ths', 'miner_board_temp_c',
-                            'miner_board_chips_count', 'miner_board_chips_expected'):
+                            'miner_board_chip_temp_c', 'miner_board_chips_count',
+                            'miner_board_chips_expected'):
             self.assertIsNone(
                 board_sample(metric_name, ip, self.NAME, self.MODEL, '0'))
+
+    def test_board_and_chip_temperature_are_separate_series(self):
+        # They differ by 20-30 C on this fleet, and every temperature alert was
+        # built on the cooler one. Publishing them into one gauge is what made
+        # miner_board_temp_c mean the PCB on some miners and the chips on
+        # others (DMI-64).
+        ip = '10.0.2.6'
+        self.publish(ip, {'0': {'temp': 76.0, 'chip_temp': 97.15}})
+
+        self.assertEqual(
+            board_sample('miner_board_temp_c', ip, self.NAME, self.MODEL, '0'), 76.0)
+        self.assertEqual(
+            board_sample('miner_board_chip_temp_c', ip, self.NAME, self.MODEL, '0'), 97.15)
+
+    def test_a_firmware_reporting_only_board_temp_publishes_only_that(self):
+        ip = '10.0.2.7'
+        self.publish(ip, {'0': {'temp': 69.12}})
+
+        self.assertEqual(
+            board_sample('miner_board_temp_c', ip, self.NAME, self.MODEL, '0'), 69.12)
+        self.assertIsNone(
+            board_sample('miner_board_chip_temp_c', ip, self.NAME, self.MODEL, '0'))
 
     def test_an_unreported_fan_speed_is_not_a_stopped_fan(self):
         ip = '10.0.3.1'
