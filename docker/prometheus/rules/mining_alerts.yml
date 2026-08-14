@@ -176,6 +176,14 @@ groups:
           description: "Miner {{ $labels.name }} has {{ $value }} error(s)."
           
       # Warning: Missing chips on hashboard
+      #
+      # The rule is left comparing raw counts on purpose. It spent months firing 21 times
+      # against miners hashing above their rated speed, but the fault was upstream: the
+      # collector published `board.chips or 0`, so a board pyasic said nothing about became
+      # a confident zero (DMI-62). With that fixed, a board that does not report chips has
+      # no series and cannot match here, and a board that reports a genuine shortfall still
+      # does. Guarding the rule instead — on hashrate, or on count > 0 — would have hidden
+      # exactly the fault it exists to catch.
       - alert: MinerMissingChips
         expr: |
           miner_board_chips_count < on(ip, name, slot) group_left() miner_board_chips_expected

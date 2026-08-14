@@ -17,11 +17,10 @@ from metrics import (
     miner_hashrate, miner_power, miner_temp_max, miner_is_mining,
     miner_uptime, miner_efficiency, miner_fault_light, miner_errors_count,
     miner_scrape_status, miner_state, miner_hashrate_mhs, miner_expected_hashrate,
-    miner_board_hashrate, miner_board_temp, miner_board_chips_count,
-    miner_board_chips_expected, miner_fan_speed, miner_pool_accepted,
+    miner_pool_accepted,
     miner_pool_rejected, collection_duration, collection_success,
     collection_timestamp, miner_gaps_filled_total, update_miner_label_cache,
-    set_miner_pools
+    set_miner_pools, set_miner_boards, set_miner_fans
 )
 from parsers.pool_status import extract_pool_status
 
@@ -300,17 +299,20 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     errors = data.get('errors', [])
     miner_errors_count.labels(ip=ip, name=name, model=model, algorithm=algo).set(len(errors) if errors else 0)
     
-    fans = data.get('fans', [])
-    if fans:
-        for i, fan in enumerate(fans):
-            if hasattr(fan, 'speed'):
-                miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id=str(i)).set(fan.speed or 0)
-    
+    # Fan speeds, keyed by fan_id. A speed the miner did not report is left out
+    # rather than sent as 0 -- 0 RPM is a stopped fan, and that is an alert.
+    fan_speeds = {}
+    for i, fan in enumerate(data.get('fans', []) or []):
+        if hasattr(fan, 'speed'):
+            fan_speeds[str(i)] = fan.speed
+
     fan_psu = data.get('fan_psu', [])
     if fan_psu and isinstance(fan_psu, (list, tuple)) and len(fan_psu) > 0:
         if hasattr(fan_psu[0], 'speed'):
-            miner_fan_speed.labels(ip=ip, name=name, model=model, fan_id='psu').set(fan_psu[0].speed or 0)
-    
+            fan_speeds['psu'] = fan_psu[0].speed
+
+    set_miner_fans(ip, name, model, fan_speeds)
+
     pools = data.get('pools', [])
     if pools and isinstance(pools, (list, tuple)) and len(pools) > 0:
         first_pool = pools[0]
@@ -333,27 +335,37 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     # uses and whether they are alive.
     set_miner_pools(ip, name, extract_pool_status(pools))
     
+    # Per-board readings from both sources, merged by slot and published once.
+    # Two sources write board temperature, and publishing them separately let
+    # the pyasic pass overwrite a real cgminer reading with a fabricated 0.
+    boards = {}
+
     cgminer_board_temps = data.get('cgminer_board_temps', [])
     if cgminer_board_temps and isinstance(cgminer_board_temps, list):
         for slot_idx, temp in enumerate(cgminer_board_temps):
-            if temp > 0:
-                slot = str(slot_idx)
-                miner_board_temp.labels(ip=ip, name=name, model=model, slot=slot).set(temp)
-    
+            if temp is not None and temp > 0:
+                boards.setdefault(str(slot_idx), {})['temp'] = temp
+
     hashboards = data.get('hashboards', [])
     if hashboards and isinstance(hashboards, (list, tuple)) and len(hashboards) > 0:
         if hasattr(hashboards[0], 'slot'):
             for board in hashboards:
                 if not hasattr(board, 'slot'):
                     continue
-                slot = str(board.slot)
-                miner_board_hashrate.labels(ip=ip, name=name, model=model, slot=slot).set(board.hashrate or 0)
-                board_temp = board.chip_temp if board.chip_temp is not None else (board.temp or 0)
-                miner_board_temp.labels(ip=ip, name=name, model=model, slot=slot).set(board_temp)
-                if hasattr(board, 'chips'):
-                    miner_board_chips_count.labels(ip=ip, name=name, model=model, slot=slot).set(board.chips or 0)
-                if hasattr(board, 'expected_chips'):
-                    miner_board_chips_expected.labels(ip=ip, name=name, model=model, slot=slot).set(board.expected_chips or 0)
+                # None means the miner did not report the field. It is passed
+                # through as None on purpose: set_miner_boards() publishes no
+                # series for it, rather than inventing a zero (DMI-62).
+                readings = boards.setdefault(str(board.slot), {})
+                readings['hashrate'] = getattr(board, 'hashrate', None)
+                readings['chips'] = getattr(board, 'chips', None)
+                readings['expected_chips'] = getattr(board, 'expected_chips', None)
+
+                chip_temp = getattr(board, 'chip_temp', None)
+                board_temp = chip_temp if chip_temp is not None else getattr(board, 'temp', None)
+                if board_temp is not None:
+                    readings['temp'] = board_temp
+
+    set_miner_boards(ip, name, model, boards)
 
 
 async def _collect_via_cgminer_only(ip: str, name: str, model: str, api_port: int, miner_config: Dict = None) -> Dict:
