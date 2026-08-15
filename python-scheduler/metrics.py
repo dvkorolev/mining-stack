@@ -20,8 +20,16 @@ miner_errors_count = Gauge('miner_errors_count', 'Number of errors', ['ip', 'nam
 miner_scrape_status = Gauge('miner_scrape_status', 'Scrape status (2=success, 1=partial, 0=timeout, -1=refused, -2=error)', ['ip', 'name', 'model', 'algorithm'])
 
 # Miner Board Metrics
+#
+# `miner_board_temp_c` and `miner_board_chip_temp_c` are deliberately separate
+# and must not be conflated: measured across this fleet they differ by 20-30 C,
+# because one is the PCB and the other is the hottest chip on it. A miner whose
+# board reads 79 C was found with chips at 109 C. Merging them — which the
+# collector effectively used to do, publishing whichever it had under the board
+# name — makes every threshold built on either one meaningless.
 miner_board_hashrate = Gauge('miner_board_hashrate_ths', 'Board hashrate in TH/s', ['ip', 'name', 'model', 'slot'])
-miner_board_temp = Gauge('miner_board_temp_c', 'Board temperature in Celsius', ['ip', 'name', 'model', 'slot'])
+miner_board_temp = Gauge('miner_board_temp_c', 'Board (PCB) temperature in Celsius', ['ip', 'name', 'model', 'slot'])
+miner_board_chip_temp = Gauge('miner_board_chip_temp_c', 'Hottest chip temperature on the board, in Celsius', ['ip', 'name', 'model', 'slot'])
 miner_board_chips_count = Gauge('miner_board_chips_count', 'Number of chips detected', ['ip', 'name', 'model', 'slot'])
 miner_board_chips_expected = Gauge('miner_board_chips_expected', 'Expected number of chips', ['ip', 'name', 'model', 'slot'])
 
@@ -114,14 +122,15 @@ _miner_pool_label_cache = {}  # {ip: {(name, url, pool_index), ...}}
 _miner_board_label_cache = {}  # {ip: {(name, model, slot), ...}}
 _miner_fan_label_cache = {}    # {ip: {(name, model, fan_id), ...}}
 
-# The board gauges all carry the same label set, so one cache serves all four.
-_BOARD_METRICS = (miner_board_hashrate, miner_board_temp,
+# The board gauges all carry the same label set, so one cache serves them all.
+_BOARD_METRICS = (miner_board_hashrate, miner_board_temp, miner_board_chip_temp,
                   miner_board_chips_count, miner_board_chips_expected)
 
 # Which board reading feeds which gauge. A key absent from a board's record --
 # or present as None -- publishes nothing.
 _BOARD_FIELDS = (('hashrate', miner_board_hashrate),
                  ('temp', miner_board_temp),
+                 ('chip_temp', miner_board_chip_temp),
                  ('chips', miner_board_chips_count),
                  ('expected_chips', miner_board_chips_expected))
 

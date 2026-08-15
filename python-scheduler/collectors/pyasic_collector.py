@@ -23,6 +23,7 @@ from metrics import (
     set_miner_pools, set_miner_boards, set_miner_fans
 )
 from parsers.pool_status import extract_pool_status
+from parsers.board_readings import boards_from_devs
 
 logger = logging.getLogger(__name__)
 
@@ -335,35 +336,49 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     # uses and whether they are alive.
     set_miner_pools(ip, name, extract_pool_status(pools))
     
-    # Per-board readings from both sources, merged by slot and published once.
-    # Two sources write board temperature, and publishing them separately let
-    # the pyasic pass overwrite a real cgminer reading with a fabricated 0.
+    # Per-board readings from three sources, merged by slot and published once.
+    # Ordered weakest first, so a better source overwrites a poorer one and
+    # never the reverse.
     boards = {}
 
+    # 1. Legacy list of board temperatures, positional. Board (PCB) temps.
     cgminer_board_temps = data.get('cgminer_board_temps', [])
     if cgminer_board_temps and isinstance(cgminer_board_temps, list):
         for slot_idx, temp in enumerate(cgminer_board_temps):
             if temp is not None and temp > 0:
                 boards.setdefault(str(slot_idx), {})['temp'] = temp
 
+    # 2. cgminer `devs` — the only source that answers for most of the fleet,
+    #    and the only one carrying chip temperature.
+    for slot, readings in (data.get('cgminer_boards') or {}).items():
+        boards.setdefault(slot, {}).update(readings)
+
+    # 3. pyasic, where it has anything to say. Richest when populated, so it
+    #    goes last -- but only fields it actually reported.
     hashboards = data.get('hashboards', [])
     if hashboards and isinstance(hashboards, (list, tuple)) and len(hashboards) > 0:
         if hasattr(hashboards[0], 'slot'):
             for board in hashboards:
                 if not hasattr(board, 'slot'):
                     continue
-                # None means the miner did not report the field. It is passed
-                # through as None on purpose: set_miner_boards() publishes no
-                # series for it, rather than inventing a zero (DMI-62).
-                readings = boards.setdefault(str(board.slot), {})
-                readings['hashrate'] = getattr(board, 'hashrate', None)
-                readings['chips'] = getattr(board, 'chips', None)
-                readings['expected_chips'] = getattr(board, 'expected_chips', None)
-
-                chip_temp = getattr(board, 'chip_temp', None)
-                board_temp = chip_temp if chip_temp is not None else getattr(board, 'temp', None)
-                if board_temp is not None:
-                    readings['temp'] = board_temp
+                # None means the miner did not report the field. Absent keys
+                # are dropped rather than passed through as None, so an empty
+                # pyasic board cannot erase what `devs` already supplied
+                # (DMI-62 for the not-zero half, DMI-64 for the not-erased half).
+                readings = {
+                    'hashrate': getattr(board, 'hashrate', None),
+                    'chips': getattr(board, 'chips', None),
+                    'expected_chips': getattr(board, 'expected_chips', None),
+                    # Kept distinct on purpose: `temp` is the PCB, `chip_temp`
+                    # is the hottest chip, and they differ by 20-30 C here.
+                    # Collapsing one into the other is what made
+                    # miner_board_temp_c mean different things per miner.
+                    'temp': getattr(board, 'temp', None),
+                    'chip_temp': getattr(board, 'chip_temp', None),
+                }
+                readings = {f: v for f, v in readings.items() if v is not None}
+                if readings:
+                    boards.setdefault(str(board.slot), {}).update(readings)
 
     set_miner_boards(ip, name, model, boards)
 
@@ -430,6 +445,7 @@ async def _collect_via_cgminer_only(ip: str, name: str, model: str, api_port: in
                 'efficiency': 0,
                 'fault_light': False,
                 'errors': [],
+                'cgminer_boards': boards_from_devs(devs),
                 'hashboards': [],
                 'fans': [],
                 'fan_psu': [],
@@ -572,8 +588,21 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     'pools': pools,
                 }
                 
+                # Per-board readings, unconditionally rather than only as a
+                # gap-filler. pyasic's hashboards come back empty on every
+                # firmware newer than 2022, so for 18 of 19 machines this call
+                # is the only per-board data that exists (DMI-64). It is one
+                # extra request per miner per cycle against an API the
+                # collector already speaks.
+                if hasattr(miner_obj, 'api') and hasattr(miner_obj.api, 'devs'):
+                    try:
+                        devs_data = await asyncio.wait_for(miner_obj.api.devs(), timeout=5)
+                        pyasic_data['cgminer_boards'] = boards_from_devs(devs_data)
+                    except Exception as e:
+                        logger.debug(f"{name}: devs unavailable for per-board readings: {e}")
+
                 gaps = _check_data_gaps(pyasic_data, model)
-                
+
                 # For Whatsminers, supplement with CGMiner data for pool stats (rejected shares)
                 # PyASIC doesn't return pool rejection data for Whatsminers
                 if 'whatsminer' in model.lower() or 'm30' in model.lower() or 'm50' in model.lower() or 'm20' in model.lower():
