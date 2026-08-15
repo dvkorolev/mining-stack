@@ -3,20 +3,21 @@
 Repository review and improvement plan. Originally analysis-only; now also the
 living roadmap, kept in sync with shipped work and the Linear "Mining Stack" project.
 
-Date: 2026-06-17 (original review) · **Last refreshed: 2026-08-14**
+Date: 2026-06-17 (original review) · **Last refreshed: 2026-08-15**
 Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
 
-> **Status at a glance (main `d4fb26c`, deployed and verified on the Pi)**
+> **Status at a glance (main `f4eef78`, deployed and verified on the Pi)**
 > - ✅ **Done & merged:** P0 (Pi-drift backport), **Phase 0** (test harness + CI), Phase 1 (security S1–S5), Phase 2 (data-path clarity), **Phase 4 cleanup complete (C1–C5)**, **Phase 3.3** (`mining.service.ts` decomposition, DMI-36..41).
 > - ✅ **Operational:** DMI-19/20 (subnet-move recovery) · **DMI-43** (deploy-script host discovery) · **DMI-44** (router syslog → Loki) · **DMI-53** (router log flood removed) · **DMI-54** (stale-series crash) · **DMI-56** (pool health read from the miners) · **DMI-58** (scheduler config provenance) · **DMI-59/60** (SHA-256 hashrate alerting actually binds) · **DMI-61** (the Pi can now witness its own failures).
 > - ⏳ **In progress:** **Phase 3** — 3.1 (DMI-28), 3.2 (DMI-29..35) and 3.3 (DMI-36..41) done; **3.4 (`telegram.service.ts`) is next and last**.
 > - ✅ **DMI-49 closed the loop 2026-08-13: the site now has one proven automatic WAN recovery.** Rung 0 turned out to be a **silent no-op** — it issued the reboot as a GET, which reads configuration and executes nothing. Fixed (`7af8b1f`), redeployed, and then observed for real: router uptime 63484s → **82s**, link back in **116s**, fleet unaffected.
 > - ✅ **DMI-55 + DMI-62 + DMI-63 done 2026-08-14 (`c48a093`), deployed and verified.** The two bugs were one mechanism, and the second was worse than its ticket said: the cull that was meant to protect against stale data had **silenced `MinerOffline` entirely** — the alert whose only job is "this miner is gone" had never fired once. Live result: fabricated board series 228 → 33 with none reading zero, `MinerMissingChips` 21 → **0**, `MinerOffline` 0 → **5** (all correct), series count stable at 25 instead of oscillating. Plus a metered-uplink alert (DMI-63) with its threshold derived from measurement.
+> - ✅ **DMI-64 done 2026-08-15 (`aacf912`, merged `f4eef78`), deployed and verified.** Chip temperature was never measured on this farm: `miner_temp_max_c` reports the **board (PCB)**, and across 36 board/chip pairs the chip runs **10.0–31.8 °C hotter (mean 19.5)**. Read from the CGMiner `devs` response — the only source most of this fleet answers on. Both new alerts were watched firing before the ticket closed (rule 5): one board at **109.5 °C** on a miner the dashboard showed at 79.
 > - 🔧 **Open ops items:** **DMI-47** (uplink observability: exporter + alert shipped, SIM/session state still unmeasured) · **DMI-45** (hashrate shortfall — a hardware-repair list, and three phantom inventory records that now announce themselves as `MinerOffline`) · **DMI-52** (error codes / ambient temp / fan RPM) · **DMI-57** (retest the Fibocom + external antenna) · DMI-50/51 (remaining fault-tolerance layers).
 > - 🚨 **No automatic WAN recovery existed before 2026-08-13, and the diagnosis of why has been corrected twice.** Both August outages ended only when a human restarted the router. The router's own built-in modem power-cycling fired **134 times in 2h29m on 2026-08-12 and recovered nothing.** See DMI-46 below before trusting any earlier account. Rung 1 of the watchdog is still a dry-run, so rung 0 is the whole of it.
 > - ✅ **Deployed 2026-08-12**, then six follow-up fixes the same day (Loki query limits, the Grafana datasource collision, a full 7-dashboard sweep, promtail coverage, the watchdog armed), and three more on **2026-08-13**: legacy Grafana value mappings (`a5ad314`), the uplink dashboard rebuilt to say good-from-bad (`9ae1aa5`), and the watchdog restart fix (`7af8b1f`).
-> - ℹ️ **Deploy detail:** Fleet ~2007 TH/s / 20 miners scraped, 18 mining; scheduler `config_source: database_api` with 25 miners and **0 placeholders**; 0 "No profile found"; 17 `miner_expected_hashrate_ths` series live; 57 `miner_pool_alive` series live; watchdog armed and its action now proven. Deploy mechanics and traps are in `CLAUDE.local.md`.
+> - ℹ️ **Deploy detail:** Fleet ~2007 TH/s / 20 miners scraped, 18 mining; scheduler `config_source: database_api` with 25 miners and **0 placeholders**; 0 "No profile found"; 17 `miner_expected_hashrate_ths` series live; 57 `miner_pool_alive` series live; 51 `miner_board_temp_c` and 36 `miner_board_chip_temp_c` series live (DMI-64); watchdog armed and its action now proven. Deploy mechanics and traps are in `CLAUDE.local.md`.
 
 ---
 
@@ -37,12 +38,12 @@ Three first-party services + a monitoring stack:
 
 Orchestration: `docker-compose.prod.yml` (+ `docker-compose.logging.yml`, `docker-compose.dockerhub.yml` on the Pi). `Makefile` wraps common compose actions. Both new services are built on the Mac for `linux/arm64` and pulled from the registry like the rest — deliberately **not** `build:` directives, since the Pi has no build context.
 
-**Service size (LOC, measured 2026-08-12 — indicative of where complexity still concentrates):**
+**Service size (LOC, measured 2026-08-15 — indicative of where complexity still concentrates):**
 - `backend/src/services/telegram.service.ts` — **2369** ← the only untouched monolith; Phase 3.4
-- `python-scheduler/main.py` — 999
+- `python-scheduler/main.py` — 1012
 - `frontend/src/pages/Miners.tsx` — 958
 - `backend/src/services/database.service.ts` — 804 *(was 1595; facade over 7 repositories, Phase 3.2)*
-- `python-scheduler/collectors/pyasic_collector.py` — 720
+- `python-scheduler/collectors/pyasic_collector.py` — 783
 - `backend/src/services/mining.service.ts` — 308 *(was 1470; facade over `services/mining/`, Phase 3.3)*
 
 ---
@@ -116,6 +117,11 @@ Two rules follow, and both are already load-bearing in the code:
    unverified, not proven.** For anything meant to catch a rare event, construct the condition once
    and watch it fire; `MinerHashrateCriticalSHA256` (DMI-59) was dead the same way and for a
    different reason, which makes this two of two.
+   - **First applied prospectively in DMI-64 (2026-08-15):** the two chip-temperature alerts were
+     not called done when they loaded `health=ok`. The ticket stayed open until all four instances
+     were observed `firing` on the live stack, with the warning/critical bands checked for overlap.
+     That is the cost of the rule — a wait, not a cleverness — and it is what separates a rule that
+     works from a rule nobody has contradicted yet.
 
 ---
 
@@ -213,6 +219,7 @@ Not in the original review (environmental, surfaced 2026-06-20 when the Pi's `et
     - **`.58`** — still at 0.0 TH/s (unchanged from the diagnosis above).
     - **`.121`** — reports **175.4 TH/s** against a model rated ~100. Either the inventory record names the wrong model or the miner is misreporting; both matter, because this figure feeds fleet totals and every ratio-based alert. Worth resolving alongside the inventory drift above.
     - Five miners remain permanently unreachable. Their series are published with `miner_scrape_status = -2` and culled/recreated on a cycle — see the DMI-58 warning about counting series.
+  - 🔥 **New as of 2026-08-15, and it goes at the top of the repair list (DMI-64):** chip temperature is now measured, and **`192.168.2.64` (`002`) has a board at 109.5 °C and a second at 104.6**, followed by `.87` (`m302`, 103.4) and `.145` (`workerm501201`, 102.5). None of this was visible before — `.64` reports a board temperature of 79.1 °C, and every existing temperature alert reads that figure. This is the same systemic cause the diagnosis already names: ventilation and ambient. It is now measurable per board instead of inferred.
 - **DMI-46** — post-mortem of the August outages. **The diagnosis has now been retracted twice.** Read this entry top to bottom before citing any availability figure or cause from an earlier revision of this document.
   - **Retraction 1 (2026-08-08):** the 2026-08-07 version claimed the uplink "demonstrably drops on its own" — ~77% availability, drops every 45–90 min. That came from `probe_success` against `stratum.slushpool.com`, which fails ~25% of the time by itself because pools drop repeated bare TCP connects from an address that never speaks stratum. It measured the pool's tolerance of us, not our connectivity. The owner caught it: pool-side statistics showed no errors, impossible if the link were down a quarter of the time.
   - **Retraction 2 (2026-08-12): it was not balance exhaustion either.** The 08-08 revision concluded "the mobile balance ran out" and called it the only failure this site has suffered. The owner confirms there was money on the SIM, and that they **restarted the router by hand** several times during the event because the link would not come back. That fact was not in the earlier analysis at all, and it changes the conclusion completely.
@@ -315,13 +322,21 @@ Not in the original review (environmental, surfaced 2026-06-20 when the Pi's `et
   - **A second gap was masking the first:** 33 of 57 boards also carried `chips_expected = 0`, which is the only reason the noise was 21 alerts and not 54. Fixing expected-chips on its own would have *tripled* the false alerts — worth remembering as a shape: the obvious half of a data defect can be the half that is holding the damage down.
   - *Found on the way:* board temperature is written by two sources, and the pyasic pass was overwriting a real cgminer reading with a fabricated 0. Both are now merged by slot and published once.
   - *Verified live:* board series **228 → 33**, of which **none read 0.0** (was 195); fan series 38 → 34; `MinerMissingChips` **21 → 0**. Real data survived intact — `192.168.2.74` still reports 35.5 / 35.3 / 34.2 TH/s per board, 78 chips each, 82–87 °C.
-  - *Still open, separately:* why pyasic returns `HashBoard` objects with slots but no contents on 18 of 19 miners. The metrics no longer lie about it, but the data is still absent. Needs a live probe of one miner's raw API response.
-  - *Now newly possible:* `.74`'s slot 0 sits at **87 °C** while the only critical temperature rule watches `miner_temp_max_c > 85`, a per-miner figure. Per-board thresholds were unusable while the data was fabricated; they are not any more.
+  - ✅ *The remaining open question is answered (2026-08-15, during DMI-64).* All 19 reachable miners were probed directly: **pyasic populates `HashBoard` contents only on firmware `20221009.17.Rel`** — the one machine that worked. Every newer firmware returns `missing=True` with all fields `None`. It is a firmware regression in pyasic's WhatsMiner path, not a collector bug, and it was findable only because the metrics now say "not reported" instead of fabricating zeros. The data itself is recovered by reading CGMiner `devs` directly (DMI-64).
+  - *Now newly possible → done as DMI-64:* `.74`'s slot 0 sat at **87 °C** while the only critical temperature rule watched `miner_temp_max_c > 85`, a per-miner figure. Per-board thresholds were unusable while the data was fabricated; per-board **chip** temperature is now measured and alerted on.
 - **DMI-63** — ✅ **DONE 2026-08-14 (`c48a093`).** `NonFleetHostConsumingUplink`: a warning when a machine that is not part of the fleet moves more than **500 MB in 24 h** over the metered 4G link.
   - **The threshold is derived, not chosen.** Measured the same day: the whole WAN carried 713.6 MB in 24 h, all 19 miners took ~180 MB of it (~9 MB each), and a single spare workstation sharing the rack room took **203 MB — 28% of the link on its own**. 500 MB is 2.5× that host's normal draw (so it does not flap), ~70% of the link's whole daily volume (so it is unambiguous), and about a quarter of the 1.8 GB/day a Wi-Fi client pulled in early August (so it fires with room to spare). The arithmetic is in the rule comment so it can be audited rather than trusted.
   - **The annotation states what the rule cannot answer.** The router attributes volume per host, not per destination: this says how much and by which host, and says outright that identifying *what* needs the host itself. `router_host_*` also under-reports, which biases it towards firing late rather than early — the safe direction for a threshold.
   - *Verified:* rule loaded `health=ok`, selects exactly the three non-fleet hosts with no miner leaking through the name exclusion, and does not fire at the current baseline.
   - Also corrected in the same file: `FleetNoSharesAccepted` still told the operator that the usual cause is the mobile balance running out and that it does not self-heal — the diagnosis retracted on 2026-08-12. It now points at the 4G session and the data allowance, and warns that the router reports the uplink healthy right through an outage.
+- **DMI-64** — ✅ **DONE 2026-08-15 (`aacf912`, merged `f4eef78`), deployed and verified live.** New `miner_board_chip_temp_c`, plus `MinerBoardChipTempCritical` (>105 °C, 5m) and `MinerBoardChipTempHigh` (>100 and ≤105 °C, 10m).
+  - 🚨 **The farm was watching the wrong temperature.** `miner_temp_max_c` — the input to every existing temperature alert — reports the **board (PCB)**, not the silicon. Measured across 36 board/chip pairs after deploy: the chip runs **10.0 °C to 31.8 °C hotter, mean 19.5**. `192.168.2.64` read a comfortable 79.1 °C while a board on it sat at **109.4**. No threshold on the old metric could have caught that, at any value, because the gap is not a constant.
+  - **The data was already on the wire.** CGMiner's `devs` command on port 4028 returns `Temperature` *and* `Chip Temp Min/Max/Avg` per board, on the same connection the collector already opens — the pyasic path simply never asked for it. So this is the second half of DMI-62: that fix stopped the fabrication, and this one recovers what the fabrication was standing in for. Coverage: **12 miners × 3 boards** report chip temperature, **17 × 3** report board temperature; five machines on newer firmware return board temperature only, and are published as such rather than filled in.
+  - *Structure:* parsing lives in `python-scheduler/parsers/board_readings.py`, a pure function at the same seam as `parsers/pool_status.py` — no pyasic import, so it is testable on a laptop that cannot install the vendor library. 9 tests built from **real captured `devs` responses** from two firmwares, not invented shapes. The collector merges three sources per slot, weakest first, publishing only fields actually reported.
+  - ⚠️ **The thresholds describe this farm, not a datasheet.** 100/105 °C were picked from the observed distribution — most boards run 76–95. If MicroBT's real protection point is higher these fire early; if lower, late. Worth replacing with the vendor figure when someone has it.
+  - *Verified live (rule 5, in full):* 36 chip-temp series and 51 board-temp series, matching the pre-implementation probe exactly; all **four** alert instances observed `firing` — critical on `.64` slot 2 at 109.5 °C, warnings on `.64` slot 0 (104.6), `.87` slot 0 (103.4) and `.145` slot 2 (102.5); the bands do not overlap, so the `<= 105` bound works.
+  - 🔥 **This surfaced a hardware problem, not just a metric.** `.64` is over 105 °C on one board right now and near it on another, with `.87` and `.145` behind it. See DMI-45 — it belongs on the repair list.
+  - *Deliberately deferred:* `Effective Chips` arrives in the same `devs` response and is the rest of DMI-62's data gap. It feeds `MinerMissingChips`, so it gets its own change and its own verification rather than riding along.
 - **DMI-57** — retest the **Fibocom L850** (Cat.9, in a Vertell VT-STATION with the Petra BB MIMO external antenna) using the *current working Megafon SIM*. Only one modem is physically attached today — a Megafon dongle-router (`05c6:f00e`, MM200-1); the Fibocom's profile survives in the config as `UsbLte0` (`8087:095a`, Intel) but the device is absent. The earlier swap that condemned the antenna changed **two variables at once** — modem/antenna *and* SIM/operator — and Yota is an MVNO on Megafon's own radio, so it never isolated the antenna. `ip adjust-ttl send 64` exists on `UsbLte0` alone, the standard tethering-detection workaround, suggesting the old "constant errors" may have been operator policy. Possible bonus: the Fibocom presents as a plain modem, removing the dongle's NAT layer and perhaps the Tailscale flapping. Requires someone on site, and must be measured with the share rate — not pool probes.
 
 Site-specific network/ops details (router credentials, Tailscale footguns, 4G constraints, deploy preflight) live in the git-ignored `CLAUDE.local.md`, not here.
@@ -338,22 +353,25 @@ Ordered by value, not by ticket number.
    an unpaid SIM and so restarts the router either way. Next concrete step: log into
    `http://status.megafon.ru/` from a browser and capture the auth exchange — not more scripted
    guessing. Needs the owner.
-2. **DMI-45 follow-through — and it just got louder.** The three phantom `192.168.1.x` records now
+2. **`192.168.2.64` is running a board at 109.5 °C — this one is not a repo task.** DMI-64 made it
+   visible on 2026-08-15; `.87` and `.145` are on the same path. Everything else in this list can
+   wait a week without getting worse, and this cannot. Needs someone on site.
+3. **DMI-45 follow-through — and it just got louder.** The three phantom `192.168.1.x` records now
    fire `MinerOffline` continuously, because DMI-55 restored the alert. They are correct alerts about
    incorrect inventory, and the only way to quiet them honestly is to fix the records. Take it
    together with the inventory drift and the `.121` model/hashrate contradiction, both of which
    corrupt fleet totals. A PK-safe in-place `UPDATE` — miner IP is the primary key.
-3. **DMI-57 — the Fibocom + external antenna retest.** Deferred by the owner on 2026-08-13. When it
+4. **DMI-57 — the Fibocom + external antenna retest.** Deferred by the owner on 2026-08-13. When it
    is taken up, argue it from a distribution over a day, **not** a single CINR reading — see rule 4
    above, which exists because that mistake was made the same day.
-4. **Phase 3.4 — `telegram.service.ts` (~2369 LOC).** The last and highest-risk decomposition slice.
+5. **Phase 3.4 — `telegram.service.ts` (~2369 LOC).** The last and highest-risk decomposition slice.
    Purely repo work, no site dependency, so it is the natural filler between the ops items above.
-5. **Per-board alerting, newly unblocked.** With DMI-62 fixed, `miner_board_temp_c` and
-   `miner_board_hashrate_ths` are trustworthy where they exist — and `.74` is already sitting at
-   87 °C on one board with nothing watching it. Small, but it is the first new alert this data can
-   honestly support. Check it against rule 5 before shipping: construct the condition and watch it
-   fire once.
-6. **Rung 1 of the watchdog** is still a `LoggingBackend` dry-run, so rung 0 is the site's entire
+6. **`Effective Chips` from `devs`** — the rest of DMI-62's data gap, and the natural sequel to
+   DMI-64: same response, same parser, already proven to arrive fleet-wide. It feeds
+   `MinerMissingChips`, which is why it was held back rather than shipped alongside — a rule that
+   was just returned to 0 false positives deserves its own verification pass before its input
+   changes again.
+7. **Rung 1 of the watchdog** is still a `LoggingBackend` dry-run, so rung 0 is the site's entire
    automatic recovery. Closing that needs the EKF strip installed and its local key extracted — and
    the key is only obtainable while the strip is still cloud-paired (DMI-49/50/51).
 
@@ -363,9 +381,11 @@ observability/alerting batch (DMI-54/56/58/59/60/61 + the DMI-47/49 slices above
 2026-08-13 dashboard and watchdog fixes (`a5ad314`, `9ae1aa5`, `7af8b1f`).
 
 Also merged: the 2026-08-14 series-hygiene batch (DMI-55/62/63, `c48a093` + `31e2c9c`, merged as
-`d4fb26c`). It was deployed and verified on the Pi before the merge rather than after — the
-scheduler was recreated from the new image and Prometheus reloaded its rules — so `main` and
-production agree.
+`d4fb26c`) and **DMI-64** the next day (`aacf912`, merged as `f4eef78`). Both were deployed and
+verified on the Pi *before* the merge rather than after — the scheduler recreated from the new image
+and Prometheus reloaded its rules — so `main` and production agree. Worth keeping as the pattern for
+scheduler and alert-rule work: a rule cannot be verified anywhere except the live stack, and merging
+first would mean merging something unproven.
 
 > **Housekeeping the next clean install should absorb:** the Pi's bind-mounted `etc/pools.yaml` still
 > lists the seven unused DMI-56 pools (it is outside the deploy rsync). The stray Grafana datasource
