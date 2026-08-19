@@ -84,9 +84,36 @@ const logFormat = process.env.LOG_FORMAT === 'json'
       humanFormat
     );
 
+/**
+ * Resolve LOG_LEVEL to a level winston actually knows.
+ *
+ * Winston matches the configured level against `levels` by exact string. An
+ * unrecognised value does not fall back and does not complain -- it silently
+ * suppresses every log line. That is not hypothetical: this site ran with
+ * `LOG_LEVEL=INFO` (uppercase) and the backend's entire application log was
+ * empty for as long as anyone had looked, while morgan's HTTP lines kept
+ * arriving and made the container look healthy.
+ *
+ * So: normalise case, and refuse to honour a level that does not exist --
+ * loudly, on the one transport that is guaranteed to work.
+ */
+const resolveLogLevel = (): string => {
+  const raw = (process.env.LOG_LEVEL || 'info').trim();
+  const normalised = raw.toLowerCase();
+  if (normalised in levels) {
+    return normalised;
+  }
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[logger] LOG_LEVEL="${raw}" is not one of ${Object.keys(levels).join('/')}; ` +
+      `falling back to "info". An unknown level silences all logging.`
+  );
+  return 'info';
+};
+
 // Create the logger
 const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
+  level: resolveLogLevel(),
   levels,
   format: logFormat,
   transports: [
@@ -107,7 +134,9 @@ export const logEvent = (
 // Log startup message
 logger.info('Logging configured', {
   log_format: process.env.LOG_FORMAT || 'human',
-  log_level: process.env.LOG_LEVEL || 'info',
+  // The level in force, not the one that was asked for -- they differ whenever
+  // LOG_LEVEL is unrecognised, which is exactly when you need to be told.
+  log_level: logger.level,
   service: SERVICE_NAME,
 });
 
