@@ -113,3 +113,54 @@ test('getMinersUsingPoolUrl joins miner_pools to miners', () => {
   assert.deepStrictEqual(rows, [{ miner_ip: '10.0.0.1', name: 'rig1' }]);
   db.close();
 });
+
+// DMI-69: the write and the log line must only happen on a real transition.
+// This method runs once per miner per stats read (~77k times a day for 25 miners),
+// so an unconditional UPDATE is both a false log claim and needless microSD wear.
+
+test('updateMinerStatus does not rewrite the row when the status is unchanged', () => {
+  const { db, repo } = freshRepo();
+  repo.upsertMiner(miner('10.0.0.1', 'rig1'));
+  repo.updateMinerStatus('10.0.0.1', 'online');
+
+  // Sentinel: strftime('%s','now') only has 1s resolution, so comparing timestamps
+  // taken in the same second proves nothing. Park a value no write could produce.
+  db.prepare(`UPDATE miners SET updated_at = -1 WHERE ip = ?`).run('10.0.0.1');
+
+  repo.updateMinerStatus('10.0.0.1', 'online');
+  repo.updateMinerStatus('10.0.0.1', 'online');
+
+  const row = db.prepare(`SELECT status, updated_at FROM miners WHERE ip = ?`).get('10.0.0.1');
+  assert.strictEqual(row.updated_at, -1, 'a no-op status update must not touch the row');
+  assert.strictEqual(row.status, 'online');
+  db.close();
+});
+
+test('updateMinerStatus writes when the status actually changes', () => {
+  const { db, repo } = freshRepo();
+  repo.upsertMiner(miner('10.0.0.1', 'rig1'));
+  repo.updateMinerStatus('10.0.0.1', 'online');
+  db.prepare(`UPDATE miners SET updated_at = -1 WHERE ip = ?`).run('10.0.0.1');
+
+  repo.updateMinerStatus('10.0.0.1', 'offline');
+
+  const row = db.prepare(`SELECT status, updated_at FROM miners WHERE ip = ?`).get('10.0.0.1');
+  assert.strictEqual(row.status, 'offline');
+  assert.ok(row.updated_at > 0, 'a real transition must write updated_at');
+  db.close();
+});
+
+test('updateMinerStatus writes over a NULL status', () => {
+  const { db, repo } = freshRepo();
+  repo.upsertMiner(miner('10.0.0.1', 'rig1'));
+  db.prepare(`UPDATE miners SET status = NULL, updated_at = -1 WHERE ip = ?`).run('10.0.0.1');
+
+  // `status != ?` would silently skip this row: in SQL, NULL != 'online' is NULL,
+  // not true. Hence `IS NOT` in the query.
+  repo.updateMinerStatus('10.0.0.1', 'online');
+
+  const row = db.prepare(`SELECT status, updated_at FROM miners WHERE ip = ?`).get('10.0.0.1');
+  assert.strictEqual(row.status, 'online');
+  assert.ok(row.updated_at > 0, 'a NULL -> value transition must write');
+  db.close();
+});
