@@ -72,7 +72,40 @@ groups:
         annotations:
           summary: "Miner {{ $labels.name }} stopped mining"
           description: "Miner {{ $labels.name }} is online but not mining for 5 minutes."
-          
+
+      # Critical: Miner claims to be mining but produces nothing
+      #
+      # MinerNotMining above catches the honest failure — a miner that reports
+      # is_mining=0. This catches the dishonest one, and until DMI-67 nothing did:
+      # `miner_state` was documented as the fleet's state metric and referenced by
+      # zero rules. In pyasic_collector.set_miner_metrics(), state is derived as
+      #
+      #   hashrate == 0 and not is_mining -> 1 (idle)     <- MinerNotMining fires
+      #   hashrate  > 0                   -> 2 (mining)
+      #   otherwise                       -> 0 (faulty)   <- nothing fired
+      #
+      # so state 0 means precisely "says it is mining, hashrate is zero". Note the
+      # collector defaults a missing is_mining field to True, which lands the miner
+      # here rather than in idle — one more reason this branch must be alerted on.
+      #
+      # Found live on 2026-08-20: whatsminer-058 and rebuildm303 sat at state 0 for
+      # over an hour with a healthy scrape and nothing firing. Do not rewrite this as
+      # a hashrate comparison — MinerHashrateCritical* already covers that and needs
+      # miner_expected_hashrate_ths, which whatsminer_generic models do not publish.
+      - alert: MinerFaulty
+        expr: miner_state == 0 and miner_scrape_status == 2
+        for: 10m
+        labels:
+          severity: critical
+          component: miner
+        annotations:
+          summary: "Miner {{ $labels.name }} is faulty (reports mining, produces nothing)"
+          description: >-
+            Miner {{ $labels.name }} ({{ $labels.ip }}, {{ $labels.model }}) is reachable
+            and reports itself as mining, but its hashrate has been zero for 10 minutes.
+            Drawing {{ with query (printf "miner_power_watts{name='%s'}" $labels.name) }}{{ . | first | value | printf "%.0f" }}{{ end }}W
+            to produce nothing.
+
       # Critical: Hashrate dropped significantly (50% below expected) - SHA-256
       - alert: MinerHashrateCriticalSHA256
         expr: |
@@ -219,15 +252,27 @@ groups:
           description: "Miner {{ $labels.name }} has fault light indicator on."
           
       # Warning: Errors detected
+      #
+      # Windowed on purpose (DMI-68). The bare `miner_errors_count > 0` with `for: 5m`
+      # flapped: the miners' error lists genuinely empty out and refill between scrapes
+      # — whatsminer-058 measured 2026-08-20 went 2,3,0,2,3,0 with miner_scrape_status
+      # steady at 2 the whole time — so the `for` timer kept resetting and the alert
+      # cycled every 10-20 minutes. That single miner produced 141 of the 239
+      # notifications in the first day of restored delivery (DMI-65), which is how
+      # alerting gets ignored.
+      #
+      # max_over_time keeps the alert up while errors recur and lets it resolve 15
+      # minutes after the last one, trading resolve latency for a stable signal.
+      # $value is therefore the worst count in the window, not the current one.
       - alert: MinerErrors
-        expr: miner_errors_count > 0
+        expr: max_over_time(miner_errors_count[15m]) > 0
         for: 5m
         labels:
           severity: warning
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} reporting errors"
-          description: "Miner {{ $labels.name }} has {{ $value }} error(s)."
+          description: "Miner {{ $labels.name }} reported up to {{ $value }} error(s) in the last 15 minutes."
           
       # Warning: Missing chips on hashboard
       #
