@@ -97,6 +97,9 @@ profiles:
         - "Whatsminer M30S++"
         - "M30S++ VH90 (Stock)"
         - "M30S++ VH40 (Stock)"
+        # VH95 is in this fleet at .122 and .132; the pattern below already
+        # covers it, listed here so the inventory's variants are visible.
+        - "M30S++ VH95 (Stock)"
       patterns:
         - "^Whatsminer M30S"
         # Bare form as reported by the miners themselves, e.g. "M30S++ VH90 (Stock)".
@@ -138,6 +141,79 @@ profiles:
       hashrate_max: 120
       power_min: 2800
       power_max: 3500
+      temp_max: 85
+
+  # M60 series (DMI-45). Two of these are in the fleet, at .121 and .58, and
+  # until 2026-08-21 both were recorded as something else -- .121 as an
+  # "M30S++ VH90 (Stock)", .58 as a bare "WhatsMiner (Stock)". The cost was not
+  # cosmetic: .121 produces 176.1 TH/s against the M30S++ profile's expected
+  # 100, so its degradation thresholds sat at 80 and 50 TH/s and the machine
+  # could have lost 49% of its output in silence. .58 matched
+  # whatsminer_generic, which publishes no expected hashrate at all, so the
+  # SHA-256 degradation rules could not fire for it under any circumstances --
+  # it has been at a flat 0 TH/s and only DMI-67's MinerFaulty catches it.
+  #
+  # drivers and parser are copied verbatim from whatsminer_m30s: .121 is
+  # scraped successfully through that chain today, and this change must not
+  # alter how it is collected, only what it is compared against. Note the M60
+  # answers `get_version` and `summary` but rejects `{"command":"stats"}` with
+  # "invalid cmd" -- do not add a driver that depends on stats without testing
+  # against the real machine first.
+  whatsminer_m60:
+    name: "Whatsminer M60 Series"
+    manufacturer: "MicroBT"
+    algorithm: "sha256"
+
+    match:
+      exact:
+        - "Whatsminer M60"
+        - "M60 VK6A (Stock)"
+        - "M60_VK6A"
+      patterns:
+        - "^Whatsminer M60"
+        - "^M60"
+
+    drivers:
+      - type: "pyasic"
+        priority: 1
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "cgminer"
+        priority: 2
+        config:
+          api_port: 4028
+          timeout: 10
+      - type: "whatsminer_cgi"
+        priority: 3
+        config:
+          timeout: 10
+
+    parser:
+      type: "whatsminer"
+      quirks:
+        hashrate_field: "MHS av"
+        hashrate_unit: "TH/s"
+        hashrate_scale: 1.0
+        temp_source: "board"
+        temp_fields: ["Temperature"]
+        power_field: "Power"
+        power_unit: "W"
+
+    credentials:
+      username: "admin"
+      password: "admin"
+
+    # get_expected_hashrate() returns the MEAN of min and max, not the minimum
+    # -- the m30s band of 80/120 is what publishes 100 for an M30S++. So the
+    # band is centred on the rated figure: 172 TH/s for the M60 VK6A, against
+    # 176.1 measured at .121 on 2026-08-21. Resulting alert thresholds are
+    # 137.6 TH/s (warning) and 86 TH/s (critical).
+    expected:
+      hashrate_min: 150
+      hashrate_max: 194
+      power_min: 3100
+      power_max: 3900
       temp_max: 85
 
   whatsminer_m50:
