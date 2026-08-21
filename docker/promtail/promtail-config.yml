@@ -19,6 +19,16 @@ scrape_configs:
             values: ["logging=promtail"]
     
     relabel_configs:
+      # `job_name` above is NOT a label. Unlike a Prometheus scrape config,
+      # promtail's service discovery does not synthesise `job` from it, so
+      # until 2026-08-21 every docker stream reached Loki without one and
+      # `{job=~".+"}` matched nothing but the router syslog -- on every day
+      # since this stack was deployed. An ad-hoc query written that way reads
+      # as total data loss, and on 2026-08-20 it was read exactly that way
+      # (DMI-70). Set it explicitly; the keenetic job below always did.
+      - target_label: 'job'
+        replacement: 'docker'
+
       # Extract container name
       - source_labels: ['__meta_docker_container_name']
         regex: '/(.*)'
@@ -36,35 +46,18 @@ scrape_configs:
       - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
         target_label: 'compose_service'
     
-    pipeline_stages:
-      # Try to parse as JSON (for structured logs)
-      - json:
-          expressions:
-            timestamp: timestamp
-            level: level
-            service: service
-            logger: logger
-            message: message
-            hostname: hostname
-            extra: extra
-          source: message
-      
-      # Set timestamp from parsed JSON if available
-      - timestamp:
-          source: timestamp
-          format: RFC3339Nano
-          action_on_failure: skip
-      
-      # Extract labels from JSON fields
-      - labels:
-          level:
-          service:
-          logger:
-          hostname:
-      
-      # Output the message field (or original if not JSON)
-      - output:
-          source: message
+    # No pipeline_stages, on purpose. There used to be four -- json / timestamp
+    # / labels / output -- and none of them ever ran: the json stage carried
+    # `source: message`, naming an extracted field that does not exist on the
+    # first stage, so it never parsed and the three stages behind it never
+    # applied. Loki has no `level`, `service`, `logger` or `hostname` label to
+    # this day (DMI-70).
+    #
+    # Lines are therefore stored verbatim, and that is what the Grafana
+    # dashboards depend on: every panel in logs-overview.json parses with
+    # `| json` at query time. Do not "repair" the old pipeline -- restoring
+    # `output: source: message` would strip the JSON those panels read, and an
+    # ingest-time `level` label would collide with the one `| json` extracts.
 
   # Keenetic router syslog. The router's own log is RAM-only and is wiped on every
   # power-cycle, so the 2026-08-07 site outage could not be investigated after the

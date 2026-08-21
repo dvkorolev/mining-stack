@@ -17,8 +17,19 @@ services:
     volumes:
       - loki-data:/loki
       - ./docker/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      # Read-path alert rules, evaluated by Loki's own ruler (DMI-70). The
+      # `fake/` level inside is required, not incidental: with auth_enabled
+      # false every tenant is named `fake`, and rules filed anywhere else are
+      # loaded by nobody without an error.
+      - ./docker/loki/rules:/etc/loki/rules:ro
     networks:
       - mining-network
+    labels:
+      # Loki had no record of its own behaviour during DMI-70 because its log
+      # was never shipped anywhere. Affordable only alongside `log_level: warn`
+      # in loki-config.yaml -- at `info` it emits 7602 lines/hour, nearly all
+      # of it the compactor narrating itself.
+      logging: "promtail"
     deploy:
       resources:
         limits:
@@ -67,7 +78,11 @@ services:
     restart: unless-stopped
     # No Docker healthcheck: the grafana/promtail image ships no wget/curl/shell, so any
     # CMD HTTP probe false-fails as "unhealthy" forever (DMI-15). Liveness is observable
-    # via promtail's own /metrics (scraped by Prometheus) and Loki target status instead.
+    # via promtail's own /metrics -- which Prometheus did not actually scrape until
+    # DMI-70, so for the whole time this comment claimed otherwise, nothing was watching.
+    # The scrape job now exists (prometheus.yml, job_name: promtail).
+    labels:
+      logging: "promtail"
     logging:
       driver: "json-file"
       options:
@@ -148,6 +163,30 @@ services:
     volumes:
       # Grafana provisioning for Loki data source (consolidated with main config)
       - ./docker/grafana/provisioning/datasources/loki.yml:/etc/grafana/provisioning/datasources/loki.yml:ro
+    labels:
+      logging: "promtail"
+
+  # The monitoring services below are defined in docker-compose.prod.yml; these
+  # stanzas add nothing but the label promtail discovers on (DMI-70).
+  #
+  # All three were invisible to Loki until 2026-08-21. The cost of adding them
+  # is close to nothing -- measured over an hour: alertmanager 0 lines,
+  # prometheus 0, blackbox-exporter 0 -- because they only speak when something
+  # happens. Which is exactly the property that made their absence expensive:
+  # for nine months alertmanager logged a 404 on every single notification it
+  # attempted (DMI-65), and that log went to no durable store.
+
+  alertmanager:
+    labels:
+      logging: "promtail"
+
+  prometheus:
+    labels:
+      logging: "promtail"
+
+  blackbox-exporter:
+    labels:
+      logging: "promtail"
 
 volumes:
   loki-data:

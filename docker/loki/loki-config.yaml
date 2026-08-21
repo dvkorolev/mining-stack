@@ -11,6 +11,13 @@ server:
   # reconstructing an outage, so the ceiling has to clear them.
   http_server_write_timeout: 180s
   http_server_read_timeout: 180s
+  # Loki logs 7602 lines/hour at `info`, and ~99% of it is the compactor
+  # narrating itself ("compacting table", "building table cache") every ten
+  # minutes. That is more than the backend and scheduler combined, so shipping
+  # Loki's own log into Loki -- which is what DMI-70 needs, since it had no
+  # record of its own behaviour during the incident -- is only affordable at
+  # `warn`. Raise this to `info` by hand while debugging the store itself.
+  log_level: warn
 
 common:
   instance_addr: 127.0.0.1
@@ -24,12 +31,12 @@ common:
     kvstore:
       store: inmemory
 
-query_range:
-  results_cache:
-    cache:
-      embedded_cache:
-        enabled: true
-        max_size_mb: 100
+# No query_range block. It used to define an embedded results cache, and
+# `/config` reported `cache_results: false` the whole time -- Loki never
+# consulted it. Left in place it invites exactly the wrong conclusion during an
+# incident: a cache is the first suspect when a query returns emptiness it
+# should not, and this one was a decoy (DMI-70). If results caching is ever
+# wanted, `cache_results: true` is the setting that actually turns it on.
 
 schema_config:
   configs:
@@ -41,8 +48,26 @@ schema_config:
         prefix: index_
         period: 24h
 
+# The ruler is what monitors the READ path (DMI-70). Prometheus can measure
+# what promtail sends and what Loki ingests, but neither says whether the data
+# can be queried back -- and that is precisely the half that failed: ingestion
+# was healthy throughout the incident while queries returned nothing.
+#
+# `alertmanager_url` pointed at localhost:9093 until 2026-08-21. Inside this
+# container that is nothing at all, so a rule firing here would have gone
+# nowhere -- the same shape of failure as DMI-65, one layer down.
 ruler:
-  alertmanager_url: http://localhost:9093
+  alertmanager_url: http://alertmanager:9093
+  enable_alertmanager_v2: true
+  storage:
+    type: local
+    local:
+      directory: /etc/loki/rules
+  rule_path: /loki/ruler-wal
+  ring:
+    kvstore:
+      store: inmemory
+  enable_api: true
 
 # Enable log volume for Grafana
 limits_config:
