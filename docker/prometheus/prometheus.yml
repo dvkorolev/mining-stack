@@ -75,6 +75,33 @@ scrape_configs:
     scrape_timeout: 10s
 
   # ============================================================================
+  # The log pipeline itself (DMI-70)
+  # ============================================================================
+  #
+  # Neither of these was scraped until 2026-08-21, so nothing measured whether
+  # logs were reaching the store — while a comment in docker-compose.logging.yml
+  # asserted that promtail liveness was "observable via promtail's own /metrics
+  # (scraped by Prometheus)". It was not.
+  #
+  # These two cover the WRITE path only. They would not have caught the DMI-70
+  # incident, where ingestion stayed healthy and the read path went blind; that
+  # half needs a query, so it lives in Loki's own ruler (docker/loki/rules/).
+
+  - job_name: "loki"
+    static_configs:
+      - targets: ["loki:3100"]
+    metrics_path: /metrics
+    scrape_interval: 60s
+    scrape_timeout: 10s
+
+  - job_name: "promtail"
+    static_configs:
+      - targets: ["promtail:9080"]
+    metrics_path: /metrics
+    scrape_interval: 60s
+    scrape_timeout: 10s
+
+  # ============================================================================
   # External Monitoring - Blackbox Exporter
   # ============================================================================
   

@@ -1,0 +1,55 @@
+# Loki ruler rules -- the read-path monitor (DMI-70).
+#
+# Directory layout is not cosmetic: Loki's local ruler storage expects
+# <ruler.storage.local.directory>/<tenant>/<file>, and with auth_enabled: false
+# every write lands under the tenant literally named `fake`. A rules file placed
+# one level up is loaded by nobody and reports no error.
+#
+# Why these rules live here rather than in Prometheus: Prometheus can see what
+# promtail sent and what Loki ingested, and on 2026-08-20 both of those were
+# healthy for the entire eighteen hours that queries returned nothing. Only a
+# query exercises the path that actually failed. These rules are evaluated by
+# Loki against its own store, so they go blind in exactly the circumstance they
+# exist to report -- and going blind is what makes them fire.
+
+groups:
+  - name: loki-read-path
+    interval: 1m
+    rules:
+      # `absent_over_time`, not `count_over_time(...) == 0`. An empty vector
+      # compares to nothing and yields nothing, so the == 0 form is silent in
+      # precisely the case it was written for. This is the same absent-is-not-
+      # zero trap that PROJECT_STATE records against six earlier proxy signals.
+      - alert: LokiCannotReadBackendLogs
+        expr: absent_over_time({compose_service="backend"}[10m])
+        for: 5m
+        labels:
+          severity: critical
+          component: logging
+        annotations:
+          summary: "Loki returns no backend logs for the last 10 minutes"
+          description: >-
+            The backend writes ~13 lines a minute without pause, so ten minutes
+            of silence is not a quiet system. Either the backend is down -- check
+            that first, it is the cheaper explanation -- or logs are being
+            ingested and cannot be queried back, which is DMI-70 recurring.
+            Distinguish them with `rate(loki_distributor_lines_received_total[10m])`
+            in Prometheus: if that is healthy while this fires, the read path is
+            blind and the evidence is perishable. Capture `docker logs loki` and
+            the contents of /loki/boltdb-shipper-cache BEFORE restarting
+            anything; a restart cleared the condition last time and destroyed
+            the only record of its cause.
+
+      - alert: LokiCannotReadSchedulerLogs
+        expr: absent_over_time({compose_service="python-scheduler"}[10m])
+        for: 5m
+        labels:
+          severity: warning
+          component: logging
+        annotations:
+          summary: "Loki returns no python-scheduler logs for the last 10 minutes"
+          description: >-
+            The scheduler is the loudest source on the stack (~5200 lines/hour),
+            so this fires sooner and more reliably than the backend rule. Two
+            sources are watched rather than one because a single stream going
+            quiet is ambiguous; both going quiet at once is the DMI-70 shape.
