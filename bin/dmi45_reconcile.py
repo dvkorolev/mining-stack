@@ -45,10 +45,33 @@ Deliberately NOT done here:
     has already made six times. There is no operational gain either: a MAC
     changes no alert while the machine is absent.
 
-  * No renames, though the evidence for one is strong: .122 mines as
-    korr2014.004 while the DB name `004` sits on .121. The name follows the
-    slot and the pool follows the machine, so the two disagree. Which of them
-    should win is the owner's call, not this script's.
+  * .58 is NOT renamed. Its pool worker is m601761, so `whatsminer-058` breaks
+    the fleet convention -- but it is merely unconventional, not wrong, and
+    nothing else claims that name. Churning a Prometheus label on a machine
+    that is currently in two firing alerts, for cosmetics, is not worth it.
+
+  * .98 is NOT renamed, and this one is a trap. It submits shares as
+    `m50oktober`, which is the inventory name of .96 -- so the convention
+    below, applied blindly, would have written a false identity. They are
+    different machines: different MACs (CE:0B:0C:00:1B:F9 vs CC:08:0E:00:12:C7)
+    and different models (M50S VH50 vs M50 VH80). The database is right and the
+    miner's pool configuration is wrong, which means .98's output is being
+    booked pool-side against an absent machine. Fix that on the miner.
+
+Renames that ARE done, and why they are not cosmetic:
+
+  The convention `miners.name == the worker name the machine mines under` holds
+  for 16 of the 20 reachable machines, so it is a measured convention rather
+  than a preference. Two records break it in a way that is an actual
+  contradiction: .122 mines as korr2014.004 while the name `004` sits on .121.
+  Since .122 is provably the hardware that used to be at .121 -- same MAC,
+  CC:0C:0C:00:05:E0 -- the name belongs with it. The pool configuration lives
+  on the machine and moved with it; the database is keyed by IP and stayed
+  behind. .121 takes m60_1, its own worker name, which also frees `004`.
+
+  Safe to do: no Grafana dashboard and no alert rule references any of these
+  names literally -- they select on ip or container, so only the series label
+  changes.
 
 Safety properties:
 
@@ -84,17 +107,23 @@ import time
 DEFAULT_DB = "/opt/mining-stack/data/mining-stats.db"
 
 # Every value here was measured on 2026-08-21; see the module docstring for how.
-# ip -> {column: new value}
-CHANGES = {
-    "192.168.2.121": {"model": "M60 VK6A (Stock)", "mac": "CE:02:01:00:42:38"},
-    "192.168.2.122": {"model": "M30S++ VH95 (Stock)", "mac": "CC:0C:0C:00:05:E0"},
-    "192.168.2.58": {"model": "M60 VK6A (Stock)", "mac": "CE:02:01:00:92:C1",
-                     "owner": "427436847"},
-    "192.168.2.78": {"mac": "B8:4C:87:E0:3D:95"},
+#
+# ORDER IS LOAD-BEARING, not cosmetic. miners.name is UNIQUE, and `004` has to
+# leave .121 before .122 can take it. A dict would happen to preserve insertion
+# order in CPython; a list says so on purpose.
+CHANGES = [
+    # .121 must come first: it is holding the name `004`.
+    ("192.168.2.121", {"model": "M60 VK6A (Stock)", "mac": "CE:02:01:00:42:38",
+                       "name": "m60_1", "alias": "m60_1"}),
+    ("192.168.2.122", {"model": "M30S++ VH95 (Stock)", "mac": "CC:0C:0C:00:05:E0",
+                       "name": "004", "alias": "004"}),
+    ("192.168.2.58", {"model": "M60 VK6A (Stock)", "mac": "CE:02:01:00:92:C1",
+                      "owner": "427436847"}),
+    ("192.168.2.78", {"mac": "B8:4C:87:E0:3D:95"}),
     # Ownership from the pool account the machine actually mines under.
-    "192.168.2.145": {"owner": "427436847"},
-    "192.168.2.52": {"owner": "246139233"},
-}
+    ("192.168.2.145", {"owner": "427436847"}),
+    ("192.168.2.52", {"owner": "246139233"}),
+]
 
 # The machine that was mining unmonitored. Name and alias are its pool worker
 # name; owner follows from its pool account (korr2014).
@@ -109,7 +138,7 @@ INSERT = {
     "mac": "CC:0C:0C:00:06:23",
 }
 
-TRACKED = ("name", "model", "mac", "owner")
+TRACKED = ("name", "alias", "model", "mac", "owner")
 
 
 def current_rows(conn, ips):
@@ -120,16 +149,17 @@ def current_rows(conn, ips):
 
 def plan(conn):
     """Return (updates, do_insert). Only genuinely differing columns are listed."""
-    rows = current_rows(conn, list(CHANGES) + [INSERT["ip"]])
-    updates = {}
-    for ip, wanted in CHANGES.items():
+    ips = [ip for ip, _ in CHANGES]
+    rows = current_rows(conn, ips + [INSERT["ip"]])
+    updates = []
+    for ip, wanted in CHANGES:
         row = rows.get(ip)
         if row is None:
             print("  ! %s is not in the inventory -- skipped, nothing to update" % ip)
             continue
         diff = {c: v for c, v in wanted.items() if row.get(c) != v}
         if diff:
-            updates[ip] = (row, diff)
+            updates.append((ip, row, diff))
     return updates, INSERT["ip"] not in rows
 
 
@@ -149,7 +179,7 @@ def main():
         return 0
 
     print("Planned changes:" if args.apply else "Planned changes (dry run, nothing written):")
-    for ip, (row, diff) in sorted(updates.items()):
+    for ip, row, diff in updates:                 # printed in apply order, not sorted
         print("  %s" % ip)
         for col, new in sorted(diff.items()):
             print("      %-6s %r -> %r" % (col, row.get(col), new))
@@ -165,7 +195,7 @@ def main():
     now = int(time.time())
     try:
         conn.execute("BEGIN IMMEDIATE")
-        for ip, (_row, diff) in updates.items():
+        for ip, _row, diff in updates:           # order matters: see CHANGES
             assignments = ", ".join("%s=?" % c for c in diff) + ", updated_at=?"
             conn.execute("UPDATE miners SET " + assignments + " WHERE ip=?",
                          list(diff.values()) + [now, ip])
@@ -181,8 +211,8 @@ def main():
         return 1
 
     print("\nCommitted.")
-    after = current_rows(conn, list(CHANGES) + [INSERT["ip"]])
-    for ip in sorted(set(list(updates) + ([INSERT["ip"]] if do_insert else []))):
+    after = current_rows(conn, [ip for ip, _ in CHANGES] + [INSERT["ip"]])
+    for ip in sorted({ip for ip, _r, _d in updates} | ({INSERT["ip"]} if do_insert else set())):
         print("  %-16s %s" % (ip, after.get(ip)))
     print("\nintegrity_check: %s" % list(conn.execute("PRAGMA integrity_check"))[0][0])
     print("miners total   : %d" % list(conn.execute("SELECT COUNT(*) FROM miners"))[0][0])
