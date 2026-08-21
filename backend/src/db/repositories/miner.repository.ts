@@ -132,18 +132,30 @@ export class MinerRepository {
   }
 
   /**
-   * Update miner status
+   * Update miner status.
+   *
+   * Writes and logs only on an actual transition (DMI-69). This is called once per
+   * miner per stats read — ~77,000 times a day for 25 miners — and previously wrote
+   * the row and logged "Miner status updated" every single time, whether or not the
+   * value changed. That made 94% of the backend's log a claim about something that
+   * did not happen, and buried the handful of real transitions among identical lines.
+   * The `AND status IS NOT ?` clause makes SQLite skip the no-op writes too, which
+   * matters on the Pi's microSD (DMI-51).
+   *
+   * `IS NOT` rather than `!=` so a row whose status is NULL still gets written.
    */
   updateMinerStatus(ip: string, status: string): void {
     const stmt = this.db.prepare(`
       UPDATE miners
       SET status = ?, updated_at = strftime('%s', 'now')
-      WHERE ip = ?
+      WHERE ip = ? AND status IS NOT ?
     `);
 
     try {
-      stmt.run(status, ip);
-      logger.info(`Miner status updated: ${ip} -> ${status}`);
+      const { changes } = stmt.run(status, ip, status);
+      if (changes > 0) {
+        logger.info(`Miner status changed: ${ip} -> ${status}`);
+      }
     } catch (error) {
       logger.error(`Error updating miner status ${ip}:`, error);
       throw error;

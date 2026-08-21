@@ -144,9 +144,11 @@ app.get('/health', (req, res) => {
 app.get('/metrics', (req, res) => {
   const { getMiningStats } = require('./services/mining.service');
   const { getAlertPersistenceMetrics } = require('./services/alert.service');
+  const { getNotificationMetrics, getNotifyChannel } = require('./services/notifier.service');
 
   const stats = getMiningStats();
   const alertMetrics = getAlertPersistenceMetrics();
+  const notifyMetrics = getNotificationMetrics();
 
   // Simple Prometheus text format
   const metrics = [
@@ -197,6 +199,22 @@ app.get('/metrics', (req, res) => {
     `# HELP alert_queue_average_duration_ms Average alert write duration in milliseconds`,
     `# TYPE alert_queue_average_duration_ms gauge`,
     `alert_queue_average_duration_ms ${alertMetrics.averageWriteDurationMs}`,
+    ``,
+    // Delivery is reported, never assumed: `not_delivered` is a stub channel doing
+    // its job, `unverified` is a channel that returned without confirming anything.
+    // A rise in either while alerts fire means nobody is being told.
+    `# HELP alert_notifications_total Alert notification attempts by channel and outcome`,
+    `# TYPE alert_notifications_total counter`,
+    ...(notifyMetrics.length
+      ? notifyMetrics.map(
+          (m: { channel: string; outcome: string; count: number }) =>
+            `alert_notifications_total{channel="${m.channel}",outcome="${m.outcome}"} ${m.count}`
+        )
+      : [`# (no notification attempted yet)`]),
+    ``,
+    `# HELP alert_notify_channel_info The configured notification channel`,
+    `# TYPE alert_notify_channel_info gauge`,
+    `alert_notify_channel_info{channel="${getNotifyChannel()}"} 1`,
   ].join('\n');
 
   res.set('Content-Type', 'text/plain');

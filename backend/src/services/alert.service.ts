@@ -281,16 +281,19 @@ export const processAlertWebhook = async (payload: any): Promise<void> => {
         isFarmWide,
       };
 
+      // Record the alert before attempting to notify. Delivery is best-effort and
+      // can be a deliberate no-op (see notifier.service); the record must not be.
+      addToHistory(alertData);
+
       if (status === 'firing') {
-        // Guard against duplicate Telegram sends when Alertmanager re-delivers
+        // Guard against duplicate sends when Alertmanager re-delivers
         // the same webhook for an already-tracked firing (same startsAt -> same ID).
         const isNewFiring = !activeAlerts.has(alertId);
         activeAlerts.set(alertId, alertData);
         
         if (isNewFiring) {
-          // Send to Telegram with smart routing
-          const { sendSmartAlert } = require('./telegram.service');
-          await sendSmartAlert({
+          const { notifyAlert } = require('./notifier.service');
+          const delivery = await notifyAlert({
             severity: alertData.severity,
             title: alertData.summary,
             description: alertData.description,
@@ -300,7 +303,13 @@ export const processAlertWebhook = async (payload: any): Promise<void> => {
           });
           
           const recipientInfo = alertData.isFarmWide ? 'all users' : `${alertData.recipients?.length || 0} owner(s)`;
-          logger.info(`Alert fired: ${alertData.name} - ${alertData.summary} (sent to ${recipientInfo})`);
+          // State the delivery outcome, never assume it. The previous version of
+          // this line claimed "(sent to ...)" whether or not anything was sent.
+          logger.info(
+            `Alert fired: ${alertData.name} - ${alertData.summary} ` +
+            `[notify: ${delivery.channel}/${delivery.outcome}` +
+            `${delivery.reason ? ` - ${delivery.reason}` : ''}; intended for ${recipientInfo}]`
+          );
         } else {
           logger.debug(`Duplicate webhook delivery ignored for alert: ${alertId}`);
         }
@@ -308,10 +317,9 @@ export const processAlertWebhook = async (payload: any): Promise<void> => {
         activeAlerts.delete(alertId);
         alertData.resolvedAt = Date.now();
         
-        // Send resolution notification with smart routing
         const resolvedEmoji = severity === 'critical' ? '✅' : severity === 'warning' ? '✔️' : 'ℹ️';
-        const { sendSmartAlert } = require('./telegram.service');
-        await sendSmartAlert({
+        const { notifyAlert } = require('./notifier.service');
+        const delivery = await notifyAlert({
           severity: 'info',
           title: `${resolvedEmoji} Resolved: ${alertData.name}`,
           description: alertData.summary,
@@ -320,11 +328,11 @@ export const processAlertWebhook = async (payload: any): Promise<void> => {
           isFarmWide: alertData.isFarmWide,
         });
         
-        logger.info(`Alert resolved: ${alertData.name} - ${alertData.summary}`);
+        logger.info(
+          `Alert resolved: ${alertData.name} - ${alertData.summary} ` +
+          `[notify: ${delivery.channel}/${delivery.outcome}]`
+        );
       }
-
-      // Add to history
-      addToHistory(alertData);
     }
   } catch (error) {
     logger.error('Error processing alert webhook:', error);
