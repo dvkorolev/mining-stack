@@ -185,14 +185,14 @@ def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str, m
             from asic_profile_loader import get_library
             library = get_library()
             model = miner_config.get('model', 'DG1+')
-            logger.info(f"DG1 HTTP {ip}: Looking up profile for model '{model}'")
+            logger.debug(f"DG1 HTTP {ip}: Looking up profile for model '{model}'")
             profile = library.get_profile(model)
-            logger.info(f"DG1 HTTP {ip}: Profile found: {profile is not None}")
+            logger.debug(f"DG1 HTTP {ip}: Profile found: {profile is not None}")
             if profile:
                 power = profile.expected.get('power_typical', 0)
-                logger.info(f"DG1 HTTP {ip}: Profile power_typical: {power}W")
+                logger.debug(f"DG1 HTTP {ip}: Profile power_typical: {power}W")
                 if power > 0:
-                    logger.info(f"DG1 HTTP {ip}: Using profile power: {power}W")
+                    logger.debug(f"DG1 HTTP {ip}: Using profile power: {power}W")
         except Exception as e:
             logger.warning(f"DG1 HTTP {ip}: Failed to get profile power: {e}")
         
