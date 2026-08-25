@@ -167,6 +167,18 @@ def setup_logging(
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
     
+    # Third-party loggers inherit the root level, so LOG_LEVEL=INFO makes them
+    # narrate every poll: httpx alone wrote 20k lines/day, and apscheduler
+    # reports each successful job run. Neither says anything the metrics do not
+    # -- collection health is `last_collection` in /health, not a log line.
+    # Pinned to WARNING so a failure still speaks up (DMI-76). Measured against
+    # the live scheduler: no other third-party logger contributes at INFO.
+    # LOG_LEVEL=DEBUG stays the escape hatch: asking for DEBUG explicitly is
+    # asking for these too, so only quiet them above that.
+    if getattr(logging, log_level, logging.INFO) > logging.DEBUG:
+        for noisy in ('httpx', 'httpcore', 'apscheduler.executors'):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
+    
     # Log startup message
     logger = logging.getLogger(__name__)
     logger.info(

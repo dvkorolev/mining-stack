@@ -73,12 +73,16 @@ def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str, m
         pools_data: Response from /cgi-bin/pools.cgi (optional)
         ip: Miner IP address
     
-    Expected stats format:
+    Expected stats format (field names as reported by the DG1+ firmware):
     {
       "STATS": [{
-        "rate_5s": 78980.57,  # MH/s
-        "rate_15m": 14605,
-        "elapsed": 846890,
+        "rate_unit": "MH/s",
+        "rate_ideal": 14229,      # the machine's own nominal rate
+        "rate_15m": 14381,        # preferred - averaged, still responsive
+        "rate_avg": 14127.97,     # average over `elapsed`; slow to react
+        "rate_5s": 48728.6,       # instantaneous sample; reads ~3.4x high
+        "rate_30m": 0,            # present but never populated
+        "elapsed": 1133087,
         "chain": [...],
         "fan": ["6060", "6000", "6060", "6120"]
       }]
@@ -103,12 +107,33 @@ def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str, m
         
         stats = stats_data['STATS'][0]
         
-        # Extract hashrate (in MH/s for SCRYPT)
-        hashrate_mhs = float(stats.get('rate_5s', 0))
+        # Extract hashrate (in MH/s for SCRYPT).
+        # rate_5s is a 5-second sample: on this hardware it runs ~3.4x the
+        # machine's own rate_ideal and spikes far higher, so it is a last
+        # resort, not a reading. Prefer an averaged field (DMI-75).
+        # rate_30m is present in the response but reports 0 - do not use it.
+        hashrate_mhs = 0.0
+        hashrate_field = None
+        for field in ('rate_15m', 'rate_avg', 'rate_5s'):
+            try:
+                value = float(stats.get(field, 0) or 0)
+            except (ValueError, TypeError):
+                continue
+            if value > 0:
+                hashrate_mhs = value
+                hashrate_field = field
+                break
         
         if hashrate_mhs == 0:
             logger.debug(f"DG1 HTTP {ip}: Zero hashrate")
             return None
+        
+        if hashrate_field == 'rate_5s':
+            logger.warning(
+                f"DG1 HTTP {ip}: no averaged hashrate field, falling back to "
+                f"rate_5s ({hashrate_mhs:.1f} MH/s) - this figure is an "
+                f"instantaneous sample and reads high"
+            )
         
         # Extract maximum temperature from all chains
         temperature = 0.0
@@ -160,14 +185,14 @@ def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str, m
             from asic_profile_loader import get_library
             library = get_library()
             model = miner_config.get('model', 'DG1+')
-            logger.info(f"DG1 HTTP {ip}: Looking up profile for model '{model}'")
+            logger.debug(f"DG1 HTTP {ip}: Looking up profile for model '{model}'")
             profile = library.get_profile(model)
-            logger.info(f"DG1 HTTP {ip}: Profile found: {profile is not None}")
+            logger.debug(f"DG1 HTTP {ip}: Profile found: {profile is not None}")
             if profile:
                 power = profile.expected.get('power_typical', 0)
-                logger.info(f"DG1 HTTP {ip}: Profile power_typical: {power}W")
+                logger.debug(f"DG1 HTTP {ip}: Profile power_typical: {power}W")
                 if power > 0:
-                    logger.info(f"DG1 HTTP {ip}: Using profile power: {power}W")
+                    logger.debug(f"DG1 HTTP {ip}: Using profile power: {power}W")
         except Exception as e:
             logger.warning(f"DG1 HTTP {ip}: Failed to get profile power: {e}")
         
@@ -187,7 +212,7 @@ def _parse_dg1_response(stats_data: Dict, pools_data: Optional[Dict], ip: str, m
             'pools': pools
         }
         
-        logger.info(f"✓ DG1 HTTP {ip}: {hashrate_mhs:.2f} MH/s, {temperature:.1f}°C, {power}W, {len(fans)} fans")
+        logger.info(f"✓ DG1 HTTP {ip}: {hashrate_mhs:.2f} MH/s ({hashrate_field}), {temperature:.1f}°C, {power}W, {len(fans)} fans")
         return result
         
     except Exception as e:

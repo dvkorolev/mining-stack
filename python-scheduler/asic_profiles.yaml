@@ -498,7 +498,9 @@ profiles:
     parser:
       type: "dg1"
       quirks:
-        hashrate_field: "rate_5s"
+        # rate_5s is an instantaneous sample and reads ~3.4x the machine's own
+        # rate_ideal; the collector prefers rate_15m, then rate_avg (DMI-75).
+        hashrate_field: "rate_15m"
         hashrate_unit: "MH/s"  # DG1 reports in MH/s (SCRYPT)
         hashrate_scale: 1.0    # Keep as MH/s, will be converted to GH/s by collector
         temp_source: "chip"
@@ -512,8 +514,13 @@ profiles:
       password: "root"
     
     expected:
-      hashrate_min: 10000    # 10 GH/s = 10,000 MH/s
-      hashrate_max: 90000    # 90 GH/s = 90,000 MH/s (DG1+ can do ~80 GH/s)
+      # Measured, not assumed: 192.168.2.78 reports rate_ideal 14229 MH/s and a
+      # 13-day rate_avg of 14128 (DMI-75). The previous 10000-90000 range was
+      # fitted to the inflated rate_5s figure. This profile also covers the
+      # plain DG1 (~11 GH/s), so the range brackets the family rather than one
+      # machine; get_expected_hashrate() returns the MEAN, here 13000 MH/s.
+      hashrate_min: 11000    # 11 GH/s - plain DG1
+      hashrate_max: 15000    # 15 GH/s - DG1+ upper bound
       power_min: 3200
       power_max: 3800
       power_typical: 3400    # Typical power consumption for DG1+

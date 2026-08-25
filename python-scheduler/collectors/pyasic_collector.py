@@ -236,13 +236,13 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
                 status = pool.get('status', '').lower()
                 if status in ['alive', 'normal', 'active']:
                     is_mining_override = True
-                    logger.info(f"{name}: Pool status '{status}', overriding is_mining to True (data said {pyasic_is_mining})")
+                    logger.debug(f"{name}: Pool status '{status}', overriding is_mining to True (data said {pyasic_is_mining})")
                     break
     
     # Fallback: If hashrate > 10 TH/s (or 1000 MH/s for scrypt), assume mining
     if not is_mining_override and hashrate > 10:
         is_mining_override = True
-        logger.info(f"{name}: Overriding is_mining to True based on hashrate ({hashrate:.2f}, data said {pyasic_is_mining})")
+        logger.debug(f"{name}: Overriding is_mining to True based on hashrate ({hashrate:.2f}, data said {pyasic_is_mining})")
     
     # Use override if we determined miner is mining, otherwise trust the data
     is_mining = is_mining_override if is_mining_override else pyasic_is_mining
@@ -562,13 +562,13 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                             break
                         elif isinstance(pool, dict) and pool.get('status', '').lower() in ['alive', 'normal', 'active']:
                             is_mining_override = True
-                            logger.info(f"{name}: Pool status '{pool.get('status')}', overriding is_mining to True (PyASIC said {pyasic_is_mining})")
+                            logger.debug(f"{name}: Pool status '{pool.get('status')}', overriding is_mining to True (PyASIC said {pyasic_is_mining})")
                             break
                 
                 # Fallback: If hashrate > 10 TH/s (or 1000 MH/s for scrypt), assume mining
                 if not is_mining_override and hashrate > 10:
                     is_mining_override = True
-                    logger.info(f"{name}: Overriding is_mining to True based on hashrate ({hashrate:.2f} TH/s, PyASIC said {pyasic_is_mining})")
+                    logger.debug(f"{name}: Overriding is_mining to True based on hashrate ({hashrate:.2f} TH/s, PyASIC said {pyasic_is_mining})")
                 
                 # Use override if we determined miner is mining, otherwise trust PyASIC
                 is_mining_final = is_mining_override if is_mining_override else pyasic_is_mining
