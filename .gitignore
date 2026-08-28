@@ -72,3 +72,9 @@ scripts/fix-miner-name-53.sh
 # Claude <-> Kimi delegation handoff scratch (task/status/pid files; may contain
 # hosts/tokens from briefs — ephemeral RAM, never committed)
 .claude/scratch/
+# Machine-local agent state and settings. `.claude/agents/` is deliberately NOT
+# ignored — those definitions describe how this project delegates work and are
+# a decision to commit or not, unlike the three below, which are per-machine.
+.claude/agent-memory/
+.claude/worktrees/
+.claude/settings.local.json
