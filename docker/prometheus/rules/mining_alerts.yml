@@ -11,7 +11,7 @@ groups:
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} is offline"
-          description: "Miner {{ $labels.name }} ({{ $labels.ip }}) has been unreachable for 5 minutes."
+          description: "Miner {{ $labels.name }} has been unreachable for 5 minutes."
           
       # Critical: High temperature
       #
@@ -56,7 +56,7 @@ groups:
         annotations:
           summary: "Miner {{ $labels.name }} board {{ $labels.slot }} chips at {{ $value | printf \"%.1f\" }}°C"
           description: >-
-            Board {{ $labels.slot }} on {{ $labels.name }} ({{ $labels.ip }}) reports its
+            Board {{ $labels.slot }} on {{ $labels.name }} reports its
             hottest chip at {{ $value | printf "%.1f" }}°C, well outside this fleet's normal
             90-98°C. Sustained chip temperature at this level shortens board life and
             eventually throttles the miner. Check that board's airflow and fans first;
@@ -101,7 +101,7 @@ groups:
         annotations:
           summary: "Miner {{ $labels.name }} is faulty (reports mining, produces nothing)"
           description: >-
-            Miner {{ $labels.name }} ({{ $labels.ip }}, {{ $labels.model }}) is reachable
+            Miner {{ $labels.name }} ({{ $labels.model }}) is reachable
             and reports itself as mining, but its hashrate has been zero for 10 minutes.
             Drawing {{ with query (printf "miner_power_watts{name='%s'}" $labels.name) }}{{ . | first | value | printf "%.0f" }}{{ end }}W
             to produce nothing.
@@ -123,7 +123,7 @@ groups:
           summary: "Miner {{ $labels.name }} (SHA-256) hashrate critically low"
           # No `expected_hashrate` label exists on any series; the rated figure lives in
           # the miner_expected_hashrate_ths metric, so state the threshold instead.
-          description: "Miner {{ $labels.name }} ({{ $labels.ip }}, {{ $labels.model }}) is hashing at {{ $value | printf \"%.1f\" }} TH/s, below 50% of the rated figure for its model."
+          description: "Miner {{ $labels.name }} ({{ $labels.model }}) is hashing at {{ $value | printf \"%.1f\" }} TH/s, below 50% of the rated figure for its model."
       
       # Critical: Hashrate dropped significantly (50% below expected) - SCRYPT
       # Thresholds derived from the machine's own rate_ideal (14229 MH/s), not
@@ -159,7 +159,7 @@ groups:
         annotations:
           summary: "Miner {{ $labels.name }} board {{ $labels.slot }} chips at {{ $value | printf \"%.1f\" }}°C"
           description: >-
-            Board {{ $labels.slot }} on {{ $labels.name }} ({{ $labels.ip }}) is running its
+            Board {{ $labels.slot }} on {{ $labels.name }} is running its
             chips at {{ $value | printf "%.1f" }}°C against a fleet norm of 90-98°C. Not an
             emergency, but it is the early stage of the path MinerBoardChipTempCritical
             describes, and it usually means airflow rather than the board itself.
@@ -191,7 +191,7 @@ groups:
         annotations:
           summary: "Miner {{ $labels.name }} (SHA-256) hashrate below expected"
           # See the note on MinerHashrateCriticalSHA256 about $labels.expected_hashrate.
-          description: "Miner {{ $labels.name }} ({{ $labels.ip }}, {{ $labels.model }}) is hashing at {{ $value | printf \"%.1f\" }} TH/s, between 50% and 80% of the rated figure for its model."
+          description: "Miner {{ $labels.name }} ({{ $labels.model }}) is hashing at {{ $value | printf \"%.1f\" }} TH/s, between 50% and 80% of the rated figure for its model."
       
       # Warning: Hashrate below expected - SCRYPT
       - alert: MinerHashrateWarningSCRYPT
