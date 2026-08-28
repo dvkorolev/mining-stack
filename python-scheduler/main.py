@@ -30,7 +30,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from config import (
     MINERS_CONFIG, POOLS_CONFIG, COLLECTION_INTERVAL, POOL_TEST_INTERVAL, ENABLE_ICMP_PING,
     BACKEND_URL, PUSH_TO_BACKEND, INTERNAL_METRICS_TOKEN,
-    CONFIG_SOURCES, DEGRADED_CONFIG_SOURCES,
+    CONFIG_SOURCES, DEGRADED_CONFIG_SOURCES, TRUSTED_CONFIG_SOURCES,
     load_miners_config, load_pools_config, invalidate_config_cache,
     get_miners_config, get_miners_config_source
 )
@@ -44,7 +44,8 @@ from metrics import (
     collection_success, collection_timestamp,
     miner_fallback_trigger_total, miner_fallback_total,
     remove_miner_series, remove_miner_pool_series, publish_config_source,
-    remove_miner_board_series, remove_miner_fan_series, get_stale_value_metrics
+    remove_miner_board_series, remove_miner_fan_series, get_stale_value_metrics,
+    forget_unconfigured_miners
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
 from collectors.antminer_cgi_collector import collect_antminer_cgi
@@ -294,6 +295,27 @@ async def collect_all_metrics():
                 # collection, so the warning has to come from here.
                 log_event(logger, 'warning', 'Polling a fallback miner configuration',
                          miners_count=len(miners), config_source=config_source)
+
+            # DMI-80: a miner dropped from the inventory keeps publishing its
+            # last readings for as long as this process lives. The DMI-54/55
+            # cull is driven by *failed scrapes*, and a machine that is no
+            # longer in the list is never scraped at all, so nothing ever
+            # counts against it — the removal only took effect on the next
+            # scheduler restart. Until then it stayed inside every fleet
+            # aggregate and its `miner_scrape_status` kept MinerOffline firing
+            # for hardware that had been deliberately decommissioned.
+            #
+            # Only ever done from a list we asked for and got. On a fallback
+            # source the list is the bundled example miners, so purging against
+            # it would delete the real fleet the moment the backend blinks, and
+            # `none` is an empty list that would delete all of it — the DMI-58
+            # rule applied to a destructive action.
+            if config_source in TRUSTED_CONFIG_SOURCES:
+                configured_ips = {m.get('ip') for m in miners if m.get('ip')}
+                for ip in forget_unconfigured_miners(configured_ips):
+                    service_state.forget_miner(ip)
+                    log_event(logger, 'info', 'Miner left the configuration, dropping its series',
+                             miner_ip=ip, config_source=config_source)
 
             pyasic_result = await collect_pyasic_metrics(miners)
             miners_data = pyasic_result.get('miners_data', [])

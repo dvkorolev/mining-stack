@@ -253,6 +253,25 @@ class ServiceState:
         with self._lock:
             self.failure_streaks[key] = 0
 
+    def forget_miner(self, ip: str) -> None:
+        """
+        Drop everything tracked per-miner for an address that has left the
+        configuration (DMI-80).
+
+        The same entries load() purges when it finds them orphaned, done at
+        the moment the miner actually goes rather than at the next restart —
+        which is the whole point of DMI-80. The streak key carries name and
+        model as well as the address, so a machine that was renamed before
+        being removed can hold several entries; all of them go.
+
+        Args:
+            ip: Miner IP address
+        """
+        with self._lock:
+            for key in [k for k in self.failure_streaks if k[0] == ip]:
+                del self.failure_streaks[key]
+            self.last_uptimes.pop(ip, None)
+
     def get_failure_streak(self, ip: str, name: str, model: str) -> int:
         """
         Get current failure streak for a miner

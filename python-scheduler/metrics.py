@@ -398,3 +398,69 @@ def update_miner_label_cache(ip: str, name: str, model: str, algorithm: str):
         'model': model,
         'algorithm': algorithm
     }
+
+
+def known_miner_ips() -> set:
+    """
+    Every miner address that has published at least one series in this process.
+
+    The union of all four label caches, so a miner that only ever produced
+    board or pool readings is still known. Used to find machines that still
+    have series but have left the configuration (DMI-80).
+    """
+    return (set(_miner_label_cache)
+            | set(_miner_pool_label_cache)
+            | set(_miner_board_label_cache)
+            | set(_miner_fan_label_cache))
+
+
+def forget_miner(ip: str) -> bool:
+    """
+    Drop everything published about a miner that is no longer configured.
+
+    Unlike the failure-streak cleanup this removes `miner_scrape_status` too,
+    and the label cache with it. The distinction is the whole point:
+
+      * a machine that stops answering is *offline*, and the -2 is the only
+        series that says so — removing it silenced MinerOffline for the life
+        of the project (DMI-55);
+      * a machine removed from the inventory is not ours any more. Keeping its
+        -2 would fire MinerOffline forever for hardware that was deliberately
+        decommissioned, and keeping its gauges would leave it inside every
+        fleet aggregate (DMI-80).
+
+    Args:
+        ip: miner address, the cache key.
+
+    Returns:
+        True if anything was known about this ip, False if there was nothing
+        to do.
+    """
+    known = ip in known_miner_ips()
+    remove_miner_series(ip)
+    remove_miner_board_series(ip)
+    remove_miner_fan_series(ip)
+    remove_miner_pool_series(ip)
+    _miner_label_cache.pop(ip, None)
+    return known
+
+
+def forget_unconfigured_miners(configured_ips) -> list:
+    """
+    Drop the series of every known miner that is not in the configuration.
+
+    The caller decides whether the configuration is worth trusting -- see
+    config.TRUSTED_CONFIG_SOURCES. Handing this a fallback list would delete
+    the real fleet, so the gate is the whole safety of the operation.
+
+    Args:
+        configured_ips: addresses in the active miner configuration.
+
+    Returns:
+        The addresses forgotten, sorted, so the caller can log them and clear
+        whatever else it tracks per miner.
+    """
+    removed = sorted(known_miner_ips() - set(configured_ips))
+    for ip in removed:
+        forget_miner(ip)
+    return removed
