@@ -268,7 +268,7 @@ groups:
           severity: warning
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }}: up to {{ $value }} errors in 15m"
+          summary: "Miner {{ $labels.name }}: error count up to {{ $value }} in 15m"
           description: "Worst count in a rolling 15m window, not the current one."
           
       # Warning: Missing chips on hashboard
