@@ -23,9 +23,14 @@ from metrics import (
     remove_miner_board_series,
     remove_miner_fan_series,
     remove_miner_series,
+    remove_miner_pool_series,
     remove_old_miner_labels,
+    forget_miner,
+    forget_unconfigured_miners,
+    known_miner_ips,
     set_miner_boards,
     set_miner_fans,
+    set_miner_pools,
     update_miner_label_cache,
 )
 
@@ -97,6 +102,119 @@ class RemoveMinerSeriesTest(unittest.TestCase):
         remove_miner_series(ip, [miner_scrape_status])
         # Second pass hits KeyError internally and must stay silent.
         self.assertTrue(remove_miner_series(ip, [miner_scrape_status]))
+
+
+class ForgetMinerTest(unittest.TestCase):
+    """DMI-80: a miner removed from the inventory must stop publishing."""
+
+    NAME = 'decommissioned'
+    MODEL = 'M50_VH80_(Stock)'
+
+    def register(self, ip):
+        """Publish the full set a healthy collection would: gauges, boards,
+        fans and pools, so the purge has something of every kind to remove."""
+        update_miner_label_cache(ip, self.NAME, self.MODEL, ALGO)
+        for metric in get_all_miner_metrics():
+            metric.labels(ip=ip, name=self.NAME, model=self.MODEL,
+                          algorithm=ALGO).set(1)
+        set_miner_boards(ip, self.NAME, self.MODEL, {'0': {'hashrate': 35.0}})
+        set_miner_fans(ip, self.NAME, self.MODEL, {'0': 4200})
+        set_miner_pools(ip, self.NAME, [
+            {'index': 0, 'url': 'stratum+tcp://pool.example:3333', 'alive': True}])
+        self.addCleanup(forget_miner, ip)
+        return ip
+
+    def test_scrape_status_goes_too(self):
+        # The one difference from the failure-streak cull. A machine that is
+        # gone from the inventory is not "offline" -- keeping its -2 would fire
+        # MinerOffline forever for hardware that was deliberately removed.
+        ip = self.register('10.0.4.1')
+        self.assertEqual(sample('miner_scrape_status', ip, self.NAME, self.MODEL), 1)
+
+        self.assertTrue(forget_miner(ip))
+
+        self.assertIsNone(sample('miner_scrape_status', ip, self.NAME, self.MODEL))
+
+    def test_nothing_is_left_in_the_fleet_aggregates(self):
+        ip = self.register('10.0.4.2')
+
+        forget_miner(ip)
+
+        for metric_name in ('miner_hashrate_ths', 'miner_power_watts',
+                            'miner_temp_max_c', 'miner_state'):
+            self.assertIsNone(sample(metric_name, ip, self.NAME, self.MODEL))
+
+    def test_board_fan_and_pool_series_go_with_it(self):
+        # These carry slot/fan_id/url instead of `algorithm`, so they need
+        # their own removal path and were missed by every earlier cleanup.
+        ip = self.register('10.0.4.3')
+
+        forget_miner(ip)
+
+        self.assertIsNone(REGISTRY.get_sample_value(
+            'miner_board_hashrate_ths',
+            {'ip': ip, 'name': self.NAME, 'model': self.MODEL, 'slot': '0'}))
+        self.assertIsNone(REGISTRY.get_sample_value(
+            'miner_fan_speed_rpm',
+            {'ip': ip, 'name': self.NAME, 'model': self.MODEL, 'fan_id': '0'}))
+        self.assertIsNone(REGISTRY.get_sample_value(
+            'miner_pool_alive',
+            {'ip': ip, 'name': self.NAME,
+             'url': 'stratum+tcp://pool.example:3333', 'pool_index': '0'}))
+
+    def test_the_miner_is_no_longer_known(self):
+        # known_miner_ips() is what the collection cycle diffs against the
+        # configuration, so a forgotten miner must not reappear in it and get
+        # purged again on every pass.
+        ip = self.register('10.0.4.4')
+        self.assertIn(ip, known_miner_ips())
+
+        forget_miner(ip)
+
+        self.assertNotIn(ip, known_miner_ips())
+
+    def test_forgetting_an_unknown_miner_is_a_safe_noop(self):
+        self.assertFalse(forget_miner('10.255.255.252'))
+
+    def test_forgetting_is_repeatable(self):
+        ip = self.register('10.0.4.5')
+
+        forget_miner(ip)
+        self.assertFalse(forget_miner(ip))
+
+    def test_only_the_miners_absent_from_the_config_are_dropped(self):
+        kept = self.register('10.0.5.1')
+        gone = self.register('10.0.5.2')
+
+        # Membership, not equality: the helper sweeps every miner known to the
+        # shared registry, so another test's leftovers must not decide this one.
+        removed = forget_unconfigured_miners({kept})
+
+        self.assertIn(gone, removed)
+        self.assertNotIn(kept, removed)
+        self.assertEqual(sample('miner_scrape_status', kept, self.NAME, self.MODEL), 1)
+        self.assertIsNone(sample('miner_scrape_status', gone, self.NAME, self.MODEL))
+
+    def test_an_unchanged_config_removes_nothing(self):
+        ip = self.register('10.0.5.3')
+
+        self.assertNotIn(ip, forget_unconfigured_miners({ip}))
+        self.assertEqual(sample('miner_scrape_status', ip, self.NAME, self.MODEL), 1)
+
+    def test_a_config_naming_an_unseen_miner_is_harmless(self):
+        # The list is the inventory, not the set of machines that answered.
+        ip = self.register('10.0.5.4')
+
+        self.assertNotIn(ip, forget_unconfigured_miners({ip, '10.0.5.99'}))
+
+    def test_known_miner_ips_sees_a_board_only_miner(self):
+        # A machine whose scrape failed before any gauge was set can still
+        # have board series from an earlier cycle; it must still be purgeable.
+        ip = '10.0.4.6'
+        self.addCleanup(remove_miner_board_series, ip)
+        set_miner_boards(ip, self.NAME, self.MODEL, {'0': {'temp': 70.0}})
+
+        self.assertIn(ip, known_miner_ips())
 
 
 class LabelCountRegressionTest(unittest.TestCase):

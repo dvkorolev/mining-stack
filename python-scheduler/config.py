@@ -61,6 +61,12 @@ CONFIG_SOURCES = (
 # Sources that mean "not what was asked for" — health must not report healthy.
 DEGRADED_CONFIG_SOURCES = (CONFIG_SOURCE_STALE_CACHE, CONFIG_SOURCE_YAML_FALLBACK)
 
+# Sources that are the list we asked for, and are therefore safe to act on
+# destructively. Deliberately a whitelist rather than "not degraded": `none`
+# is neither degraded nor trustworthy — it is an empty list, and treating it
+# as the inventory would drop every series the fleet has (DMI-80).
+TRUSTED_CONFIG_SOURCES = (CONFIG_SOURCE_DATABASE, CONFIG_SOURCE_YAML)
+
 miners_config_source = CONFIG_SOURCE_NONE
 
 

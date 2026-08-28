@@ -24,6 +24,7 @@ from config import (
     CONFIG_SOURCE_YAML_FALLBACK,
     CONFIG_SOURCES,
     DEGRADED_CONFIG_SOURCES,
+    TRUSTED_CONFIG_SOURCES,
 )
 from health_check import HealthCheck, HealthStatus
 
@@ -187,6 +188,18 @@ class LoadMinersConfigTest(ConfigSourceTestBase):
             self.assertIn(source, CONFIG_SOURCES)
         self.assertNotIn(CONFIG_SOURCE_DATABASE, DEGRADED_CONFIG_SOURCES)
         self.assertNotIn(CONFIG_SOURCE_YAML, DEGRADED_CONFIG_SOURCES)
+
+    def test_only_the_intended_sources_are_trusted(self):
+        # DMI-80 purges series against this list, so anything wrongly trusted
+        # here deletes the real fleet. `none` is the dangerous one: it is not
+        # degraded, it is an empty list, and every miner would be diffed away.
+        self.assertEqual(set(TRUSTED_CONFIG_SOURCES),
+                         {CONFIG_SOURCE_DATABASE, CONFIG_SOURCE_YAML})
+        self.assertNotIn(CONFIG_SOURCE_NONE, TRUSTED_CONFIG_SOURCES)
+        for source in DEGRADED_CONFIG_SOURCES:
+            self.assertNotIn(source, TRUSTED_CONFIG_SOURCES)
+        for source in TRUSTED_CONFIG_SOURCES:
+            self.assertIn(source, CONFIG_SOURCES)
 
 
 class MissingYamlTest(ConfigSourceTestBase):
