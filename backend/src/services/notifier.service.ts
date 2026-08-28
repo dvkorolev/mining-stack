@@ -42,6 +42,10 @@ export interface NotifyRequest {
   miner?: string;
   recipients?: string[];
   isFarmWide?: boolean;
+  /** The rule's `component` label. Drives the suppression policy below. */
+  component?: string;
+  /** The rule's name (`alertname`), for per-rule suppression. */
+  alertName?: string;
 }
 
 export interface NotifyResult {
@@ -96,6 +100,48 @@ export const getNotifyChannel = (): NotifyChannel => {
   );
   return 'log';
 };
+
+/**
+ * Components that must not raise a notification, from
+ * ALERT_NOTIFY_EXCLUDE_COMPONENTS (comma-separated, case-insensitive).
+ *
+ * Why a denylist and not an allowlist: empty means "notify about everything",
+ * so an install that never sets it behaves exactly as before, and a component
+ * added later is loud by default. The failure direction is a notification too
+ * many, never one silently withheld.
+ *
+ * The case this exists for: this farm runs old ASICs to failure. 38 of the 41
+ * alerts standing on 2026-08-28 were permanent per-miner conditions nobody
+ * intends to act on -- overheating, error codes, machines dead for weeks. A
+ * channel that opens with that volume is muted within a week, which is the same
+ * silence the project started from, wearing the appearance of alerting.
+ */
+const asLowerSet = (raw: string | undefined): Set<string> =>
+  new Set(
+    (raw || '')
+      .split(',')
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+const excludedComponents = (): Set<string> =>
+  asLowerSet(process.env.ALERT_NOTIFY_EXCLUDE_COMPONENTS);
+
+/**
+ * Individual rules that must not notify, from ALERT_NOTIFY_EXCLUDE_ALERTS.
+ *
+ * A component is the blunt instrument; this is the scalpel, for a rule whose
+ * component is otherwise worth waking up for. The case that motivated it:
+ * `FarmMultipleMinersOffline` is `component=farm` and permanently true here --
+ * five machines have been absent for weeks and two of them cannot be reached by
+ * construction. Left in, it would push every repeat_interval forever and teach
+ * the owner to ignore the farm category that also carries a real fleet outage.
+ *
+ * Prefer fixing the underlying condition where one exists; this is for the ones
+ * that are accepted rather than pending.
+ */
+const excludedAlerts = (): Set<string> =>
+  asLowerSet(process.env.ALERT_NOTIFY_EXCLUDE_ALERTS);
 
 /**
  * ntfy priorities and tags per severity. 5 is ntfy's "max", which is what breaks
@@ -211,6 +257,30 @@ const logStub = (alert: NotifyRequest, reason: string): NotifyResult => {
 export const notifyAlert = async (alert: NotifyRequest): Promise<NotifyResult> => {
   const channel = getNotifyChannel();
   let result: NotifyResult;
+
+  // Suppression is a notification decision, not a recording one. Everything
+  // upstream -- addToHistory, activeAlerts, the dashboard, the `Alert fired:`
+  // log line carrying this outcome -- has already happened and is unaffected.
+  // Reported as a counted `not_delivered` rather than a silent return: a
+  // deliberate non-delivery still has to be visible as one.
+  const component = alert.component?.trim().toLowerCase();
+  const alertName = alert.alertName?.trim().toLowerCase();
+  const suppression =
+    component && excludedComponents().has(component)
+      ? `ALERT_NOTIFY_EXCLUDE_COMPONENTS (component=${component})`
+      : alertName && excludedAlerts().has(alertName)
+        ? `ALERT_NOTIFY_EXCLUDE_ALERTS (alertname=${alert.alertName})`
+        : null;
+
+  if (suppression) {
+    result = {
+      channel,
+      outcome: 'not_delivered',
+      reason: `suppressed by ${suppression}`,
+    };
+    count(result.channel, result.outcome);
+    return result;
+  }
 
   try {
     if (channel === 'none') {
