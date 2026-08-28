@@ -145,10 +145,41 @@ Do not let both write `miningStats` again — that reintroduces the clobber this
 ### Simulation (`SIMULATION_MODE`)
 Simulated/fake data is served **only** when `SIMULATION_MODE=true` (default false). It is never a silent fallback: on a Prometheus read error the backend keeps last-known real stats and logs the error; boot does not seed fake data. Do not reintroduce a `simulateMiningStats()` fallback into the real path.
 
+### Alert delivery (`ALERT_NOTIFY_*`, DMI-78/79)
+`notifier.service.ts` owns delivery, and its contract is **"say what happened"**, not "send a
+message": every call returns `delivered` / `not_delivered` / `unverified` and is counted in
+`alert_notifications_total{channel,outcome}`.
+
+- `ALERT_NOTIFY_CHANNEL` — `telegram` (default) · `ntfy` · `log` · `none`. **This site runs `ntfy`** because
+  Telegram is blocked upstream here, measured with a control (`api.telegram.org` times out while
+  `cloudflare.com` and `ya.ru` answer). `ntfy` needs `NTFY_TOPIC`; `NTFY_URL` defaults to the public
+  `https://ntfy.sh`.
+- `ntfy` is the only channel allowed to report `delivered`, because it answers with a status code.
+  The telegram branch may return **only** `unverified` — `sendSmartAlert()` swallows its own
+  transport errors, so "it returned" says nothing about delivery. Do not "upgrade" that to
+  `delivered`; it would be a fabricated measurement.
+- `ALERT_NOTIFY_EXCLUDE_COMPONENTS` / `ALERT_NOTIFY_EXCLUDE_ALERTS` — suppress *notification* only,
+  by the rule's `component` label or its name. **This site sets `ALERT_NOTIFY_EXCLUDE_COMPONENTS=miner`**:
+  the farm runs old ASICs to failure, so per-machine overheating and error codes are recorded and
+  dashboarded but never pushed. Both are empty by default, so the failure direction is one
+  notification too many, never one silently withheld.
+- Suppression is **not** silence: the alert is still recorded by `alert.service` before notify is
+  called, still in history and `activeAlerts`, and the suppressed attempt is still counted as
+  `not_delivered` with a stated reason.
+- Do not filter in Alertmanager instead — all its receivers post to the same backend webhook, so
+  filtering there would stop the alert being *recorded*, not just announced.
+
 ## Miner configuration
 
 Miners historically lived in `etc/miners.yaml`.
-Current runtime source of truth is SQLite.
+Current runtime source of truth for the **stack** is SQLite.
+
+**Source of truth for miner *identity* is the machine itself** (decided 2026-08-28, DMI-74): the
+pool worker string it submits under, `<account>.<worker>`. The subnet move and the local network
+storms are what desynchronised the database, so when the two disagree the machine wins and the DB is
+reconciled to it — not the other way round. `miners.name` should equal the worker name; after the
+2026-08-28 reconciliation it does for every reachable machine. `miners.name` is UNIQUE, so freeing a
+name (removing a decommissioned record) must precede assigning it.
 
 Boot behavior:
 - `server.ts` calls `initializeMinersFromYAML()`
