@@ -23,9 +23,7 @@ groups:
           component: pool
         annotations:
           summary: "Miner {{ $labels.name }} has no live pool"
-          description: >-
-            Every pool configured on {{ $labels.name }} ({{ $labels.ip }}) is
-            reporting Dead. The miner cannot submit shares.
+          description: "Every configured pool reports Dead — {{ $labels.ip }} cannot submit shares."
 
       # Critical: a pool is dead across most of the fleet, which points at the
       # pool or the uplink rather than at one machine.
@@ -53,11 +51,8 @@ groups:
           severity: critical
           component: pool
         annotations:
-          summary: "Pool {{ $labels.url }} is dead on most of the fleet"
-          description: >-
-            More than half the miners configured against {{ $labels.url }}
-            report it Dead. Check the pool and the uplink before touching
-            individual miners.
+          summary: "Pool dead on {{ $value | humanizePercentage }} of the fleet"
+          description: "{{ $labels.url }} — check the pool and the uplink before any single miner."
 
       # Critical: the pool a miner is actually mining on is dead. Backups exist,
       # but a miner that has failed over is earning at whatever the backup pays
@@ -70,10 +65,7 @@ groups:
           component: pool
         annotations:
           summary: "Primary pool dead on {{ $labels.name }}"
-          description: >-
-            {{ $labels.name }} ({{ $labels.ip }}) reports its primary pool
-            {{ $labels.url }} as Dead. It is either failed over to a backup or
-            not mining at all.
+          description: "{{ $labels.url }} Dead for 15m — failed over to a backup, or not mining."
 
       # Info: a backup pool is dead. Worth knowing, because failover will not
       # work, but it costs nothing right now and must not read as an incident.
@@ -90,8 +82,5 @@ groups:
           severity: info
           component: pool
         annotations:
-          summary: "Backup pool {{ $labels.url }} is dead on {{ $labels.name }}"
-          description: >-
-            {{ $labels.name }} ({{ $labels.ip }}) has reported backup pool
-            {{ $labels.url }} as Dead for six hours. The miner is unaffected
-            until it needs to fail over.
+          summary: "Backup pool dead on {{ $labels.name }}"
+          description: "{{ $labels.url }} Dead for 6h. No impact until failover is needed."

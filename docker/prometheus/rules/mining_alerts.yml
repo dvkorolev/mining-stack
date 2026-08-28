@@ -10,8 +10,8 @@ groups:
           severity: critical
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} is offline"
-          description: "Miner {{ $labels.name }} has been unreachable for 5 minutes."
+          summary: "Miner {{ $labels.name }} offline"
+          description: "Unreachable for 5m."
           
       # Critical: High temperature
       #
@@ -27,8 +27,8 @@ groups:
           severity: critical
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} temperature critical"
-          description: "Miner {{ $labels.name }} board temperature is {{ $value }}°C (threshold: 85°C). Chip temperature is higher — check the per-board figures."
+          summary: "Miner {{ $labels.name }} board {{ $value | printf \"%.0f\" }}°C — critical"
+          description: "Board (PCB) temp, limit 85°C. Chips run 20-30°C hotter."
 
       # Critical: a hashboard's chips are running hot (DMI-64)
       #
@@ -47,6 +47,10 @@ groups:
       #
       # Alerts per board rather than per miner on purpose — the slot label is the
       # actionable part, since it points at which board to inspect.
+      #
+      # Sustained chip temperature at this level shortens board life and eventually
+      # throttles the miner. The farm-wide cause found in DMI-45 was ventilation and
+      # ambient temperature, which is why the annotation points at airflow first.
       - alert: MinerBoardChipTempCritical
         expr: miner_board_chip_temp_c > 105
         for: 5m
@@ -54,13 +58,8 @@ groups:
           severity: critical
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} board {{ $labels.slot }} chips at {{ $value | printf \"%.1f\" }}°C"
-          description: >-
-            Board {{ $labels.slot }} on {{ $labels.name }} reports its
-            hottest chip at {{ $value | printf "%.1f" }}°C, well outside this fleet's normal
-            90-98°C. Sustained chip temperature at this level shortens board life and
-            eventually throttles the miner. Check that board's airflow and fans first;
-            the farm-wide cause found in DMI-45 was ventilation and ambient temperature.
+          summary: "Miner {{ $labels.name }} board {{ $labels.slot }} chips {{ $value | printf \"%.1f\" }}°C — critical"
+          description: "Fleet norm is 90-98°C, limit 105°C. Check that board's airflow and fans."
           
       # Critical: Miner stopped mining
       - alert: MinerNotMining
@@ -71,7 +70,7 @@ groups:
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} stopped mining"
-          description: "Miner {{ $labels.name }} is online but not mining for 5 minutes."
+          description: "Online but not mining for 5m."
 
       # Critical: Miner claims to be mining but produces nothing
       #
@@ -99,12 +98,10 @@ groups:
           severity: critical
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} is faulty (reports mining, produces nothing)"
+          summary: "Miner {{ $labels.name }} faulty — reports mining, hashrate 0"
           description: >-
-            Miner {{ $labels.name }} ({{ $labels.model }}) is reachable
-            and reports itself as mining, but its hashrate has been zero for 10 minutes.
-            Drawing {{ with query (printf "miner_power_watts{name='%s'}" $labels.name) }}{{ . | first | value | printf "%.0f" }}{{ end }}W
-            to produce nothing.
+            {{ $labels.model }}: hashrate 0 for 10m while drawing
+            {{ with query (printf "miner_power_watts{name='%s'}" $labels.name) }}{{ . | first | value | printf "%.0f" }}{{ end }}W.
 
       # Critical: Hashrate dropped significantly (50% below expected) - SHA-256
       - alert: MinerHashrateCriticalSHA256
@@ -120,10 +117,10 @@ groups:
           component: miner
           algorithm: sha256
         annotations:
-          summary: "Miner {{ $labels.name }} (SHA-256) hashrate critically low"
+          summary: "Miner {{ $labels.name }} SHA-256 {{ $value | printf \"%.1f\" }} TH/s — critical"
           # No `expected_hashrate` label exists on any series; the rated figure lives in
           # the miner_expected_hashrate_ths metric, so state the threshold instead.
-          description: "Miner {{ $labels.name }} ({{ $labels.model }}) is hashing at {{ $value | printf \"%.1f\" }} TH/s, below 50% of the rated figure for its model."
+          description: "{{ $labels.model }}, below 50% of its rated hashrate."
       
       # Critical: Hashrate dropped significantly (50% below expected) - SCRYPT
       # Thresholds derived from the machine's own rate_ideal (14229 MH/s), not
@@ -141,15 +138,17 @@ groups:
           component: miner
           algorithm: scrypt
         annotations:
-          summary: "Miner {{ $labels.name }} (SCRYPT) hashrate critically low"
-          description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} MH/s (threshold: 7000 MH/s)"
+          summary: "Miner {{ $labels.name }} SCRYPT {{ $value | printf \"%.1f\" }} MH/s — critical"
+          description: "Below the 7000 MH/s critical threshold; nominal is 14229 MH/s."
 
   - name: mining_warning
     interval: 30s
     rules:
       # Warning: Temperature elevated
       # Warning band for the chip temperature above (DMI-64). Bounded at the top so
-      # a board past 105 raises MinerBoardChipTempCritical alone, not both.
+      # a board past 105 raises MinerBoardChipTempCritical alone, not both. Not an
+      # emergency: it is the early stage of the path MinerBoardChipTempCritical
+      # describes, and it usually means airflow rather than the board itself.
       - alert: MinerBoardChipTempHigh
         expr: miner_board_chip_temp_c > 100 and miner_board_chip_temp_c <= 105
         for: 10m
@@ -157,12 +156,8 @@ groups:
           severity: warning
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} board {{ $labels.slot }} chips at {{ $value | printf \"%.1f\" }}°C"
-          description: >-
-            Board {{ $labels.slot }} on {{ $labels.name }} is running its
-            chips at {{ $value | printf "%.1f" }}°C against a fleet norm of 90-98°C. Not an
-            emergency, but it is the early stage of the path MinerBoardChipTempCritical
-            describes, and it usually means airflow rather than the board itself.
+          summary: "Miner {{ $labels.name }} board {{ $labels.slot }} chips {{ $value | printf \"%.1f\" }}°C"
+          description: "Fleet norm is 90-98°C, critical at 105°C. Usually airflow, not the board."
 
       - alert: MinerTemperatureHigh
         expr: miner_temp_max_c > 75 and miner_temp_max_c <= 85
@@ -171,8 +166,8 @@ groups:
           severity: warning
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} temperature elevated"
-          description: "Miner {{ $labels.name }} temperature is {{ $value }}°C (warning threshold: 75°C)"
+          summary: "Miner {{ $labels.name }} board {{ $value | printf \"%.0f\" }}°C — elevated"
+          description: "Board (PCB) temp, warning band 75-85°C. Chips run 20-30°C hotter."
           
       # Warning: Hashrate below expected (20% below expected) - SHA-256
       - alert: MinerHashrateWarningSHA256
@@ -189,9 +184,9 @@ groups:
           component: miner
           algorithm: sha256
         annotations:
-          summary: "Miner {{ $labels.name }} (SHA-256) hashrate below expected"
+          summary: "Miner {{ $labels.name }} SHA-256 {{ $value | printf \"%.1f\" }} TH/s — low"
           # See the note on MinerHashrateCriticalSHA256 about $labels.expected_hashrate.
-          description: "Miner {{ $labels.name }} ({{ $labels.model }}) is hashing at {{ $value | printf \"%.1f\" }} TH/s, between 50% and 80% of the rated figure for its model."
+          description: "{{ $labels.model }}, at 50-80% of its rated hashrate."
       
       # Warning: Hashrate below expected - SCRYPT
       - alert: MinerHashrateWarningSCRYPT
@@ -207,8 +202,8 @@ groups:
           component: miner
           algorithm: scrypt
         annotations:
-          summary: "Miner {{ $labels.name }} (SCRYPT) hashrate below expected"
-          description: "Miner {{ $labels.name }} hashrate is {{ $value | printf \"%.1f\" }} MH/s (warning threshold: 12000 MH/s)"
+          summary: "Miner {{ $labels.name }} SCRYPT {{ $value | printf \"%.1f\" }} MH/s — low"
+          description: "Warning band 7000-12000 MH/s; nominal is 14229 MH/s."
           
       # Warning: Elevated rejection rate (2-5%)
       - alert: MinerRejectionRateWarning
@@ -225,8 +220,8 @@ groups:
           severity: warning
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} elevated rejection rate"
-          description: "Miner {{ $labels.name }} rejection rate is {{ $value | humanizePercentage }} (warning threshold: 2%)"
+          summary: "Miner {{ $labels.name }} rejecting {{ $value | humanizePercentage }} of shares"
+          description: "Warning band 2-5%."
           
       # Critical: High rejection rate (>5%)
       - alert: MinerRejectionRateCritical
@@ -240,8 +235,8 @@ groups:
           severity: critical
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} high rejection rate"
-          description: "Miner {{ $labels.name }} rejection rate is {{ $value | humanizePercentage }} (critical threshold: 5%)"
+          summary: "Miner {{ $labels.name }} rejecting {{ $value | humanizePercentage }} of shares — critical"
+          description: "Above the 5% critical threshold."
           
       # Warning: Fault light on
       - alert: MinerFaultLight
@@ -251,8 +246,7 @@ groups:
           severity: warning
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} fault light active"
-          description: "Miner {{ $labels.name }} has fault light indicator on."
+          summary: "Miner {{ $labels.name }} fault light on"
           
       # Warning: Errors detected
       #
@@ -274,8 +268,8 @@ groups:
           severity: warning
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} reporting errors"
-          description: "Miner {{ $labels.name }} reported up to {{ $value }} error(s) in the last 15 minutes."
+          summary: "Miner {{ $labels.name }}: up to {{ $value }} errors in 15m"
+          description: "Worst count in a rolling 15m window, not the current one."
           
       # Warning: Missing chips on hashboard
       #
@@ -294,8 +288,8 @@ groups:
           severity: warning
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} missing chips on board {{ $labels.slot }}"
-          description: "Board {{ $labels.slot }} has {{ $value | printf \"%.0f\" }} chips (expected: {{ with query (printf \"miner_board_chips_expected{name='%s',slot='%s'}\" $labels.name $labels.slot) }}{{ . | first | value | printf \"%.0f\" }}{{ end }})"
+          summary: "Miner {{ $labels.name }} board {{ $labels.slot }}: {{ $value | printf \"%.0f\" }} chips"
+          description: "Expected {{ with query (printf \"miner_board_chips_expected{name='%s',slot='%s'}\" $labels.name $labels.slot) }}{{ . | first | value | printf \"%.0f\" }}{{ end }} on this board."
           
       # Warning: Fan speed low (below 3000 RPM)
       - alert: MinerFanSpeedWarning
@@ -305,8 +299,8 @@ groups:
           severity: warning
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} fan speed low"
-          description: "Fan {{ $labels.fan_id }} speed is {{ $value | printf \"%.0f\" }} RPM (warning threshold: 3000 RPM)"
+          summary: "Miner {{ $labels.name }} fan {{ $labels.fan_id }} at {{ $value | printf \"%.0f\" }} RPM"
+          description: "Warning band 2000-3000 RPM."
           
       # Critical: Fan speed critically low (below 2000 RPM)
       - alert: MinerFanSpeedCritical
@@ -316,8 +310,8 @@ groups:
           severity: critical
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} fan speed critically low"
-          description: "Fan {{ $labels.fan_id }} speed is {{ $value | printf \"%.0f\" }} RPM (critical threshold: 2000 RPM)"
+          summary: "Miner {{ $labels.name }} fan {{ $labels.fan_id }} at {{ $value | printf \"%.0f\" }} RPM — critical"
+          description: "Below the 2000 RPM critical threshold."
           
       # Warning: Poor efficiency
       - alert: MinerPoorEfficiency
@@ -327,8 +321,8 @@ groups:
           severity: warning
           component: miner
         annotations:
-          summary: "Miner {{ $labels.name }} poor efficiency"
-          description: "Miner {{ $labels.name }} efficiency is {{ $value }} J/TH (threshold: 35 J/TH)"
+          summary: "Miner {{ $labels.name }} efficiency {{ $value | printf \"%.1f\" }} J/TH"
+          description: "Above the 35 J/TH threshold."
           
       # Critical: Zombie miner SHA-256 (reports hashrate but power is too low)
       # This detects miners that appear online with hashrate but are actually offline
@@ -346,8 +340,8 @@ groups:
           component: miner
           algorithm: sha256
         annotations:
-          summary: "Miner {{ $labels.name }} in zombie state (fake hashrate)"
-          description: "Miner {{ $labels.name }} reports {{ $value | printf \"%.1f\" }} TH/s but power is only {{ with query (printf \"miner_power_watts{name='%s'}\" $labels.name) }}{{ . | first | value | printf \"%.0f\" }}{{ end }}W. Likely reporting stale data after power outage."
+          summary: "Miner {{ $labels.name }} zombie — {{ $value | printf \"%.1f\" }} TH/s at under 200W"
+          description: "Drawing only {{ with query (printf \"miner_power_watts{name='%s'}\" $labels.name) }}{{ . | first | value | printf \"%.0f\" }}{{ end }}W — likely stale data after a power cut."
           
       # Critical: Zombie miner SCRYPT (reports hashrate but power is too low)
       - alert: MinerZombieStateSCRYPT
@@ -363,8 +357,8 @@ groups:
           component: miner
           algorithm: scrypt
         annotations:
-          summary: "Miner {{ $labels.name }} in zombie state (fake hashrate)"
-          description: "Miner {{ $labels.name }} reports {{ $value | printf \"%.1f\" }} MH/s but power is only {{ with query (printf \"miner_power_watts{name='%s'}\" $labels.name) }}{{ . | first | value | printf \"%.0f\" }}{{ end }}W. Likely reporting stale data after power outage."
+          summary: "Miner {{ $labels.name }} zombie — {{ $value | printf \"%.1f\" }} MH/s at under 100W"
+          description: "Drawing only {{ with query (printf \"miner_power_watts{name='%s'}\" $labels.name) }}{{ . | first | value | printf \"%.0f\" }}{{ end }}W — likely stale data after a power cut."
 
   - name: mining_farm
     interval: 30s
@@ -377,8 +371,8 @@ groups:
           severity: critical
           component: farm
         annotations:
-          summary: "Multiple miners offline"
-          description: "{{ $value }} miners are currently offline."
+          summary: "{{ $value }} miners offline"
+          description: "More than 3 unreachable for 5m."
           
       # Farm-wide: Total hashrate drop - SHA-256
       - alert: FarmHashrateDropSHA256
@@ -393,8 +387,8 @@ groups:
           component: farm
           algorithm: sha256
         annotations:
-          summary: "Farm SHA-256 hashrate critically low"
-          description: "Total SHA-256 farm hashrate is {{ $value }} TH/s (expected >1500 TH/s with 10+ miners)"
+          summary: "Farm SHA-256 at {{ $value | printf \"%.0f\" }} TH/s"
+          description: "Below the 1500 TH/s floor, with 10+ miners still mining."
       
       # Farm-wide: Total hashrate drop - SCRYPT
       - alert: FarmHashrateDropSCRYPT
@@ -409,8 +403,8 @@ groups:
           component: farm
           algorithm: scrypt
         annotations:
-          summary: "Farm SCRYPT hashrate critically low"
-          description: "Total SCRYPT farm hashrate is {{ $value }} MH/s (expected >7000 MH/s)"
+          summary: "Farm SCRYPT at {{ $value | printf \"%.0f\" }} MH/s"
+          description: "Below the 7000 MH/s floor."
           
       # Farm-wide: High average temperature
       - alert: FarmHighTemperature
@@ -420,8 +414,8 @@ groups:
           severity: warning
           component: farm
         annotations:
-          summary: "Farm average temperature high"
-          description: "Average temperature across all miners is {{ $value }}°C"
+          summary: "Farm average board temp {{ $value | printf \"%.1f\" }}°C"
+          description: "Board (PCB) temp averaged over the fleet; threshold 80°C."
           
       # Farm-wide: High power consumption
       - alert: FarmHighPowerConsumption
@@ -431,8 +425,8 @@ groups:
           severity: warning
           component: farm
         annotations:
-          summary: "Farm power consumption high"
-          description: "Total power consumption is {{ $value }}W (70kW threshold)"
+          summary: "Farm drawing {{ $value | humanize }}W"
+          description: "Above the 70kW threshold."
 
   - name: system
     interval: 30s
@@ -445,8 +439,8 @@ groups:
           severity: warning
           component: system
         annotations:
-          summary: "High CPU usage on {{ $labels.instance }}"
-          description: "CPU usage is {{ $value }}%"
+          summary: "CPU {{ $value | printf \"%.0f\" }}% on {{ $labels.instance }}"
+          description: "Above the 80% threshold for 5m."
           
       # System: High memory usage
       - alert: HighMemoryUsage
@@ -456,8 +450,8 @@ groups:
           severity: warning
           component: system
         annotations:
-          summary: "High memory usage on {{ $labels.instance }}"
-          description: "Memory usage is {{ $value }}%"
+          summary: "Memory {{ $value | printf \"%.0f\" }}% on {{ $labels.instance }}"
+          description: "Above the 85% threshold for 5m."
           
       # System: Low disk space
       - alert: LowDiskSpace
@@ -467,5 +461,5 @@ groups:
           severity: warning
           component: system
         annotations:
-          summary: "Low disk space on {{ $labels.instance }}"
-          description: "Disk space available: {{ $value }}%"
+          summary: "Disk {{ $value | printf \"%.0f\" }}% free on {{ $labels.instance }}"
+          description: "Below the 15% free threshold on /."

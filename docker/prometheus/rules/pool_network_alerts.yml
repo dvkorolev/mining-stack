@@ -10,8 +10,8 @@ groups:
           severity: critical
           component: network
         annotations:
-          summary: "Mining pool {{ $labels.pool }} is unreachable"
-          description: "Pool {{ $labels.pool }}:{{ $labels.port }} has been unreachable for 5 minutes"
+          summary: "Pool {{ $labels.pool }} unreachable"
+          description: "Port {{ $labels.port }}, no response for 5m."
       
       # Critical: High packet loss
       - alert: PoolHighPacketLoss
@@ -21,8 +21,8 @@ groups:
           severity: critical
           component: network
         annotations:
-          summary: "High packet loss to pool {{ $labels.pool }}"
-          description: "Pool {{ $labels.pool }}:{{ $labels.port }} has {{ $value }}% packet loss"
+          summary: "Pool {{ $labels.pool }} packet loss {{ $value | printf \"%.0f\" }}%"
+          description: "Port {{ $labels.port }}, critical above 10%."
       
       # Warning: Elevated latency
       - alert: PoolHighLatency
@@ -32,8 +32,8 @@ groups:
           severity: warning
           component: network
         annotations:
-          summary: "High latency to pool {{ $labels.pool }}"
-          description: "Pool {{ $labels.pool }}:{{ $labels.port }} latency is {{ $value }}ms (threshold: 100ms)"
+          summary: "Pool {{ $labels.pool }} latency {{ $value | printf \"%.0f\" }} ms"
+          description: "Port {{ $labels.port }}, threshold 100 ms."
       
       # Warning: Packet loss detected
       - alert: PoolPacketLoss
@@ -43,8 +43,8 @@ groups:
           severity: warning
           component: network
         annotations:
-          summary: "Packet loss detected to pool {{ $labels.pool }}"
-          description: "Pool {{ $labels.pool }}:{{ $labels.port }} has {{ $value }}% packet loss"
+          summary: "Pool {{ $labels.pool }} packet loss {{ $value | printf \"%.1f\" }}%"
+          description: "Port {{ $labels.port }}, warning band 1-10%."
       
       # Warning: Slow connection
       - alert: PoolSlowConnection
@@ -54,8 +54,8 @@ groups:
           severity: warning
           component: network
         annotations:
-          summary: "Slow connection to pool {{ $labels.pool }}"
-          description: "Pool {{ $labels.pool }}:{{ $labels.port }} connection time is {{ $value }}ms"
+          summary: "Pool {{ $labels.pool }} connect took {{ $value | printf \"%.0f\" }} ms"
+          description: "Port {{ $labels.port }}, threshold 1000 ms."
       
       # Warning: DNS resolution failure
       - alert: PoolDNSFailure
@@ -65,5 +65,5 @@ groups:
           severity: warning
           component: network
         annotations:
-          summary: "DNS resolution failed for pool {{ $labels.pool }}"
-          description: "Cannot resolve hostname {{ $labels.pool }}"
+          summary: "DNS lookup failed for {{ $labels.pool }}"
+          description: "The hostname is not resolving. Check DNS on the Pi and the uplink."
