@@ -19,6 +19,11 @@ groups:
     rules:
       # Critical: the whole fleet has stopped landing shares while it is still mining.
       # This is the signature of an uplink or pool-wide failure rather than a miner fault.
+      #
+      # The uplink is the first thing to check — but not the router, which sees only the
+      # USB link to the dongle and reports it healthy right through an outage. Read the
+      # 4G session on the dongle itself, and the operator's data allowance; the August
+      # 2026 outages happened with money on the SIM and recovered on their own.
       - alert: FleetNoSharesAccepted
         expr: |
           sum(rate(miner_pool_accepted_total[5m])) == 0
@@ -29,16 +34,11 @@ groups:
           component: uplink
         annotations:
           summary: "Fleet has accepted no shares for 10 minutes"
-          description: >-
-            No miner has landed a share in the last 10 minutes, yet the miners are still
-            reachable and mining. The fleet is producing hashes that earn nothing. The uplink
-            is the first thing to check — but not the router, which sees only the USB link to
-            the dongle and reports it healthy right through an outage. Read the 4G session on
-            the dongle itself, and the operator's data allowance; the August 2026 outages
-            happened with money on the SIM and recovered on their own.
+          description: "Miners are reachable and mining, but earning nothing. Check the 4G session on the dongle, not the router."
 
       # Warning: one miner is mining into nothing while the rest of the fleet is fine.
       # Points at that miner's pool configuration or credentials, not at the uplink.
+      # At this fleet's hashrate a healthy miner lands several shares per minute.
       - alert: MinerNoSharesAccepted
         expr: |
           rate(miner_pool_accepted_total[15m]) == 0
@@ -50,10 +50,7 @@ groups:
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} is mining but landing no shares"
-          description: >-
-            Miner {{ $labels.name }} ({{ $labels.ip }}) has accepted no shares for 30 minutes
-            while reporting that it is mining. At this fleet's hashrate a healthy miner lands
-            several shares per minute, so this is a pool or credentials problem on that machine.
+          description: "No accepted share in 30m from {{ $labels.ip }} — pool or credentials on that machine."
 
   # The uplink is metered 4G, so its capacity is a shared resource the fleet competes for.
   # Volume is attributed per LAN host by the router (router_host_* from `show/ip/hotspot`).
@@ -71,6 +68,10 @@ groups:
       #
       # router_host_* under-reports (the exporter says so). That biases this rule towards
       # firing late, never early — the safe direction for a threshold.
+      #
+      # This rule says how much and by which host; it cannot say what the traffic is,
+      # because the router attributes volume per host and not per destination. To find
+      # out what is being transferred, look at the host itself.
       - alert: NonFleetHostConsumingUplink
         expr: |
           sum by (name, ip, mac) (
@@ -83,10 +84,4 @@ groups:
           component: uplink
         annotations:
           summary: "{{ $labels.name }} used {{ $value | humanize1024 }}B of the metered uplink in 24h"
-          description: >-
-            {{ $labels.name }} ({{ $labels.ip }}) is not a miner, yet it has moved
-            {{ $value | humanize1024 }}B over the 4G link in the last 24 hours — against
-            roughly 9 MB per miner. The link is metered and the fleet depends on it.
-            This rule says how much and by which host; it cannot say what the traffic is,
-            because the router attributes volume per host and not per destination. To find
-            out what is being transferred, look at the host itself.
+          description: "{{ $labels.ip }} is not a miner. Miners use ~9 MB/day each; the link is metered."

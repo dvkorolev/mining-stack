@@ -19,6 +19,12 @@ groups:
       # below: an `== 0` comparison against a metric that has stopped being
       # scraped yields an empty vector and stays silent, so without these two
       # a dead Loki would look identical to a healthy one.
+      #
+      # Why durability is the point: the router's own log is RAM-only and is lost on
+      # every power-cycle, so an outage that starts while Loki is down cannot be
+      # reconstructed afterwards. And promtail has no Docker healthcheck by design
+      # (DMI-15 — the image ships no shell or wget, so any CMD probe false-fails),
+      # which is why its scrape is the liveness signal rather than a container probe.
       - alert: LokiDown
         expr: up{job="loki"} == 0
         for: 5m
@@ -27,10 +33,7 @@ groups:
           component: logging
         annotations:
           summary: "Loki is not scrapeable"
-          description: >-
-            Nothing is being recorded durably while this is true. The router's
-            own log is RAM-only and is lost on every power-cycle, so an outage
-            that starts now cannot be reconstructed afterwards.
+          description: "Nothing is being recorded durably — logs from now on are unrecoverable."
 
       - alert: PromtailDown
         expr: up{job="promtail"} == 0
@@ -40,11 +43,7 @@ groups:
           component: logging
         annotations:
           summary: "Promtail is not scrapeable"
-          description: >-
-            Container logs and the Keenetic syslog both stop reaching Loki.
-            Note promtail has no Docker healthcheck by design (DMI-15 — the
-            image ships no shell or wget, so any CMD probe false-fails), which
-            is why this scrape is the liveness signal.
+          description: "Container logs and the Keenetic syslog have stopped reaching Loki."
 
       # Loki is up and accepting nothing. Distinct from PromtailDown: it also
       # covers promtail shipping into a store that rejects or discards.
@@ -56,13 +55,16 @@ groups:
           component: logging
         annotations:
           summary: "Loki has ingested no log lines for 15 minutes"
-          description: >-
-            The stack produces roughly 6000 lines an hour without pause, so
-            this is never a quiet period.
+          description: "Normal is ~6000 lines/hour without pause — this is never a quiet period."
 
       # promtail's docker service discovery specifically. The syslog job has
       # its own counter and legitimately goes quiet — the router only logs on
       # events — so the two are not summed together here.
+      #
+      # Discovery filters on the container label `logging=promtail`; a container that
+      # loses the label is dropped silently. Six containers were unlabelled and
+      # therefore invisible until DMI-70 — alertmanager's among them, throughout the
+      # nine months its log was the only record of the 404 storm in DMI-65.
       - alert: PromtailDockerTargetsSilent
         expr: rate(promtail_docker_target_entries_total[10m]) == 0
         for: 15m
@@ -71,12 +73,7 @@ groups:
           component: logging
         annotations:
           summary: "Promtail is reading nothing from its Docker targets"
-          description: >-
-            Discovery filters on the container label `logging=promtail`; a
-            container that loses the label is dropped silently. Six containers
-            were unlabelled and therefore invisible until DMI-70 —
-            alertmanager's among them, throughout the nine months its log was
-            the only record of the 404 storm in DMI-65.
+          description: "A container that loses its logging=promtail label is dropped silently."
 
       - alert: PromtailPushFailing
         expr: sum(rate(promtail_request_duration_seconds_count{status_code!~"2.."}[10m])) > 0
@@ -85,11 +82,13 @@ groups:
           severity: warning
           component: logging
         annotations:
-          summary: "Promtail's pushes to Loki are being rejected"
-          description: >-
-            Status {{ $labels.status_code }}. Promtail buffers and retries, so
-            a short burst is survivable and a sustained one is data loss.
+          summary: "Loki is rejecting promtail's pushes ({{ $labels.status_code }})"
+          description: "Retries cover a short burst; sustained rejection is data loss."
 
+      # Dropped entries are gone for good — there is no replay. This counter read 0
+      # for every reason across 1.8M entries during the DMI-70 investigation, which is
+      # how promtail was cleared as the cause; it only carries that weight if something
+      # is watching it.
       - alert: PromtailDroppingEntries
         expr: sum by (reason) (rate(promtail_dropped_entries_total[10m])) > 0
         for: 5m
@@ -97,13 +96,11 @@ groups:
           severity: warning
           component: logging
         annotations:
-          summary: "Promtail is dropping log entries ({{ $labels.reason }})"
-          description: >-
-            Dropped entries are gone for good — there is no replay. This
-            counter read 0 for every reason across 1.8M entries during the
-            DMI-70 investigation, which is how promtail was cleared as the
-            cause; it only carries that weight if something is watching it.
+          summary: "Promtail dropping {{ $value | printf \"%.1f\" }} entries/s ({{ $labels.reason }})"
+          description: "Dropped entries are gone for good — there is no replay."
 
+      # promtail runs with watchConfig enabled, so it reloads in place on file change
+      # and keeps running with the previous config when the new one fails to parse.
       - alert: PromtailConfigReloadFailing
         expr: increase(promtail_config_reload_fail_total[15m]) > 0
         labels:
@@ -111,8 +108,4 @@ groups:
           component: logging
         annotations:
           summary: "Promtail rejected its configuration on reload"
-          description: >-
-            promtail runs with watchConfig enabled, so it reloads in place on
-            file change and keeps running with the previous config when the new
-            one fails to parse. The deploy looks successful and the change is
-            not live.
+          description: "It kept the previous config — the deploy looked fine, the change is not live."

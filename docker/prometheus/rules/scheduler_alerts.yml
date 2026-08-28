@@ -22,10 +22,7 @@ groups:
           component: scheduler
         annotations:
           summary: "Scheduler is polling the YAML fallback miner list"
-          description: >-
-            The backend miner API is unreachable and no previously fetched list
-            was available, so the scheduler is polling {{ $labels.instance }}'s
-            YAML config. These are likely example miners, not the real fleet.
+          description: "Backend API unreachable, nothing cached. Likely the example miners at 192.168.1.100-103, not the fleet."
 
       # Warning: backend unreachable, but the last known good list is still in
       # use — the fleet is monitored, inventory changes are not picked up.
@@ -37,10 +34,7 @@ groups:
           component: scheduler
         annotations:
           summary: "Scheduler cannot reach the backend miner API"
-          description: >-
-            Serving the last known good miner list for 15 minutes. Collection
-            continues, but miners added or removed in the database are not
-            reflected.
+          description: "Serving the last known good list for 15m. Collection continues; inventory changes are not picked up."
 
       # Critical: nothing is being polled at all.
       - alert: SchedulerNoMinersConfigured
@@ -51,7 +45,7 @@ groups:
           component: scheduler
         annotations:
           summary: "Scheduler has no miners configured"
-          description: "The active miner configuration is empty — no miner is being polled."
+          description: "The active configuration is empty — nothing is being polled."
 
       # Warning: the list shrank sharply. Backstop for the DMI-58 failure mode
       # (25 miners becoming 5) that does not depend on the source label being
@@ -64,7 +58,4 @@ groups:
           component: scheduler
         annotations:
           summary: "Configured miner count dropped to {{ $value }}"
-          description: >-
-            The scheduler is polling fewer than 80% of the miners it had in the
-            last 24h. Either the fleet shrank in the database, or the collector
-            is running on the wrong configuration.
+          description: "Under 80% of the 24h maximum. Either the fleet shrank in the DB, or the collector is on the wrong config."
