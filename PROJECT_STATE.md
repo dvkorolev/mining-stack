@@ -3,11 +3,11 @@
 Repository review and improvement plan. Originally analysis-only; now also the
 living roadmap, kept in sync with shipped work and the Linear "Mining Stack" project.
 
-Date: 2026-06-17 (original review) · **Last refreshed: 2026-08-21**
+Date: 2026-06-17 (original review) · **Last refreshed: 2026-08-28**
 Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
 
-> **Status at a glance (main `7f84dee`, deployed and verified on the Pi)**
+> **Status at a glance (main `bb6a497`, deployed and verified on the Pi)**
 > - ✅ **Done & merged:** P0 (Pi-drift backport), **Phase 0** (test harness + CI), Phase 1 (security S1–S5), Phase 2 (data-path clarity), **Phase 4 cleanup complete (C1–C5)**, **Phase 3.3** (`mining.service.ts` decomposition, DMI-36..41).
 > - ✅ **Operational:** DMI-19/20 (subnet-move recovery) · **DMI-43** (deploy-script host discovery) · **DMI-44** (router syslog → Loki) · **DMI-53** (router log flood removed) · **DMI-54** (stale-series crash) · **DMI-56** (pool health read from the miners) · **DMI-58** (scheduler config provenance) · **DMI-59/60** (SHA-256 hashrate alerting actually binds) · **DMI-61** (the Pi can now witness its own failures).
 > - ⏳ **In progress:** **Phase 3** — 3.1 (DMI-28), 3.2 (DMI-29..35) and 3.3 (DMI-36..41) done; **3.4 (`telegram.service.ts`) is next and last**.
@@ -23,11 +23,21 @@ Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docke
 > - ✅ **DMI-45 inventory half done 2026-08-21 (`8b232ed` + `115417a`), applied and verified.** The two-week-old "hashrate shortfall" was not degradation: **`.132` was mining 104.8 TH/s with 14 days of uptime and was not in the inventory at all** — invisible to Prometheus, the dashboard, every alert and every fleet total. Adding the record moved the fleet 1990 → **2094.7 TH/s** with nothing changing physically. Three more records described the wrong hardware: `.121` is an **M60_VK6A** doing 176.1 TH/s recorded as an M30S++ expecting 100, so its thresholds sat at 80/50 and it could have lost **49% of output in silence**; `.122` and `.58` were bare `WhatsMiner (Stock)`, which matches a profile that publishes no expected hashrate on purpose — so the SHA-256 degradation rules **could not fire for them under any circumstances**. Every value was confirmed three ways before being written (the machine's own API, its MAC in a live ARP sweep, its pool worker name), and ownership now comes from the pool account, which corrected three more records.
 > - ⚠️ **There is no local rollback any more, by decision.** `docker system prune -a` was run on both machines on 2026-08-21 (2.1 GB on the Mac, 6.0 GB on the Pi, which went 40% → 26% full). Previous stack images existed only as untagged layers on the Pi and are gone; the registry's `:latest` tags were overwritten the same day. A rollback now means rebuilding from an older commit and pulling over the metered 4G link — about 8 minutes for 530 MB, last measured. Volumes were deliberately left alone (`--volumes` not passed): four unused ones remain, contents unexamined.
 > - ✅ **Production has a backup for the first time (`7f84dee`).** There was none — only a scatter of ad-hoc `.db.bak-*` copies in `data/`, 811 MB of overlapping duplicates, all on the same microSD as the original. `bin/backup_prod.py` is tiered because the uplink is metered: config and database always, Prometheus/Grafana with `--metrics`, Loki with `--logs` and last. First run took 521 MB of source to a **155 MB** archive in 2m26s, pulled to the Mac in 5m50s, and was **verified by restoring it** on another machine — integrity ok, 26 miners, 2 159 271 history rows. Store it outside the repository: it contains `.env`, which exists nowhere else.
-> - 🔧 **Open ops items:** **DMI-47** (uplink observability: exporter + alert shipped, SIM/session state still unmeasured) · **DMI-45** (what remains is physical — `.117`'s dead fans, `.58`'s hashboards — plus the unidentified `.54` and five machines that are genuinely absent) · **DMI-52** (error codes / ambient temp / fan RPM) · **DMI-57** (retest the Fibocom + external antenna) · DMI-50/51 (remaining fault-tolerance layers).
-> - 🆕 **Filed 2026-08-21, all found while doing something else:** **DMI-72** — `alertmanager.yml` routes on the deprecated `match`/`match_re` while pinned to `:latest`, so an unattended pull can stop every route matching and it will look like the site went quiet. **DMI-73** — `miners.pool_account_id` references a `pool_accounts` table that **does not exist**, so any `INSERT` into `miners` fails under FK enforcement and the declared `ON DELETE SET NULL` is inert. **DMI-74** — `.98` submits its shares as `m50oktober`, the name of a machine that has been off the network for weeks, so its output is booked pool-side to the wrong miner; invisible from the monitoring side, which reads the hardware directly.
+> - 🚨 **2026-08-28 — the fleet total had been wrong for months, and alerting reached a human for the first time.** Four things landed together:
+>   1. **DMI-75 — the DG1+ hashrate was published from `rate_5s`,** a 5-second sample. The machine reports `rate_ideal 14229` and a 13-day `rate_avg` of 14128; we were publishing 48728, spiking to **105 136 692 MH/s (~2000x rated)** over 7 days. The hardware was fine throughout — 430 933 shares accepted, 0 rejected, share rate never zero. Now `rate_15m`: **14 206 MH/s, 99.8% of nominal, 343 MH/s spread over 10 minutes.** The SCRYPT thresholds moved with it, because they had been fitted to the inflated figure and fixing the collector alone would have made `MinerHashrateWarningSCRYPT` fire permanently on a healthy machine.
+>   2. **DMI-76 — the scheduler wrote 86k lines/day, ~40% of it asserting that nothing had happened.** `httpx` at INFO (20k/day) plus four per-poll `is_mining` override lines. Now **5232 → 2100 lines/hour, −60%** against a −38% projection.
+>   3. **DMI-78 — no alert could reach a human from this site, and it was not a misconfiguration.** `notifier.service` offered `telegram | log | none`, and Telegram is blocked upstream here (measured with a control: `api.telegram.org` times out, `cloudflare.com` 200, `ya.ru` 302). An `ntfy` channel was added — the **first channel that can honestly return `delivered`**, since `sendSmartAlert()` swallows its own transport errors and can only ever justify `unverified`. Before this the counter read 744, every entry `log/not_delivered`.
+>   4. **DMI-79 — switching it on unfiltered would have sent 41 notifications, 39 of them about conditions the owner has decided not to act on.** The hot and failing machines are old ASICs being run to failure. `component=miner` (38 of the 41) is now recorded and dashboarded but not pushed. **41 → 2.** Suppression is counted as `not_delivered` with a reason, never silent.
+> - ✅ **The alerting path was proven end to end, twice, by construction.** For DMI-75 the warning threshold was temporarily widened so a healthy machine fell inside it: `pending 18:39:24 → firing 18:49:28 → alertmanager active → webhook 816→817 → queue 3182→3183 → notification emitted`, then reverted (Pi md5 == repo md5). For DMI-78 two synthetic probes went through the real webhook route — `component=uplink → ntfy/delivered`, confirmed **on the owner's phone**; `component=miner → not_delivered, suppressed`. Rule 5 and rule 6 both closed, and the DMI-75 probe demonstrated DMI-78's premise in passing: the alert traversed the whole path correctly and died at the last hop.
+> - 🚨 **2026-08-28 — the inventory is now reconciled to the machines, and the direction of truth has been settled.** The owner's rule, which reverses what DMI-74 assumed: *pools and the names on the machines are the source of truth, because the subnet move and the local storms are what desynchronised the database.* Nothing was written to any miner. Instead: **five decommissioned records removed (26 → 21 miners, −433 620 history rows)** and two renamed to the worker they actually submit under (`.98` → `m50oktober`, `.58` → `m601761`). "Long dead" was measured, not assumed — three records had **never produced a single row** and sit on `192.168.1.x`, the modem's own subnet the router cannot reach; the other two stopped **at the same minute** on 2026-08-07, the day of the router incident, and have since been carried off site. Consequence: five `MinerOffline` and `FarmMultipleMinersOffline` resolved on their own, so the `ALERT_NOTIFY_EXCLUDE_ALERTS` workaround added the day before was **removed** rather than left to rot.
+> - ℹ️ **The pool worker pattern, measured across the fleet 2026-08-28:** every machine submits as `<account>.<worker>`, exactly one dot. Two accounts, `korr2014` (14) and `Busiginpavel` (5) — note `.145` uses a lowercase `busiginpavel`, which pool-side is a different worker. After the reconciliation `miners.name == worker` holds for every reachable machine. Two things that look like collisions and are not: DG1+ and `.65` both submit as `001`, but on ports 3434 (scrypt) and 3333 (SHA-256), i.e. different coin accounts.
+> - 🔥 **`.117` (`rebuildm303`) is a hardware failure, not a configuration one — established by experiment 2026-08-28.** It reported `configured pools: 0` and `mineroff: true`, so the owner's settings had never reached its config. Pools were written and it started on its own; then it **restart-loops**: `elapsed` 27s → API gone → 15s → API gone, `MHS av` flat at 0.0, 2 shares accepted in five minutes. `pyasic` decodes its errors as **540 "Slot 0 error reading chip id" and 541 "Slot 1 error reading chip id"** — two of three hashboards. Chip-id read failures are usually a hashboard data or power connector, so reseating is the free first move; no amount of configuration will change this.
+> - 🔧 **Open ops items:** **DMI-47** (uplink observability: exporter + alert shipped, SIM/session state still unmeasured) · **DMI-45** (what remains is physical — `.117`'s hashboards, `.58`'s hashboards; the five absent machines are now removed from the inventory and the unidentified `.54` turned out to be a Windows PC) · **DMI-52** (error codes / ambient temp / fan RPM) · **DMI-57** (retest the Fibocom + external antenna) · DMI-50/51 (remaining fault-tolerance layers).
+> - 🆕 **Filed 2026-08-21, all found while doing something else:** **DMI-72** — `alertmanager.yml` routes on the deprecated `match`/`match_re` while pinned to `:latest`, so an unattended pull can stop every route matching and it will look like the site went quiet. **DMI-73** — `miners.pool_account_id` references a `pool_accounts` table that **does not exist**, so any `INSERT` into `miners` fails under FK enforcement and the declared `ON DELETE SET NULL` is inert. **DMI-74** — closed 2026-08-28 by reconciling the database to the machines rather than the other way round (see above).
+> - 🆕 **Filed 2026-08-25/28:** **DMI-77** — `dg1_tcp_collector` strips the `M`/`G` suffix without rescaling, a latent 1000x error in the *fallback* collector, which surfaces the day the HTTP endpoint stops answering, i.e. mid-incident. **DMI-80** — a miner removed from the inventory keeps publishing its metrics until the scheduler is restarted: the DMI-54 cull is driven by failed scrape attempts, and a machine dropped from the config is never attempted at all. Today that meant 26 published series against 21 in the database, with the removed machines still counted in every fleet aggregate.
 > - 🚨 **No automatic WAN recovery existed before 2026-08-13, and the diagnosis of why has been corrected twice.** Both August outages ended only when a human restarted the router. The router's own built-in modem power-cycling fired **134 times in 2h29m on 2026-08-12 and recovered nothing.** See DMI-46 below before trusting any earlier account. Rung 1 of the watchdog is still a dry-run, so rung 0 is the whole of it.
 > - ✅ **Deployed 2026-08-12**, then six follow-up fixes the same day (Loki query limits, the Grafana datasource collision, a full 7-dashboard sweep, promtail coverage, the watchdog armed), and three more on **2026-08-13**: legacy Grafana value mappings (`a5ad314`), the uplink dashboard rebuilt to say good-from-bad (`9ae1aa5`), and the watchdog restart fix (`7af8b1f`).
-> - ℹ️ **Deploy detail (2026-08-21, after the inventory fix):** Fleet **26 miners scraped, 2094.7 TH/s SHA-256**, 2 in `miner_state = 0` (`.117`, `.58`, both correctly alerting); **0 placeholders**; 51 `miner_board_temp_c` and 36 `miner_board_chip_temp_c` series live (DMI-64); alertmanager 404-free with `ALERT_NOTIFY_CHANNEL=log`; backend log down from 3763 to ~981 lines/hour with 0 no-op DB writes; watchdog armed and its action proven. Deploy mechanics and traps are in `CLAUDE.local.md`.
+> - ℹ️ **Deploy detail (2026-08-28, after the reconciliation):** Fleet **21 miners scraped, ~2084 TH/s SHA-256 + 14 206 MH/s SCRYPT**; **0 placeholders**; `config_file.source = database_api`; scheduler ~2100 lines/hour; `ALERT_NOTIFY_CHANNEL=ntfy` with `ALERT_NOTIFY_EXCLUDE_COMPONENTS=miner`; 36 alerts active, of which 2 reach the phone. Deploys this day were **targeted, not the full script** — one image rebuilt at a time and the changed rule file rsynced, so the Pi pulled **57 kB** for the scheduler where a full run costs ~530 MB over the metered link. Deploy mechanics and traps are in `CLAUDE.local.md`.
 > - ⚠️ **Two things that will waste your time on the next deploy, both learned 2026-08-21:**
 >   - **Alertmanager's `nflog` survives a restart**, so after `down`/`up` it correctly suppresses re-notification for groups it had already notified — up to `repeat_interval` (4 h). Post-deploy you will see alerts in `/api/v2/alerts` and **zero** webhooks at the backend, which looks exactly like a broken delivery path and is not. To verify delivery without waiting, inject a synthetic batch through the real webhook route and resolve it afterwards.
 >   - **`prom/alertmanager:latest` and `prom/prometheus:latest` are re-pulled on every deploy.** Alertmanager silently moved to 0.34.0 this way. The config still uses the long-deprecated `match`/`match_re`; if a future pull drops them the routes stop matching, and that failure will look like the site went quiet.
@@ -104,6 +114,8 @@ proxy signal instead of the production path.** The list is long enough to be a p
 | a Loki query written as `{job="..."}` | nothing at all about docker containers — they carried no `job` label until 2026-08-21 | an empty result read as an 18-hour data loss. There was none; the logs reconcile 63:63 against `docker logs` (DMI-70) |
 | a fleet hashrate total | the sum of what is **being polled**, not what is running | 104.8 TH/s ran for 14 days outside the inventory, and the resulting ~100 TH/s "shortfall against June" was investigated as degradation for two weeks (DMI-45) |
 | a model string in the inventory | what someone typed, until the machine is asked | `.121` was recorded as an M30S++ and is an M60. Its alert thresholds were set from the wrong machine, leaving room to lose 49% of output in silence (DMI-45) |
+| `rate_5s` from a DG1+ | a 5-second window on a scrypt miner, i.e. share luck | published as the fleet's SCRYPT hashrate for months at ~3.4x the machine's own `rate_ideal`, spiking to 2000x. The machine was healthy the whole time; only the metric was wrong (DMI-75) |
+| a threshold that has never fired | nothing — and worse, thresholds get *fitted* to whatever the broken metric emitted | the SCRYPT bands were tuned around the inflated `rate_5s`, so fixing the collector alone would have made a healthy machine alert permanently (DMI-75) |
 | a log line reading `Miner status updated` | that the row was written every poll | it was, and nothing had changed. 94% of the log asserted an event that never occurred, burying the real transitions (DMI-69) |
 
 **The one signal that has never been wrong: `sum(rate(miner_pool_accepted_total[5m]))`** — real share
@@ -403,22 +415,31 @@ Site-specific network/ops details (router credentials, Tailscale footguns, 4G co
 
 Ordered by value, not by ticket number.
 
+0. **Read this first: the farm's repair policy changed on 2026-08-28, and it changes how to read
+   every per-miner alert below.** The owner's words: *чинить никто ничего не будет именно тут — там
+   старые и списанные асики которые доживают свой срок.* The hot and failing machines are being run
+   to failure deliberately. That is why `component=miner` no longer reaches a phone (DMI-79), and it
+   is why "`.64` is at 110 °C" is a recorded fact rather than an action item. **Do not re-raise
+   per-machine degradation as urgent work.** What still matters is the farm as a whole: total output,
+   the uplink, the pools, and the monitoring telling the truth about itself.
 1. **DMI-47 — read the dongle.** SIM balance and 4G session state are the last unmeasured part of the
    only failure mode that has actually taken this site down, and now the largest remaining unknown
    in the whole picture. It also unblocks DMI-49's `diagnose()`, which cannot tell a hung modem from
    an unpaid SIM and so restarts the router either way. Next concrete step: log into
    `http://status.megafon.ru/` from a browser and capture the auth exchange — not more scripted
    guessing. Needs the owner.
-2. **`192.168.2.64` is running a board at 109.5 °C — this one is not a repo task.** DMI-64 made it
-   visible on 2026-08-15; `.87` and `.145` are on the same path. Everything else in this list can
-   wait a week without getting worse, and this cannot. Needs someone on site.
-3. **DMI-45 — the inventory is done; what is left needs hands, not SQL.** Identity, ownership and
-   the `004` collision are all fixed and verified. What remains is physical: `.117`'s dead fans and
-   `.58`'s hashboards, both two weeks on and both now correctly alerting twice over — which disproves
-   the ticket's own "they may just be recovering from the power cut" hypothesis. Plus two owner
-   decisions with no deadline: the five machines that are genuinely absent and correctly firing
-   `MinerOffline` (there is no decommission flag in the schema, and `status` is overwritten by the
-   backend since DMI-69), and the unidentified host at `.54`.
+2. **DMI-80 — a removed miner keeps publishing metrics until the scheduler restarts.** Cheap, and it
+   matters more now that the inventory is actually being maintained: today it meant 26 published
+   series against 21 real machines, with the removed ones still inside every fleet aggregate. The
+   restart that hides it is easy to reach for and easy to forget.
+3. **DMI-45 — the inventory half is finished.** Identity, ownership, the `004` collision and, on
+   2026-08-28, the removal of the five absent machines and the rename of `.98`/`.58` to the workers
+   they actually submit under. What remains is physical and, per item 0, **not scheduled**: `.117`'s
+   two hashboards failing chip-id reads (540/541 — it restart-loops and produces nothing, proven by
+   experiment) and `.58`'s hashboards. Left deliberately unaddressed: `.145` submits under a
+   lowercase `busiginpavel` while its four stablemates use `Busiginpavel`, which is a distinct worker
+   pool-side. It lives on the machine, and the machine is the source of truth, so it is recorded
+   rather than "corrected".
 4. **DMI-57 — the Fibocom + external antenna retest.** Deferred by the owner on 2026-08-13. When it
    is taken up, argue it from a distribution over a day, **not** a single CINR reading — see rule 4
    above, which exists because that mistake was made the same day.
@@ -431,8 +452,10 @@ Ordered by value, not by ticket number.
    changes again.
 7. **Put the backup on a schedule.** `bin/backup_prod.py` exists and its first archive is verified,
    but a one-off backup ages out with the next inventory edit — and there is no local rollback any
-   more. A daily `config + db` run is ~90 MB compressed, cheap enough for the metered link. Needs a
-   systemd timer or cron on the Pi, so it is a runtime-infrastructure change: ask first.
+   more. The 2026-08-28 reconciliation proved the point: it needed its own ad-hoc `sqlite3` online
+   backup first, because the last archive was a week old and 433k rows were about to be deleted. A
+   daily `config + db` run is ~90 MB compressed, cheap enough for the metered link. Needs a systemd
+   timer or cron on the Pi, so it is a runtime-infrastructure change: ask first.
 8. **Rung 1 of the watchdog** is still a `LoggingBackend` dry-run, so rung 0 is the site's entire
    automatic recovery. Closing that needs the EKF strip installed and its local key extracted — and
    the key is only obtainable while the strip is still cloud-paired (DMI-49/50/51).
@@ -448,6 +471,21 @@ verified on the Pi *before* the merge rather than after — the scheduler recrea
 and Prometheus reloaded its rules — so `main` and production agree. Worth keeping as the pattern for
 scheduler and alert-rule work: a rule cannot be verified anywhere except the live stack, and merging
 first would mean merging something unproven.
+
+**2026-08-25/28 batch:** DMI-75/76 (`5bbe6a6`), DMI-78 (`c0d3bea`), DMI-79 (`88a389a`) and the
+alert-text change that identifies miners by name instead of IP (`bb6a497`). These were merged
+*before* the live verification rather than after, at the owner's call — a deliberate departure from
+the pattern above, recorded on DMI-75. It cost nothing this time; the verification passed. The
+inventory reconciliation that followed changed **no repo code at all** — it was a live-database
+operation like DMI-20, run from a dry-run-by-default script with a verified online backup taken
+first. Its script is not in the repo; if that class of work recurs it belongs in `bin/` beside
+`dmi45_reconcile.py`.
+
+⚠️ **The dry run earned its keep on 2026-08-28 and is worth insisting on.** The first version of the
+reconciliation reported `dependent tables: (none)`: the outer loop over `sqlite_master` and the inner
+`PRAGMA table_info` shared one cursor, so the outer result set was silently reset after the first
+row. Applied as written it would have deleted five miners and orphaned 433k history rows. Nothing
+about the output looked wrong — it just said "none", which is a perfectly plausible answer.
 
 > **Housekeeping the next clean install should absorb:** the Pi's bind-mounted `etc/pools.yaml` still
 > lists the seven unused DMI-56 pools (it is outside the deploy rsync). The stray Grafana datasource
