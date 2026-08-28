@@ -111,3 +111,166 @@ test('outcomes accumulate per channel and outcome', async () => {
     assert.deepStrictEqual(m, [{ channel: 'log', outcome: 'not_delivered', count: 2 }]);
   });
 });
+
+
+// --- ntfy (DMI-78) ----------------------------------------------------------
+// Until this channel existed, no alert could reach a human from this site:
+// telegram is blocked upstream and the other two channels are stubs by design.
+
+const axiosModule = require('axios');
+
+/**
+ * Swap axios.post for the duration of a test. The compiled service calls
+ * `axios_1.default.post`, and `__importDefault` resolves that to this same
+ * object, so patching here is what the service actually sees. Patched on both
+ * the module and its `.default` in case that ever stops being true.
+ */
+const withPost = async (impl, fn) => {
+  // axios is a *function* with properties, not a plain object -- filtering on
+  // typeof 'object' silently patches nothing and lets the test hit the network
+  // for real. It did exactly that once; hence the assertion below.
+  const targets = [axiosModule, axiosModule.default].filter(
+    (t) => t && (typeof t === 'object' || typeof t === 'function')
+  );
+  assert.ok(targets.length > 0, 'no axios object to patch - the test would hit the network');
+  const originals = targets.map((t) => t.post);
+  const calls = [];
+  targets.forEach((t) => {
+    t.post = async (url, body, config) => {
+      calls.push({ url, body, config });
+      return impl();
+    };
+  });
+  try {
+    return await fn(calls);
+  } finally {
+    targets.forEach((t, i) => {
+      t.post = originals[i];
+    });
+  }
+};
+
+const withEnv = async (vars, fn) => {
+  const previous = {};
+  for (const [k, v] of Object.entries(vars)) {
+    previous[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [k, v] of Object.entries(previous)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+};
+
+// The whole reason for adding this channel: it can confirm, so it is allowed to
+// say `delivered` -- the only channel here that may.
+test('ntfy reports delivered on a 2xx', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv({ NTFY_TOPIC: 'test-topic', NTFY_URL: undefined }, async () => {
+      await withPost(
+        () => ({ status: 200 }),
+        async (calls) => {
+          const result = await notifier.notifyAlert(alert);
+          assert.strictEqual(result.channel, 'ntfy');
+          assert.strictEqual(result.outcome, 'delivered');
+          assert.strictEqual(calls.length, 1);
+          assert.strictEqual(calls[0].url, 'https://ntfy.sh');
+          assert.strictEqual(calls[0].body.topic, 'test-topic');
+          assert.strictEqual(calls[0].body.priority, 5, 'critical must use ntfy max priority');
+          assert.match(calls[0].body.message, /002/, 'the miner belongs in the message');
+        }
+      );
+    });
+  });
+});
+
+// A channel selected but unconfigured is the exact shape of failure this module
+// exists to prevent: it must not look like one that delivered.
+test('ntfy without a topic fails visibly, and sends nothing', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv({ NTFY_TOPIC: undefined }, async () => {
+      await withPost(
+        () => ({ status: 200 }),
+        async (calls) => {
+          const result = await notifier.notifyAlert(alert);
+          assert.strictEqual(result.outcome, 'not_delivered');
+          assert.match(result.reason, /NTFY_TOPIC/);
+          assert.strictEqual(calls.length, 0, 'nothing may be sent without a topic');
+        }
+      );
+    });
+  });
+});
+
+// A 2xx is the only evidence of delivery there is, so anything else is a
+// non-delivery that must carry the code -- not a generic failure.
+test('a non-2xx from ntfy is a non-delivery, and names the status', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv({ NTFY_TOPIC: 'test-topic' }, async () => {
+      await withPost(
+        () => ({ status: 429 }),
+        async () => {
+          const result = await notifier.notifyAlert(alert);
+          assert.strictEqual(result.outcome, 'not_delivered');
+          assert.match(result.reason, /429/);
+        }
+      );
+    });
+  });
+});
+
+test('a dead uplink is reported, not thrown', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv({ NTFY_TOPIC: 'test-topic' }, async () => {
+      await withPost(
+        () => {
+          throw new Error('ETIMEDOUT');
+        },
+        async () => {
+          const result = await notifier.notifyAlert(alert);
+          assert.strictEqual(result.channel, 'ntfy');
+          assert.strictEqual(result.outcome, 'not_delivered');
+          assert.match(result.reason, /ETIMEDOUT/);
+        }
+      );
+    });
+  });
+});
+
+test('a self-hosted NTFY_URL is honoured, trailing slash and all', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv({ NTFY_TOPIC: 'test-topic', NTFY_URL: 'https://ntfy.example.com/' }, async () => {
+      await withPost(
+        () => ({ status: 200 }),
+        async (calls) => {
+          await notifier.notifyAlert(alert);
+          assert.strictEqual(calls[0].url, 'https://ntfy.example.com');
+        }
+      );
+    });
+  });
+});
+
+test('severity maps to distinct ntfy priorities', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv({ NTFY_TOPIC: 'test-topic', NTFY_URL: undefined }, async () => {
+      await withPost(
+        () => ({ status: 200 }),
+        async (calls) => {
+          for (const severity of ['critical', 'warning', 'info']) {
+            await notifier.notifyAlert({ ...alert, severity });
+          }
+          assert.deepStrictEqual(
+            calls.map((c) => c.body.priority),
+            [5, 4, 3]
+          );
+        }
+      );
+    });
+  });
+});
