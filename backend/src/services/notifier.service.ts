@@ -27,11 +27,13 @@
  * telegram.service is decomposed (Phase 3.4).
  */
 
+import axios from 'axios';
+
 import logger from '../utils/logger';
 
 export type NotifyOutcome = 'delivered' | 'not_delivered' | 'unverified';
 
-export type NotifyChannel = 'telegram' | 'log' | 'none';
+export type NotifyChannel = 'telegram' | 'ntfy' | 'log' | 'none';
 
 export interface NotifyRequest {
   severity: 'critical' | 'warning' | 'info';
@@ -49,7 +51,7 @@ export interface NotifyResult {
   reason?: string;
 }
 
-const VALID_CHANNELS: NotifyChannel[] = ['telegram', 'log', 'none'];
+const VALID_CHANNELS: NotifyChannel[] = ['telegram', 'ntfy', 'log', 'none'];
 
 const counters = new Map<string, number>();
 
@@ -95,6 +97,97 @@ export const getNotifyChannel = (): NotifyChannel => {
   return 'log';
 };
 
+/**
+ * ntfy priorities and tags per severity. 5 is ntfy's "max", which is what breaks
+ * through a phone's do-not-disturb -- appropriate for a critical, wrong for the
+ * rest.
+ */
+const NTFY_PRIORITY: Record<NotifyRequest['severity'], number> = {
+  critical: 5,
+  warning: 4,
+  info: 3,
+};
+
+const NTFY_TAGS: Record<NotifyRequest['severity'], string[]> = {
+  critical: ['rotating_light'],
+  warning: ['warning'],
+  info: ['information_source'],
+};
+
+/**
+ * Publish to an ntfy topic.
+ *
+ * This is the first channel here that can report `delivered` without lying:
+ * ntfy answers with a status code, unlike `sendSmartAlert()`, which swallows its
+ * own transport errors and leaves `unverified` as the only honest outcome.
+ *
+ * Published as a JSON body rather than the X-Title/X-Message headers ntfy also
+ * accepts: alert titles carry emoji and non-ASCII, and HTTP header values are
+ * latin-1. A JSON body is UTF-8 and sidesteps the encoding question entirely.
+ */
+const sendViaNtfy = async (alert: NotifyRequest): Promise<NotifyResult> => {
+  const topic = (process.env.NTFY_TOPIC || '').trim();
+  if (!topic) {
+    // Fail visibly. A channel selected but unconfigured must not look like one
+    // that delivered -- the whole point of this module.
+    const reason = 'ALERT_NOTIFY_CHANNEL=ntfy but NTFY_TOPIC is unset';
+    logger.warn('ALERT NOT DELIVERED', {
+      service: 'notifier',
+      reason,
+      severity: alert.severity,
+      title: alert.title,
+      miner: alert.miner,
+    });
+    return { channel: 'ntfy', outcome: 'not_delivered', reason };
+  }
+
+  const base = (process.env.NTFY_URL || 'https://ntfy.sh').trim().replace(/\/+$/, '');
+  const body = {
+    topic,
+    title: alert.title,
+    message: alert.miner ? `${alert.description}\n\nMiner: ${alert.miner}` : alert.description,
+    priority: NTFY_PRIORITY[alert.severity] ?? 3,
+    tags: NTFY_TAGS[alert.severity] ?? [],
+  };
+
+  try {
+    const response = await axios.post(base, body, {
+      // The uplink here is a metered 4G link that has measured multi-second
+      // round-trips even when healthy; a short timeout would report a working
+      // channel as broken.
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' },
+      // Inspect the status rather than letting axios throw, so a rejection
+      // carries the code instead of a generic message.
+      validateStatus: () => true,
+    });
+
+    if (response.status >= 200 && response.status < 300) {
+      return { channel: 'ntfy', outcome: 'delivered' };
+    }
+
+    const reason = `ntfy returned HTTP ${response.status}`;
+    logger.warn('ALERT NOT DELIVERED', {
+      service: 'notifier',
+      reason,
+      severity: alert.severity,
+      title: alert.title,
+      miner: alert.miner,
+    });
+    return { channel: 'ntfy', outcome: 'not_delivered', reason };
+  } catch (error) {
+    const reason = `ntfy request failed: ${(error as Error)?.message || 'unknown error'}`;
+    logger.warn('ALERT NOT DELIVERED', {
+      service: 'notifier',
+      reason,
+      severity: alert.severity,
+      title: alert.title,
+      miner: alert.miner,
+    });
+    return { channel: 'ntfy', outcome: 'not_delivered', reason };
+  }
+};
+
 /** One line per alert, at WARN, carrying the whole payload so Loki can show it. */
 const logStub = (alert: NotifyRequest, reason: string): NotifyResult => {
   logger.warn('ALERT NOT DELIVERED', {
@@ -128,6 +221,8 @@ export const notifyAlert = async (alert: NotifyRequest): Promise<NotifyResult> =
       };
     } else if (channel === 'log') {
       result = logStub(alert, 'ALERT_NOTIFY_CHANNEL=log (stub channel)');
+    } else if (channel === 'ntfy') {
+      result = await sendViaNtfy(alert);
     } else {
       // Lazy require: preserves the codebase's circular-import avoidance.
       const { sendSmartAlert } = require('./telegram.service');
