@@ -274,3 +274,172 @@ test('severity maps to distinct ntfy priorities', async () => {
     });
   });
 });
+
+
+// --- suppression policy (DMI-79) --------------------------------------------
+// This farm runs old ASICs to failure: 38 of the 41 alerts standing on
+// 2026-08-28 were chronic per-miner conditions nobody intends to act on. A
+// channel that opens with that volume gets muted, which is the original silence
+// wearing the appearance of alerting.
+
+test('an excluded component is not notified, and nothing is sent', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv(
+      { NTFY_TOPIC: 'test-topic', ALERT_NOTIFY_EXCLUDE_COMPONENTS: 'miner' },
+      async () => {
+        await withPost(
+          () => ({ status: 200 }),
+          async (calls) => {
+            const result = await notifier.notifyAlert({ ...alert, component: 'miner' });
+            assert.strictEqual(result.outcome, 'not_delivered');
+            assert.match(result.reason, /component=miner/);
+            assert.strictEqual(calls.length, 0, 'a suppressed alert must not be sent');
+          }
+        );
+      }
+    );
+  });
+});
+
+// The point of excluding one component is that the others still get through --
+// a policy that silences everything is just `none` with extra steps.
+test('a component outside the exclusion list still delivers', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv(
+      { NTFY_TOPIC: 'test-topic', ALERT_NOTIFY_EXCLUDE_COMPONENTS: 'miner' },
+      async () => {
+        await withPost(
+          () => ({ status: 200 }),
+          async (calls) => {
+            const result = await notifier.notifyAlert({ ...alert, component: 'farm' });
+            assert.strictEqual(result.outcome, 'delivered');
+            assert.strictEqual(calls.length, 1);
+          }
+        );
+      }
+    );
+  });
+});
+
+// Empty means "notify about everything": an install that never sets this must
+// behave exactly as it did before the policy existed.
+test('an unset policy suppresses nothing', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv(
+      { NTFY_TOPIC: 'test-topic', ALERT_NOTIFY_EXCLUDE_COMPONENTS: undefined },
+      async () => {
+        await withPost(
+          () => ({ status: 200 }),
+          async (calls) => {
+            const result = await notifier.notifyAlert({ ...alert, component: 'miner' });
+            assert.strictEqual(result.outcome, 'delivered');
+            assert.strictEqual(calls.length, 1);
+          }
+        );
+      }
+    );
+  });
+});
+
+test('the list is comma-separated and case-insensitive, with stray spaces tolerated', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv(
+      { NTFY_TOPIC: 'test-topic', ALERT_NOTIFY_EXCLUDE_COMPONENTS: ' Miner , LOGGING ' },
+      async () => {
+        await withPost(
+          () => ({ status: 200 }),
+          async (calls) => {
+            assert.strictEqual(
+              (await notifier.notifyAlert({ ...alert, component: 'MINER' })).outcome,
+              'not_delivered'
+            );
+            assert.strictEqual(
+              (await notifier.notifyAlert({ ...alert, component: 'logging' })).outcome,
+              'not_delivered'
+            );
+            assert.strictEqual(
+              (await notifier.notifyAlert({ ...alert, component: 'uplink' })).outcome,
+              'delivered'
+            );
+            assert.strictEqual(calls.length, 1, 'only the uplink alert may be sent');
+          }
+        );
+      }
+    );
+  });
+});
+
+// An alert carrying no component at all must not be caught by the policy --
+// silence by accident is the thing this module exists to prevent.
+test('an alert with no component is never suppressed', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv(
+      { NTFY_TOPIC: 'test-topic', ALERT_NOTIFY_EXCLUDE_COMPONENTS: 'miner' },
+      async () => {
+        await withPost(
+          () => ({ status: 200 }),
+          async (calls) => {
+            const result = await notifier.notifyAlert({ ...alert, component: undefined });
+            assert.strictEqual(result.outcome, 'delivered');
+            assert.strictEqual(calls.length, 1);
+          }
+        );
+      }
+    );
+  });
+});
+
+// A deliberate non-delivery still has to be visible as one.
+test('suppression is counted, not silent', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv(
+      { NTFY_TOPIC: 'test-topic', ALERT_NOTIFY_EXCLUDE_COMPONENTS: 'miner' },
+      async () => {
+        notifier.resetNotificationMetrics();
+        await notifier.notifyAlert({ ...alert, component: 'miner' });
+        assert.deepStrictEqual(notifier.getNotificationMetrics(), [
+          { channel: 'ntfy', outcome: 'not_delivered', count: 1 },
+        ]);
+      }
+    );
+  });
+});
+
+// A rule whose component is otherwise worth notifying about, but whose specific
+// condition is accepted -- FarmMultipleMinersOffline on a site with five
+// machines permanently absent from a stale inventory.
+test('a named rule can be suppressed even when its component is not', async () => {
+  await withChannel('ntfy', async () => {
+    await withEnv(
+      {
+        NTFY_TOPIC: 'test-topic',
+        ALERT_NOTIFY_EXCLUDE_COMPONENTS: 'miner',
+        ALERT_NOTIFY_EXCLUDE_ALERTS: 'FarmMultipleMinersOffline',
+      },
+      async () => {
+        await withPost(
+          () => ({ status: 200 }),
+          async (calls) => {
+            const blocked = await notifier.notifyAlert({
+              ...alert,
+              component: 'farm',
+              alertName: 'FarmMultipleMinersOffline',
+            });
+            assert.strictEqual(blocked.outcome, 'not_delivered');
+            assert.match(blocked.reason, /alertname=FarmMultipleMinersOffline/);
+
+            // The rest of the farm category must still get through, or the
+            // exclusion has silenced more than it was asked to.
+            const allowed = await notifier.notifyAlert({
+              ...alert,
+              component: 'farm',
+              alertName: 'FarmHashrateDropSHA256',
+            });
+            assert.strictEqual(allowed.outcome, 'delivered');
+            assert.strictEqual(calls.length, 1);
+          }
+        );
+      }
+    );
+  });
+});

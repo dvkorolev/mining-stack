@@ -319,6 +319,10 @@ export const processAlertWebhook = async (payload: any): Promise<void> => {
             miner: alertData.miner,
             recipients: alertData.recipients,
             isFarmWide: alertData.isFarmWide,
+            // Drives the notification-suppression policy (DMI-79). The alert is
+            // recorded either way; this only decides whether it reaches a phone.
+            component: alertData.labels?.component,
+            alertName: alertData.name,
           });
           
           const recipientInfo = alertData.isFarmWide ? 'all users' : `${alertData.recipients?.length || 0} owner(s)`;
@@ -345,6 +349,10 @@ export const processAlertWebhook = async (payload: any): Promise<void> => {
           miner: alertData.miner,
           recipients: alertData.recipients,
           isFarmWide: alertData.isFarmWide,
+          // A resolution follows its alert: if the firing was suppressed, the
+          // "it's over" must be too, or the phone only ever gets half a story.
+          component: alertData.labels?.component,
+          alertName: alertData.name,
         });
         
         logger.info(
