@@ -237,7 +237,14 @@ dashboard = {
         "datasource": DS,
         "query": {"query": "label_values(miner_scrape_status, name)", "refId": "miner"},
         "definition": "label_values(miner_scrape_status, name)",
-        "refresh": 1, "sort": 1, "multi": False, "includeAll": False,
+        # 2 = refresh on time-range change, which makes Grafana scope the
+        # label lookup to the dashboard's window. Without it the list is
+        # whatever the TSDB has ever seen: on 2026-08-29 that was 28 names for
+        # 21 machines, the extra seven being pre-DMI-74/80 renames still in
+        # retention. Raising retention to 90d that morning turned a two-week
+        # annoyance into a three-month one. Measured: a 6h window returns
+        # exactly the 21 live miners, a 7d window returns 28.
+        "refresh": 2, "sort": 1, "multi": False, "includeAll": False,
         "current": {}, "options": [],
     }]},
     "panels": panels,

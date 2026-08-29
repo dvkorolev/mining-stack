@@ -31,7 +31,7 @@
           "refId": "miner"
         },
         "definition": "label_values(miner_scrape_status, name)",
-        "refresh": 1,
+        "refresh": 2,
         "sort": 1,
         "multi": false,
         "includeAll": false,
