@@ -46,14 +46,12 @@ miner_pool_rejected = Gauge('miner_pool_rejected_total', 'Total rejected shares'
 # on, and produced no signal when a real pool went Dead.
 miner_pool_alive = Gauge('miner_pool_alive', 'Pool status reported by the miner (1=alive, 0=dead)', ['ip', 'name', 'url', 'pool_index'])
 
-# Pool Network Quality Metrics
-pool_network_reachable = Gauge('pool_network_reachable', 'Pool reachability (1=reachable, 0=unreachable)', ['pool', 'port'])
-pool_network_dns_resolved = Gauge('pool_network_dns_resolved', 'DNS resolution status (1=success, 0=failure)', ['pool', 'port'])
-pool_network_connect_time = Gauge('pool_network_connect_time_ms', 'TCP connection time in milliseconds', ['pool', 'port'])
-pool_network_ping_avg = Gauge('pool_network_ping_avg_ms', 'Average ping latency in milliseconds', ['pool', 'port'])
-pool_network_ping_min = Gauge('pool_network_ping_min_ms', 'Minimum ping latency in milliseconds', ['pool', 'port'])
-pool_network_ping_max = Gauge('pool_network_ping_max_ms', 'Maximum ping latency in milliseconds', ['pool', 'port'])
-pool_network_packet_loss = Gauge('pool_network_packet_loss_percent', 'Packet loss percentage', ['pool', 'port'])
+# There is no `pool_network_*` family any more. It probed pools with a bare TCP
+# connect -- the measurement DMI-56 ruled out -- and four of its seven gauges
+# were not measurements at all: with ENABLE_ICMP_PING unset (the default, and
+# what production ran) packet loss and the three ping gauges were written as a
+# literal 0.0 every cycle. Verified on the Pi 2026-08-29: all four read exactly
+# 0.0, and the three alert rules that read them could never fire.
 
 # Collection Metrics
 collection_duration = Gauge('mining_collection_duration_seconds', 'Time taken for collection', ['collector'])

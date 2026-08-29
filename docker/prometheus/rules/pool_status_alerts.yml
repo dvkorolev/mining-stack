@@ -1,9 +1,11 @@
 # Pool health as the miners themselves report it (DMI-56).
 #
-# Distinct from pool_network_alerts.yml, which alerts on pool_network_* — the
-# scheduler's own TCP/DNS probing of a configured list. That mechanism is fine,
-# but its target list was seven pools the farm does not use, so it never said
-# anything about the pools that matter.
+# These are now the only pool alerts. pool_network_alerts.yml was deleted along
+# with the pool_network_* family it read: that was the scheduler's own bare-TCP
+# probing of a configured list, the same measurement DMI-56 ruled out, and four
+# of its gauges were constants — with ENABLE_ICMP_PING unset (the default, and
+# what production ran) packet loss and all three ping gauges were written as a
+# literal 0.0 every cycle, so three of its six rules could never fire.
 #
 # These rules read miner_pool_alive instead: every miner holds a real stratum
 # session, so its verdict on a pool cannot be confused with a pool refusing bare

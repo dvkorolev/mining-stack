@@ -46,6 +46,15 @@ class ServiceState:
         # Key: ip, Value: last known uptime in seconds
         self.last_uptimes: Dict[str, int] = {}
 
+        # Consecutive fallback failures (DMI-87).
+        # Key: (ip, method), Value: consecutive failure count
+        #
+        # Deliberately NOT persisted. A restart re-arms every breaker, which
+        # costs a handful of attempts and buys back the chance that whatever
+        # made the method fail has been fixed in the meantime. Persisting it
+        # would make a stale JSON file able to suppress a working fallback.
+        self.fallback_failures: Dict[Tuple[str, str], int] = {}
+
         # Load persisted state if available
         self.load()
 
@@ -253,6 +262,60 @@ class ServiceState:
         with self._lock:
             self.failure_streaks[key] = 0
 
+    def record_fallback_result(self, ip: str, method: str, success: bool) -> int:
+        """
+        Record the outcome of one fallback attempt (DMI-87).
+
+        Args:
+            ip: Miner IP address
+            method: Fallback method name, e.g. 'whatsminer_cgi'
+            success: Whether the attempt returned data
+
+        Returns:
+            Consecutive failure count for this (miner, method) after recording
+        """
+        key = (ip, method)
+        with self._lock:
+            if success:
+                self.fallback_failures.pop(key, None)
+                return 0
+            self.fallback_failures[key] = self.fallback_failures.get(key, 0) + 1
+            return self.fallback_failures[key]
+
+    def blocked_fallback_methods(self, ip: str, threshold: int) -> set:
+        """
+        Fallback methods that have failed `threshold` times running for a miner.
+
+        Args:
+            ip: Miner IP address
+            threshold: Consecutive failures after which a method is skipped
+
+        Returns:
+            Set of method names to skip for this miner
+        """
+        with self._lock:
+            return {
+                method
+                for (streak_ip, method), count in self.fallback_failures.items()
+                if streak_ip == ip and count >= threshold
+            }
+
+    def reset_fallback_failures(self, ip: str) -> None:
+        """
+        Re-arm every fallback method for a miner.
+
+        Called when the miner needed no fallback at all, i.e. its primary
+        collection is healthy again. The next time it does need one, the method
+        gets a fresh chance rather than inheriting a breaker opened by an older
+        fault.
+
+        Args:
+            ip: Miner IP address
+        """
+        with self._lock:
+            for key in [k for k in self.fallback_failures if k[0] == ip]:
+                del self.fallback_failures[key]
+
     def forget_miner(self, ip: str) -> None:
         """
         Drop everything tracked per-miner for an address that has left the
@@ -270,6 +333,8 @@ class ServiceState:
         with self._lock:
             for key in [k for k in self.failure_streaks if k[0] == ip]:
                 del self.failure_streaks[key]
+            for key in [k for k in self.fallback_failures if k[0] == ip]:
+                del self.fallback_failures[key]
             self.last_uptimes.pop(ip, None)
 
     def get_failure_streak(self, ip: str, name: str, model: str) -> int:

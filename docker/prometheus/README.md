@@ -9,7 +9,7 @@ docker/prometheus/
 ├── prometheus.yml           # Main Prometheus configuration
 ├── rules/                   # Alert rules
 │   ├── mining_alerts.yml   # Mining-specific alerts
-│   └── pool_network_alerts.yml  # Pool network alerts
+│   └── pool_status_alerts.yml   # Pool health, as the miners report it
 ├── targets/                 # Service discovery targets
 │   └── pools.json          # Mining pool targets for Blackbox
 └── README.md               # This file
@@ -43,14 +43,17 @@ Alert rules for mining operations:
 - Fan failure detection
 - Rejected shares monitoring
 
-### rules/pool_network_alerts.yml
+### rules/pool_status_alerts.yml
 
-Alert rules for pool network quality:
-- Pool unreachable (critical)
-- High packet loss (critical >10%)
-- Elevated latency (warning >100ms)
-- Slow connection (warning >1000ms)
-- DNS resolution failures
+Pool health read from `miner_pool_alive` — each miner's own verdict on its pools
+(DMI-56):
+- A miner has no live pool left (critical)
+- A pool is dead across the fleet (critical)
+- Primary pool dead / backup pool dead (warning)
+
+`pool_network_alerts.yml` was deleted along with the `pool_network_*` family it
+read: bare-TCP probing measures the pool's tolerance of us rather than our
+connectivity, and four of those gauges were written as a literal 0.0 every cycle.
 
 ### targets/pools.json
 
@@ -88,12 +91,12 @@ File-based service discovery for mining pool targets.
 - `miner_online` - Online status (1=online, 0=offline)
 - `miner_rejected_shares` - Rejected share count
 
-**Pool Network Metrics**:
-- `pool_network_reachable` - Pool reachability (1=up, 0=down)
-- `pool_network_connect_time_ms` - TCP connection time
-- `pool_network_ping_avg_ms` - Average ping latency
-- `pool_network_packet_loss_percent` - Packet loss percentage
-- `pool_network_dns_resolved` - DNS resolution status
+**Pool Metrics**:
+- `miner_pool_alive` - Pool status as reported by the miner (1=alive, 0=dead)
+- `miner_pool_accepted_total` / `miner_pool_rejected_total` - Share counts
+
+Uplink availability is `sum(rate(miner_pool_accepted_total[5m]))`. There is no
+`pool_network_*` family; see `targets/README.md` for why pools are not probed.
 
 **Collection Metrics**:
 - `collection_duration_seconds` - Collection duration
@@ -128,8 +131,8 @@ File-based service discovery for mining pool targets.
 - Duration: 5 minutes
 - Action: Telegram notification
 
-**PoolUnreachable**:
-- Condition: `pool_network_reachable == 0`
+**MinerNoLivePool**:
+- Condition: `max by (ip, name) (miner_pool_alive) == 0`
 - Duration: 5 minutes
 - Action: Telegram notification
 
@@ -140,8 +143,8 @@ File-based service discovery for mining pool targets.
 
 ### Warning Alerts
 
-**PoolHighLatency**:
-- Condition: `pool_network_ping_avg_ms > 100`
+**PrimaryPoolDead**:
+- Condition: `miner_pool_alive{pool_index="0"} == 0`
 - Duration: 10 minutes
 - Action: Log and dashboard
 
@@ -180,11 +183,11 @@ probe_success{job="blackbox-tcp"}
 # Pool connection time
 probe_duration_seconds{job="blackbox-tcp"}
 
-# Pools offline
-count(probe_success{job="blackbox-tcp"} == 0)
+# Miners with no live pool
+count(max by (ip, name) (miner_pool_alive) == 0)
 
-# Average pool latency
-avg(pool_network_ping_avg_ms)
+# Uplink availability: real share submission across the fleet
+sum(rate(miner_pool_accepted_total[5m]))
 ```
 
 ### System Queries

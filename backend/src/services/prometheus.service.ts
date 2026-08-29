@@ -315,7 +315,7 @@ export interface AlertRulesFile {
  */
 export async function getPrometheusAlertRules(): Promise<{
   mining: AlertRulesFile | null;
-  poolNetwork: AlertRulesFile | null;
+  poolStatus: AlertRulesFile | null;
   error?: string;
 }> {
   try {
@@ -324,10 +324,13 @@ export async function getPrometheusAlertRules(): Promise<{
       : path.join(process.cwd(), '../docker/prometheus/rules');
 
     const miningRulesPath = path.join(rulesDir, 'mining_alerts.yml');
-    const poolNetworkRulesPath = path.join(rulesDir, 'pool_network_alerts.yml');
+    // pool_network_alerts.yml is gone with the pool_network_* family it read
+    // (bare-TCP probing, DMI-56). Pool rules now live in pool_status_alerts.yml
+    // and read miner_pool_alive.
+    const poolStatusRulesPath = path.join(rulesDir, 'pool_status_alerts.yml');
 
     let mining: AlertRulesFile | null = null;
-    let poolNetwork: AlertRulesFile | null = null;
+    let poolStatus: AlertRulesFile | null = null;
 
     // Read mining alerts
     if (fs.existsSync(miningRulesPath)) {
@@ -335,18 +338,18 @@ export async function getPrometheusAlertRules(): Promise<{
       mining = yaml.load(miningContent) as AlertRulesFile;
     }
 
-    // Read pool/network alerts
-    if (fs.existsSync(poolNetworkRulesPath)) {
-      const poolContent = fs.readFileSync(poolNetworkRulesPath, 'utf8');
-      poolNetwork = yaml.load(poolContent) as AlertRulesFile;
+    // Read pool-status alerts
+    if (fs.existsSync(poolStatusRulesPath)) {
+      const poolContent = fs.readFileSync(poolStatusRulesPath, 'utf8');
+      poolStatus = yaml.load(poolContent) as AlertRulesFile;
     }
 
-    return { mining, poolNetwork };
+    return { mining, poolStatus };
   } catch (error) {
     logger.error('Error reading Prometheus alert rules:', error);
     return {
       mining: null,
-      poolNetwork: null,
+      poolStatus: null,
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }

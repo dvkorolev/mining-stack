@@ -11,11 +11,13 @@ from typing import List, Dict
 
 # Configuration
 MINERS_CONFIG = os.getenv('MINERS_CONFIG', '/app/etc/miners.yaml')
-POOLS_CONFIG = os.getenv('POOLS_CONFIG', '/app/etc/pools.yaml')
 COLLECTION_INTERVAL = int(os.getenv('COLLECTION_INTERVAL', '2'))  # minutes
-POOL_TEST_INTERVAL = int(os.getenv('POOL_TEST_INTERVAL', '5'))  # minutes
-ENABLE_ICMP_PING = os.getenv('ENABLE_ICMP_PING', 'false').lower() == 'true'
-MAX_CONCURRENT_REQUESTS = 5
+# Miners polled in parallel per cycle. Measured 2026-08-29: a full cycle over
+# 21 machines takes 7-9 s of the 120 s interval at 5, with zero skipped runs,
+# so the default is left alone -- this is env-driven only so it can be raised
+# without a rebuild if enough machines start timing out (each timeout holds a
+# slot for 15 s).
+MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', '5'))
 BACKEND_URL = os.getenv('BACKEND_URL', 'http://backend:5000')
 PUSH_TO_BACKEND = os.getenv('PUSH_TO_BACKEND', 'true').lower() == 'true'
 SYSTEM_API_KEY = os.getenv('SYSTEM_API_KEY', '')  # For authenticating with backend
@@ -27,9 +29,6 @@ miners_config_cache = None
 last_config_load = 0
 CONFIG_CACHE_TTL = 300  # 5 minutes
 
-# Cache pools config
-pools_config_cache = None
-last_pools_load = 0
 
 # ----------------------------------------------------------------------------
 # Miner-config provenance (DMI-58)
@@ -195,97 +194,6 @@ def has_loaded_miners_config() -> bool:
     return miners_config_cache is not None
 
 
-def load_pools_config() -> List[Dict]:
-    """Load pools configuration with caching"""
-    global pools_config_cache, last_pools_load
-    
-    current_time = time.time()
-    if pools_config_cache and (current_time - last_pools_load) < CONFIG_CACHE_TTL:
-        return pools_config_cache
-    
-    # Try database API first if enabled
-    if USE_DATABASE_CONFIG and SYSTEM_API_KEY:
-        try:
-            response = requests.get(
-                f"{BACKEND_URL}/api/pools/config",
-                headers={'X-API-Key': SYSTEM_API_KEY},
-                timeout=5
-            )
-            if response.status_code == 200:
-                data = response.json()
-                pools = data.get('pools', [])
-                
-                # Parse pool URLs to extract hostname and port
-                parsed_pools = []
-                for pool in pools:
-                    url = pool.get('url', '')
-                    if ':' in url:
-                        hostname, port_str = url.rsplit(':', 1)
-                        try:
-                            port = int(port_str)
-                            parsed_pools.append({
-                                'hostname': hostname,
-                                'port': port,
-                                'name': pool.get('name', hostname),
-                                'algorithm': pool.get('algorithm', 'unknown'),
-                                'priority': pool.get('priority', 'medium')
-                            })
-                        except ValueError:
-                            pass  # Skip invalid ports
-                
-                pools_config_cache = parsed_pools
-                last_pools_load = current_time
-                print(f"Loaded {len(parsed_pools)} pools from database API")
-                return pools_config_cache
-            else:
-                print(f"Warning: Failed to load pools from database API: {response.status_code}")
-        except Exception as e:
-            print(f"Warning: Failed to load pools from database API: {e}")
-            print("Falling back to YAML configuration...")
-    
-    # Fallback to YAML file
-    config_path = Path(POOLS_CONFIG)
-    
-    # If pools config doesn't exist, return empty list
-    if not config_path.exists():
-        print(f"Warning: Pools config file not found: {config_path}")
-        pools_config_cache = []
-        last_pools_load = current_time
-        return pools_config_cache
-    
-    try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        
-        pools = config.get('pools', [])
-        
-        # Parse pool URLs to extract hostname and port
-        parsed_pools = []
-        for pool in pools:
-            url = pool.get('url', '')
-            if ':' in url:
-                hostname, port_str = url.rsplit(':', 1)
-                try:
-                    port = int(port_str)
-                    parsed_pools.append({
-                        'hostname': hostname,
-                        'port': port,
-                        'name': pool.get('name', hostname),
-                        'algorithm': pool.get('algorithm', 'unknown'),
-                        'priority': pool.get('priority', 'medium')
-                    })
-                except ValueError:
-                    pass  # Skip invalid ports
-        
-        pools_config_cache = parsed_pools
-        last_pools_load = current_time
-        return pools_config_cache
-    except Exception as e:
-        print(f"Error loading pools from YAML: {e}")
-        # Return empty list on error
-        pools_config_cache = []
-        last_pools_load = current_time
-        return pools_config_cache
 
 
 def invalidate_config_cache():
@@ -299,7 +207,5 @@ def invalidate_config_cache():
     this guards against. `miners_config_source` is left as-is because it still
     describes the list currently held; the next load overwrites it.
     """
-    global last_config_load, pools_config_cache, last_pools_load
+    global last_config_load
     last_config_load = 0
-    pools_config_cache = None
-    last_pools_load = 0
