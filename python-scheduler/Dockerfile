@@ -42,6 +42,7 @@ COPY models.py /app/
 COPY collectors/ /app/collectors/
 COPY parsers/ /app/parsers/
 COPY asic_profile_loader.py /app/
+COPY rated_hashrate.py /app/
 COPY state_manager.py /app/
 COPY health_check.py /app/
 COPY asic_profiles.yaml /app/
