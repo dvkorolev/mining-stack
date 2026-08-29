@@ -205,38 +205,62 @@ groups:
           summary: "Miner {{ $labels.name }} SCRYPT {{ $value | printf \"%.1f\" }} MH/s — low"
           description: "Warning band 7000-12000 MH/s; nominal is 14229 MH/s."
           
-      # Warning: Elevated rejection rate (2-5%)
+      # Warning: elevated rejection rate (2-5%) sustained over an hour
+      #
+      # DMI-93. These two rules used a 5-minute window, and this fleet submits
+      # about 0.9 shares/second across 21 machines -- roughly 13 shares per
+      # miner per 5 minutes. One rejected share was therefore 7.7%, over the
+      # "critical" threshold, so the rule reported whether a single share had
+      # recently bounced rather than any rate. Replayed over 7 days: the old
+      # critical matched 371 five-minute samples across 17 miners; the new one
+      # matches none, because nothing on this fleet has exceeded 5% over an
+      # hour. Real per-miner rates measured over 24h are 0.03-0.245%.
+      #
+      # The window is 1h: at the quietest producing miner that is ~146 shares,
+      # so a single rejection is 0.7% -- below the warning band instead of
+      # above the critical one.
+      #
+      # The share-count gate exists for the case the window alone does not
+      # cover: a machine limping along at a handful of shares an hour would
+      # still produce a meaningless ratio. 18 of 21 miners pass it today and
+      # none sits between 1 and 100 shares/hour, so it excludes nobody real --
+      # it is there for the partial producer that has not happened yet.
       - alert: MinerRejectionRateWarning
         expr: |
           (
-            rate(miner_pool_rejected_total[5m]) / 
-            (rate(miner_pool_accepted_total[5m]) + rate(miner_pool_rejected_total[5m]))
+            rate(miner_pool_rejected_total[1h]) /
+            (rate(miner_pool_accepted_total[1h]) + rate(miner_pool_rejected_total[1h]))
           ) > 0.02 and (
-            rate(miner_pool_rejected_total[5m]) / 
-            (rate(miner_pool_accepted_total[5m]) + rate(miner_pool_rejected_total[5m]))
-          ) <= 0.05
+            rate(miner_pool_rejected_total[1h]) /
+            (rate(miner_pool_accepted_total[1h]) + rate(miner_pool_rejected_total[1h]))
+          ) <= 0.05 and (
+            rate(miner_pool_accepted_total[1h]) + rate(miner_pool_rejected_total[1h])
+          ) * 3600 > 100
         for: 10m
         labels:
           severity: warning
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} rejecting {{ $value | humanizePercentage }} of shares"
-          description: "Warning band 2-5%."
+          description: "Warning band 2-5%, measured over an hour and only where the miner submitted more than 100 shares in it."
           
       # Critical: High rejection rate (>5%)
+      # Same window and gate as the warning above -- see the note there (DMI-93).
       - alert: MinerRejectionRateCritical
         expr: |
           (
-            rate(miner_pool_rejected_total[5m]) / 
-            (rate(miner_pool_accepted_total[5m]) + rate(miner_pool_rejected_total[5m]))
-          ) > 0.05
+            rate(miner_pool_rejected_total[1h]) /
+            (rate(miner_pool_accepted_total[1h]) + rate(miner_pool_rejected_total[1h]))
+          ) > 0.05 and (
+            rate(miner_pool_accepted_total[1h]) + rate(miner_pool_rejected_total[1h])
+          ) * 3600 > 100
         for: 10m
         labels:
           severity: critical
           component: miner
         annotations:
           summary: "Miner {{ $labels.name }} rejecting {{ $value | humanizePercentage }} of shares — critical"
-          description: "Above the 5% critical threshold."
+          description: "Above 5% sustained over an hour. Nothing on this fleet reached that in the 7 days before this threshold was set; measured rates are 0.03-0.245%."
           
       # Warning: Fault light on
       - alert: MinerFaultLight
