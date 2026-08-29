@@ -15,7 +15,6 @@ docker/grafana/
 ├── dashboards/
 │   ├── mining-overview.json       # Main mining dashboard
 │   ├── per-miner-details.json     # Individual miner details
-│   ├── pool-network-quality.json  # Pool network monitoring
 │   └── README.md                  # Dashboard documentation
 └── README.md                      # This file
 ```
@@ -122,18 +121,15 @@ providers:
 
 **Use Case**: Detailed miner diagnostics
 
-### 3. Pool Network Quality
+### 3. Pool health
 
-**File**: `dashboards/pool-network-quality.json`
+There is no pool-network dashboard. `pool-network-quality.json` was deleted with
+the `pool_network_*` family it plotted: four of those gauges were written as a
+literal 0.0 every cycle (ENABLE_ICMP_PING defaulted off), so the panels drew
+constants, and the rest came from bare-TCP probing that DMI-56 ruled out.
 
-**Panels**:
-- Pool connectivity status
-- Connection latency
-- Packet loss
-- DNS resolution time
-- TCP connection time
-
-**Use Case**: Pool performance monitoring
+Pool health is on the overview dashboard, from `miner_pool_alive` — the miners'
+own verdict on their pools.
 
 ## Access
 
@@ -239,18 +235,14 @@ miner_temperature
 ### Pool Metrics
 
 ```promql
-# Pool connectivity
-probe_success{job="blackbox-tcp"}
+# Pool health, as the miners report it (DMI-56)
+avg(miner_pool_alive) by (url)
 
-# Average latency
-avg(pool_network_ping_avg_ms)
-
-# Packet loss
-pool_network_packet_loss_percent
-
-# Connection time
-pool_network_connect_time_ms
+# Uplink availability: real share submission across the fleet
+sum(rate(miner_pool_accepted_total[5m]))
 ```
+Do not use `probe_success{job="pool-tcp-check"}` as connectivity — see
+`docker/prometheus/targets/README.md`.
 
 ### System Metrics
 

@@ -13,9 +13,7 @@ services:
     env_file: .env
     environment:
       - MINERS_CONFIG=/app/etc/miners.yaml
-      - POOLS_CONFIG=/app/etc/pools.yaml
       - COLLECTION_INTERVAL=${COLLECTION_INTERVAL:-2}
-      - POOL_TEST_INTERVAL=${POOL_TEST_INTERVAL:-5}
       - LOG_FORMAT=${LOG_FORMAT:-json}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - BACKEND_URL=http://backend:5000

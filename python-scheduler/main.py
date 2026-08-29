@@ -28,19 +28,16 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 # Import our modules
 from config import (
-    MINERS_CONFIG, POOLS_CONFIG, COLLECTION_INTERVAL, POOL_TEST_INTERVAL, ENABLE_ICMP_PING,
+    MINERS_CONFIG, COLLECTION_INTERVAL,
     BACKEND_URL, PUSH_TO_BACKEND, INTERNAL_METRICS_TOKEN,
     CONFIG_SOURCES, DEGRADED_CONFIG_SOURCES, TRUSTED_CONFIG_SOURCES,
-    load_miners_config, load_pools_config, invalidate_config_cache,
+    load_miners_config, invalidate_config_cache,
     get_miners_config, get_miners_config_source
 )
 from state_manager import ServiceState
 from asic_profile_loader import get_library
 from metrics import (
-    pool_network_reachable, pool_network_dns_resolved,
-    pool_network_connect_time, pool_network_ping_avg,
-    pool_network_ping_min, pool_network_ping_max,
-    pool_network_packet_loss, collection_duration,
+    collection_duration,
     collection_success, collection_timestamp,
     miner_fallback_trigger_total, miner_fallback_total,
     remove_miner_series, remove_miner_pool_series, publish_config_source,
@@ -76,153 +73,29 @@ FAILURE_THRESHOLD = 5
 
 
 # ============================================================================
-# POOL NETWORK METRICS COLLECTION
+# POOL HEALTH
 # ============================================================================
-
-async def _test_pool_connectivity(hostname: str, port: int) -> None:
-    """Test pool connectivity and update Prometheus metrics.
-
-    P2.1: DNS resolution is performed implicitly by asyncio.open_connection,
-    which avoids the blocking socket.gethostbyname call.  An OSError from
-    open_connection (which covers DNS failures such as socket.gaierror) maps
-    to dns_resolved=0 / reachable=0 so metric coverage is preserved.
-    """
-    if ENABLE_ICMP_PING:
-        try:
-            result = subprocess.run(
-                ['ping', '-c', '5', '-W', '2', hostname],
-                capture_output=True, text=True, timeout=15)
-            output = result.stdout
-            packet_loss = 100.0
-            loss_match = re.search(r'(\d+)% packet loss', output)
-            if loss_match:
-                packet_loss = float(loss_match.group(1))
-            ping_avg = ping_min = ping_max = 0.0
-            rtt_match = re.search(r'rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)', output)
-            if rtt_match:
-                ping_min = float(rtt_match.group(1))
-                ping_avg = float(rtt_match.group(2))
-                ping_max = float(rtt_match.group(3))
-            pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(ping_avg)
-            pool_network_ping_min.labels(pool=hostname, port=str(port)).set(ping_min)
-            pool_network_ping_max.labels(pool=hostname, port=str(port)).set(ping_max)
-            pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(packet_loss)
-        except Exception as e:
-            logger.debug(f"Ping failed for {hostname}: {e}")
-            pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(100.0)
-    else:
-        pool_network_packet_loss.labels(pool=hostname, port=str(port)).set(0.0)
-        pool_network_ping_avg.labels(pool=hostname, port=str(port)).set(0.0)
-        pool_network_ping_min.labels(pool=hostname, port=str(port)).set(0.0)
-        pool_network_ping_max.labels(pool=hostname, port=str(port)).set(0.0)
-
-    # asyncio.open_connection performs DNS resolution internally; no separate
-    # blocking lookup is needed.  DNS success is inferred from a successful
-    # connection; OSError (including name-resolution failure) sets dns=0.
-    start = time.time()
-    try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(hostname, port), timeout=5.0)
-        connect_time = (time.time() - start) * 1000
-        writer.close()
-        await writer.wait_closed()
-        pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(1)
-        pool_network_reachable.labels(pool=hostname, port=str(port)).set(1)
-        pool_network_connect_time.labels(pool=hostname, port=str(port)).set(connect_time)
-    except asyncio.TimeoutError:
-        pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(0)
-        pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
-        pool_network_connect_time.labels(pool=hostname, port=str(port)).set(5000.0)
-    except OSError as e:
-        # Covers socket.gaierror (DNS failure) and connection-refused errors
-        logger.debug(f"Connection failed for {hostname}:{port}: {e}")
-        pool_network_dns_resolved.labels(pool=hostname, port=str(port)).set(0)
-        pool_network_reachable.labels(pool=hostname, port=str(port)).set(0)
-        pool_network_connect_time.labels(pool=hostname, port=str(port)).set(0)
-
-
-async def collect_pool_network_metrics_from_config() -> Dict[str, Any]:
-    """Collect pool network quality metrics from pools.yaml configuration"""
-    logger.info("Starting pool network collection from configuration...")
-    start_time = time.time()
-    
-    # Load pools from configuration
-    pools_config = load_pools_config()
-    
-    if not pools_config:
-        logger.info("No pools configured in pools.yaml, skipping pool collection")
-        return {'success': True, 'pools_tested': 0, 'duration': 0, 'source': 'pools_yaml'}
-    
-    pools = [(p['hostname'], p['port']) for p in pools_config]
-    logger.info(f"Testing {len(pools)} configured pools")
-    
-    if pools:
-        tasks = [_test_pool_connectivity(hostname, port) for hostname, port in pools]
-        await asyncio.gather(*tasks, return_exceptions=True)
-    
-    duration = time.time() - start_time
-    collection_duration.labels(collector='pool_network_config').set(duration)
-    collection_success.labels(collector='pool_network_config').set(1)
-    collection_timestamp.labels(collector='pool_network_config').set(time.time())
-    
-    logger.info(f"✓ Pool network collection from config complete: {len(pools)} pools in {duration:.1f}s")
-    return {'success': True, 'pools_tested': len(pools), 'duration': duration, 'source': 'pools_yaml'}
-
-
-async def collect_pool_network_metrics(miners: List[Dict]) -> Dict[str, Any]:
-    """Collect pool network quality metrics"""
-    logger.info("Starting pool network collection...")
-    start_time = time.time()
-    
-    pools = set()
-    
-    async def get_miner_pools(ip: str):
-        try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(ip, 4028), timeout=5.0)
-            command = json.dumps({"command": "pools"})
-            writer.write(command.encode())
-            await writer.drain()
-            data = await asyncio.wait_for(reader.read(65536), timeout=5.0)
-            writer.close()
-            await writer.wait_closed()
-            response = json.loads(data.decode().strip('\x00'))
-            
-            miner_pools = []
-            if 'POOLS' in response:
-                for pool in response['POOLS']:
-                    url = pool.get('URL') or ''
-                    if url and isinstance(url, str):
-                        url = re.sub(r'^(stratum\+tcp|stratum\+ssl|stratum)://', '', url)
-                        if ':' in url:
-                            hostname, port_str = url.rsplit(':', 1)
-                            port_str = port_str.split('/')[0]
-                            miner_pools.append((hostname, int(port_str)))
-            return miner_pools
-        except Exception:
-            return []
-    
-    tasks = [get_miner_pools(miner['ip']) for miner in miners]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    for pool_list in results:
-        if isinstance(pool_list, list):
-            pools.update(pool_list)
-    
-    logger.info(f"Discovered {len(pools)} unique pools")
-    
-    if pools:
-        tasks = [_test_pool_connectivity(hostname, port) for hostname, port in pools]
-        await asyncio.gather(*tasks, return_exceptions=True)
-    
-    duration = time.time() - start_time
-    collection_duration.labels(collector='pool_network').set(duration)
-    collection_success.labels(collector='pool_network').set(1)
-    collection_timestamp.labels(collector='pool_network').set(time.time())
-    
-    logger.info(f"✓ Pool network collection complete: {len(pools)} pools in {duration:.1f}s")
-    return {'success': True, 'pools_tested': len(pools), 'duration': duration}
-
+#
+# There is deliberately no pool probing here. Pool health is read from the
+# miners themselves (`miner_pool_alive`, built from each machine's own reported
+# pool list) -- see DMI-56.
+#
+# What used to live here was a bare TCP connect to every pool, every cycle,
+# plus a second one on POOL_TEST_INTERVAL. That is the same measurement DMI-56
+# banned in its blackbox form, and for the same reason: a pool drops repeated
+# bare connects from an address that never speaks stratum, so the metric
+# reports the pool's tolerance of us rather than our connectivity. Reading it
+# as availability produced a phantom 25% outage rate and a wrong diagnosis
+# (DMI-46).
+#
+# It also published four metrics that were not measurements at all. With
+# ENABLE_ICMP_PING unset -- the default, and what production ran -- packet loss
+# and all three ping gauges were written as a literal 0.0 every cycle, and
+# three alert rules were evaluated against those constants. Measured on the Pi
+# 2026-08-29: every one of them read exactly 0.0.
+#
+# Uplink availability is `sum(rate(miner_pool_accepted_total[5m]))`; pool
+# reachability is `miner_pool_alive`. Both ride the production path.
 
 # ============================================================================
 # BACKEND PUSH
@@ -567,9 +440,7 @@ async def collect_all_metrics():
                 logger.info(f"Fallback drivers: {fallback_successes}/{fallback_attempts} successful")
             
             await push_metrics_to_backend(miners_data, pyasic_result)
-            
-            pool_result = await collect_pool_network_metrics(miners)
-            
+
             # Update failure streaks and remove stale metrics
             for miner in miners:
                 miner_data = miners_data_by_ip.get(miner['ip'])
@@ -610,8 +481,7 @@ async def collect_all_metrics():
                 success=True,
                 message='All collections successful',
                 details={
-                    'pyasic': pyasic_result,
-                    'pool_network': pool_result
+                    'pyasic': pyasic_result
                 }
             )
             
@@ -663,10 +533,7 @@ async def lifespan(app_instance: FastAPI):
     logger.info("Mining Metrics Collector Service V3 Starting")
     logger.info("=" * 60)
     logger.info(f"Miners config: {MINERS_CONFIG}")
-    logger.info(f"Pools config: {POOLS_CONFIG}")
     logger.info(f"Miner collection interval: {COLLECTION_INTERVAL} minutes")
-    logger.info(f"Pool test interval: {POOL_TEST_INTERVAL} minutes")
-    logger.info(f"ICMP ping enabled: {ENABLE_ICMP_PING}")
     logger.info(f"Architecture: APScheduler + Limited Parallel Gap-Fill")
     
     # Initialize and log profile library
@@ -710,18 +577,9 @@ async def lifespan(app_instance: FastAPI):
         misfire_grace_time=60
     )
     
-    # Add pool collection job (every POOL_TEST_INTERVAL minutes)
-    scheduler.add_job(
-        collect_pool_network_metrics_from_config,
-        IntervalTrigger(minutes=POOL_TEST_INTERVAL),
-        id='pool_collection',
-        name='Pool Network Testing',
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=60
-    )
-    
+    # No pool-probing job: pool health comes from the miners (DMI-56), see the
+    # POOL HEALTH note near the top of this file.
+
     # Start scheduler
     scheduler.start()
     logger.info(f"✓ APScheduler started with {len(scheduler.get_jobs())} jobs")
@@ -829,7 +687,6 @@ async def root():
         "status": "running",
         "architecture": "apscheduler_with_state_persistence",
         "collection_interval": f"{COLLECTION_INTERVAL} minutes",
-        "pool_test_interval": f"{POOL_TEST_INTERVAL} minutes",
         "last_collection": last_collection.get('timestamp'),
         "endpoints": {
             "metrics": "/metrics (Prometheus scrape endpoint)",
@@ -873,7 +730,6 @@ async def status():
         "last_collection": last_collection,
         "collection_in_progress": collection_lock.locked(),
         "collection_interval_minutes": COLLECTION_INTERVAL,
-        "pool_test_interval_minutes": POOL_TEST_INTERVAL,
         "architecture": "v3_apscheduler_with_state_persistence",
         # Read through the accessor: importing the cache by value bound it to
         # None at import time, so this always reported 0 miners.
@@ -955,28 +811,6 @@ async def trigger_collection(background_tasks: BackgroundTasks):
     return {
         "success": True,
         "message": "Collection started in background",
-        "timestamp": datetime.now().isoformat(),
-        "note": "Check /status endpoint for completion"
-    }
-
-
-@app.post("/collect-pools")
-async def trigger_pool_collection(background_tasks: BackgroundTasks):
-    """Manually trigger pool network metrics collection from pools.yaml"""
-    logger.info("Manual pool collection triggered via API (background)")
-    
-    async def collect_pools_task():
-        try:
-            result = await collect_pool_network_metrics_from_config()
-            logger.info(f"Pool collection completed: {result}")
-        except Exception as e:
-            logger.error(f"Pool collection failed: {e}")
-    
-    background_tasks.add_task(collect_pools_task)
-    
-    return {
-        "success": True,
-        "message": "Pool collection started in background",
         "timestamp": datetime.now().isoformat(),
         "note": "Check /status endpoint for completion"
     }

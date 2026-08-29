@@ -229,8 +229,7 @@ Exposed at `http://python-scheduler:8000/metrics`
 - `miner_hashrate` - Miner hashrate
 - `miner_temperature` - Miner temperature
 - `miner_fan_speed` - Fan speed
-- `pool_network_reachable` - Pool connectivity
-- `pool_network_connect_time` - Pool connection time
+- `miner_pool_alive` - Pool health, as the miner itself reports it (DMI-56)
 - `collection_duration_seconds` - Collection duration
 - `collection_success` - Collection success rate
 

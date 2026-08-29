@@ -13,7 +13,6 @@ that never existed, while the real files sat next to it unmentioned.
 | `mining-overview.json` | `mining-farm-overview` | Fleet hashrate, active miners, power, temperature |
 | `per-miner-details.json` | `per-miner-details` | One machine at a time: boards, fans, shares |
 | `scrypt-miners.json` | `scrypt-miners` | The SCRYPT side of the fleet, in MH/s (see `ALGORITHM_SEPARATION.md`) |
-| `pool-network-quality.json` | `pool-network-quality` | Latency, packet loss and DNS to the pools |
 | `logs-overview.json` | `mining-logs` | Container logs from the stack's own services |
 | `router-syslog.json` | `router-syslog` | The Keenetic's syslog: modem power cycles, connectivity events, volume |
 | `network-traffic.json` | `network-traffic` | Uplink health and where the metered 4G traffic goes |
@@ -101,8 +100,10 @@ count(miner_state == 2)
 
 ### Pool Reachability
 ```promql
-avg(pool_network_reachable) by (pool)
+avg(miner_pool_alive) by (url)
 ```
+Read from the miners' own pool lists (DMI-56). Do not probe pools with bare TCP
+connects — that measures the pool's tolerance of us, not our connectivity.
 
 ### Temperature Alert
 ```promql

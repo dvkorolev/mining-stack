@@ -49,7 +49,6 @@ const RULES_DIR = process.env.NODE_ENV === 'production'
 
 const RULE_FILES = [
   'mining_alerts.yml',
-  'pool_network_alerts.yml',
 ];
 
 async function migrateAlertRules(): Promise<void> {
