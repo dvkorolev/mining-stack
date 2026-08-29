@@ -10,8 +10,8 @@ that never existed, while the real files sat next to it unmentioned.
 
 | File | UID | What it answers |
 |---|---|---|
-| `mining-overview.json` | `mining-farm-overview` | Fleet hashrate, active miners, power, temperature |
-| `per-miner-details.json` | `per-miner-details` | One machine at a time: boards, fans, shares |
+| `mining-overview.json` | `mining-farm-overview` | Fleet output against nameplate, uplink and pools, heat, and whether the monitoring itself is honest |
+| `per-miner-details.json` | `per-miner-details` | One machine at a time (`$miner`): boards, fans, pools, shares |
 | `scrypt-miners.json` | `scrypt-miners` | The SCRYPT side of the fleet, in MH/s (see `ALGORITHM_SEPARATION.md`) |
 | `logs-overview.json` | `mining-logs` | Container logs from the stack's own services |
 | `router-syslog.json` | `router-syslog` | The Keenetic's syslog: modem power cycles, connectivity events, volume |
@@ -80,6 +80,11 @@ Download pre-built dashboards from:
 Dashboards in this directory are automatically loaded by Grafana on startup.
 
 **Provisioning Config**: `../provisioning/dashboards/dashboard.yml`
+
+Two dashboards are generated rather than hand-written: `mining-overview.gen.py` and
+`per-miner-details.gen.py` sit beside their JSON. Edit the generator and re-run it —
+hand-editing a thousand lines of Grafana JSON is how `per-miner-details` came to plot
+none of the boards its own description promised.
 
 To add a new dashboard:
 1. Place the JSON file in this directory
