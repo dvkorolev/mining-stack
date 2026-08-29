@@ -75,6 +75,29 @@ miner_hashrate_mhs = Gauge('miner_hashrate_mhs', 'Miner hashrate in MH/s (SCRYPT
 # value does not have -- the exact conflation ALGORITHM_SEPARATION.md warns about.
 miner_expected_hashrate = Gauge('miner_expected_hashrate_ths', 'Rated hashrate for the miner model in TH/s (SHA-256 only)', ['ip', 'name', 'model', 'algorithm'])
 
+# Where that expectation came from (DMI-81). Since 2026-08-29 the figure is read
+# off the machine over API v3 (port 4433, `detect-hash-rate`) when it answers,
+# and only falls back to the model-string inference from asic_profiles.yaml when
+# it does not. Three machines are on the fallback: .74 and .78 do not answer on
+# 4433 at all, and .98 answers `-1:-1:-1`, meaning "not determined".
+#
+# Published as a complete set of series, like scheduler_config_source: an
+# inactive source reads 0 rather than vanishing, so a fallback is never
+# indistinguishable from the intended source (the DMI-58 rule).
+miner_expected_hashrate_source = Gauge(
+    'miner_expected_hashrate_source',
+    'Source of miner_expected_hashrate_ths (1=active, 0=inactive)',
+    ['ip', 'name', 'source'])
+
+# Rated output of each hashboard separately, straight from the machine (DMI-81).
+# This has no equivalent in asic_profiles.yaml, which only ever knew a
+# whole-machine figure. It makes per-board degradation expressible -- "slot 2 is
+# producing 40% of its own nameplate" -- instead of only whole-machine.
+miner_board_expected_hashrate = Gauge(
+    'miner_board_expected_hashrate_ths',
+    'Rated hashrate of one hashboard in TH/s, as the miner reports it',
+    ['ip', 'name', 'model', 'slot'])
+
 # Gap-filling observability
 miner_gaps_filled_total = Counter('miner_gaps_filled_total', 'Count of gaps filled by CGMiner', ['type'])
 
@@ -118,6 +141,11 @@ _miner_pool_label_cache = {}  # {ip: {(name, url, pool_index), ...}}
 
 # Board and fan series published per miner, same purpose as the pool cache.
 _miner_board_label_cache = {}  # {ip: {(name, model, slot), ...}}
+
+# DMI-81 series, same purpose again. Both carry label sets of their own, so
+# neither is reachable through get_all_miner_metrics().
+_miner_expected_source_cache = {}  # {ip: {(name, source), ...}}
+_miner_expected_board_cache = {}   # {ip: {(name, model, slot), ...}}
 _miner_fan_label_cache = {}    # {ip: {(name, model, fan_id), ...}}
 
 # The board gauges all carry the same label set, so one cache serves them all.
@@ -251,6 +279,95 @@ def set_miner_fans(ip: str, name: str, model: str, fans) -> None:
         _miner_fan_label_cache[ip] = published
     else:
         _miner_fan_label_cache.pop(ip, None)
+
+
+def publish_expected_hashrate_source(ip: str, name: str, source: str, known_sources) -> None:
+    """
+    Publish where this miner's rated hashrate came from (DMI-81).
+
+    Every known source gets a series so the inactive ones read 0 rather than
+    vanishing — the same reasoning as publish_config_source: an absent series
+    and a false one look identical in a graph, and an alert on a fallback needs
+    the label to exist before the fallback happens.
+
+    Args:
+        ip, name: the miner.
+        source: the active source (rated_hashrate.SOURCE_*).
+        known_sources: every possible value (rated_hashrate.SOURCES).
+    """
+    published = set()
+    for known in known_sources:
+        miner_expected_hashrate_source.labels(ip=ip, name=name, source=known).set(
+            1 if known == source else 0)
+        published.add((name, known))
+
+    for stale in _miner_expected_source_cache.get(ip, set()) - published:
+        _remove_expected_source_series(ip, stale)
+    _miner_expected_source_cache[ip] = published
+
+
+def set_miner_expected_boards(ip: str, name: str, model: str, boards_ghs) -> None:
+    """
+    Publish each hashboard's rated output, from the machine's own report.
+
+    Args:
+        ip: miner address, the cache key.
+        name, model: the remaining board labels.
+        boards_ghs: per-board rated output in GH/s, in slot order, or None when
+                    the machine did not state one.
+
+    Absent is not zero, the same rule set_miner_boards follows: a machine that
+    answers `-1:-1:-1` (".98") or does not answer at all gets no series here,
+    rather than a published 0 asserting it is rated to produce nothing.
+    """
+    published = set()
+    if boards_ghs:
+        for slot, ghs in enumerate(boards_ghs):
+            slot = str(slot)
+            miner_board_expected_hashrate.labels(
+                ip=ip, name=name, model=model, slot=slot).set(ghs / 1000.0)
+            published.add((name, model, slot))
+
+    for stale in _miner_expected_board_cache.get(ip, set()) - published:
+        _remove_expected_board_series(ip, stale)
+
+    if published:
+        _miner_expected_board_cache[ip] = published
+    else:
+        _miner_expected_board_cache.pop(ip, None)
+
+
+def _remove_expected_source_series(ip: str, labels) -> None:
+    """Remove one expected-hashrate-source series."""
+    name, source = labels
+    try:
+        miner_expected_hashrate_source.remove(ip, name, source)
+    except (KeyError, ValueError):
+        pass
+
+
+def _remove_expected_board_series(ip: str, labels) -> None:
+    """Remove one per-board rated-hashrate series."""
+    name, model, slot = labels
+    try:
+        miner_board_expected_hashrate.remove(ip, name, model, slot)
+    except (KeyError, ValueError):
+        pass
+
+
+def remove_miner_expected_series(ip: str) -> None:
+    """
+    Drop the DMI-81 series for a miner that is gone or unreachable.
+
+    Both carry label sets of their own (`source`, `slot`) instead of
+    `algorithm`, so neither is reachable through get_all_miner_metrics() and
+    each needs its own removal path — the same gap that left board and fan
+    series behind in every cleanup before DMI-55.
+    """
+    for labels in _miner_expected_source_cache.pop(ip, set()):
+        _remove_expected_source_series(ip, labels)
+    for labels in _miner_expected_board_cache.pop(ip, set()):
+        _remove_expected_board_series(ip, labels)
 
 
 def _remove_board_series(ip: str, labels) -> None:
@@ -439,6 +556,7 @@ def forget_miner(ip: str) -> bool:
     remove_miner_board_series(ip)
     remove_miner_fan_series(ip)
     remove_miner_pool_series(ip)
+    remove_miner_expected_series(ip)
     _miner_label_cache.pop(ip, None)
     return known
 
