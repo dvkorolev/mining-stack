@@ -64,6 +64,8 @@ jobs:
         working-directory: python-scheduler
       - run: python test_rated_hashrate.py
         working-directory: python-scheduler
+      - run: python test_dockerfile_completeness.py
+        working-directory: python-scheduler
 
   router-exporter:
     runs-on: ubuntu-latest
