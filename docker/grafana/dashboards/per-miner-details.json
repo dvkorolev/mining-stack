@@ -1,34 +1,884 @@
 {
-  "id": null,
   "uid": "per-miner-details",
   "title": "Per-Miner Details (SHA-256)",
-  "tags": ["mining", "per-miner", "sha256"],
+  "tags": [
+    "mining",
+    "per-miner",
+    "sha256"
+  ],
   "timezone": "browser",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
-  "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
-  "links": [],
-  "liveNow": false,
   "time": {
     "from": "now-6h",
     "to": "now"
   },
-  "timepicker": {},
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "miner",
+        "type": "query",
+        "label": "Miner",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(miner_scrape_status, name)",
+          "refId": "miner"
+        },
+        "definition": "label_values(miner_scrape_status, name)",
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {},
+        "options": []
+      }
+    ]
+  },
   "panels": [
     {
-      "id": 1,
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
-      "type": "timeseries",
-      "title": "SHA-256 Hashrate by Miner (TH/s)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "type": "row",
+      "title": "At a glance",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Hashrate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
       "targets": [
         {
-          "expr": "max by (ip, name) (miner_hashrate_ths{algorithm=\"sha256\"})",
-          "legendFormat": "{{name}} ({{ip}})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_hashrate_ths{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "TH/s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Rated (nameplate)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_expected_hashrate_ths{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "TH/s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "% of nameplate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * max(miner_hashrate_ths{name=\"$miner\"}) / max(miner_expected_hashrate_ths{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Power",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_power_watts{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Efficiency",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_efficiency_j_th{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Hottest chip",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_board_chip_temp_c{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 105
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "State",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_state{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "faulty",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "idle",
+                  "color": "orange",
+                  "index": 1
+                },
+                "2": {
+                  "text": "mining",
+                  "color": "green",
+                  "index": 2
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Scrape",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_scrape_status{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "2": {
+                  "text": "ok",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "partial",
+                  "color": "orange",
+                  "index": 1
+                },
+                "0.5": {
+                  "text": "cgi fallback",
+                  "color": "orange",
+                  "index": 2
+                },
+                "0": {
+                  "text": "timeout",
+                  "color": "red",
+                  "index": 3
+                },
+                "-1": {
+                  "text": "refused",
+                  "color": "red",
+                  "index": 4
+                },
+                "-2": {
+                  "text": "error",
+                  "color": "red",
+                  "index": 5
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Nameplate source",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (source) (miner_expected_hashrate_source{name=\"$miner\"} == 1)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Uptime",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_uptime_seconds{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Errors",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_errors_count{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Fault light",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(miner_fault_light_on{name=\"$miner\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "off",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "ON",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Hashboards",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Board hashrate vs its own nameplate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_hashrate_ths{name=\"$miner\"}",
+          "legendFormat": "slot {{slot}} actual",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_expected_hashrate_ths{name=\"$miner\"}",
+          "legendFormat": "slot {{slot}} rated",
+          "refId": "B"
         }
       ],
       "fieldConfig": {
@@ -37,7 +887,7 @@
             "drawStyle": "line",
             "lineInterpolation": "smooth",
             "lineWidth": 2,
-            "fillOpacity": 10,
+            "fillOpacity": 8,
             "showPoints": "never",
             "spanNulls": true,
             "axisPlacement": "auto",
@@ -50,7 +900,8 @@
           "color": {
             "mode": "palette-classic"
           }
-        }
+        },
+        "overrides": []
       },
       "options": {
         "tooltip": {
@@ -59,129 +910,59 @@
         },
         "legend": {
           "displayMode": "table",
-          "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
         }
       }
     },
     {
-      "id": 2,
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 10},
       "type": "timeseries",
-      "title": "SHA-256 Power Consumption by Miner (W)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{
-        "expr": "max by (ip, name) (miner_power_watts{algorithm=\"sha256\"})",
-        "legendFormat": "{{name}} ({{ip}})",
-        "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisPlacement": "auto",
-            "axisLabel": "Power (W)",
-            "scaleDistribution": {
-              "type": "linear"
-            }
-          },
-          "unit": "watt",
-          "color": {
-            "mode": "palette-classic"
-          }
-        }
+      "title": "Board (PCB) vs chip temperature",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
       },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
-        }
-      }
-    },
-    {
-      "id": 3,
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 20},
-      "type": "timeseries",
-      "title": "SHA-256 Rejection Rate by Miner (%) - Lifetime",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{
-        "expr": "100 * (max by (ip, name) (miner_pool_rejected_total{algorithm=\"sha256\"}) / (max by (ip, name) (miner_pool_accepted_total{algorithm=\"sha256\"}) + max by (ip, name) (miner_pool_rejected_total{algorithm=\"sha256\"})))",
-        "legendFormat": "{{name}} ({{ip}})",
-        "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisPlacement": "auto",
-            "axisLabel": "Rejection Rate (%)",
-            "scaleDistribution": {
-              "type": "linear"
-            }
-          },
-          "unit": "percent",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {"value": 0, "color": "green"},
-              {"value": 2, "color": "yellow"},
-              {"value": 5, "color": "red"}
-            ]
-          }
-        }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
       },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_temp_c{name=\"$miner\"}",
+          "legendFormat": "slot {{slot}} PCB",
+          "refId": "A"
         },
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_chip_temp_c{name=\"$miner\"}",
+          "legendFormat": "slot {{slot}} chip",
+          "refId": "B"
         }
-      }
-    },
-    {
-      "id": 4,
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 30},
-      "type": "timeseries",
-      "title": "SHA-256 Temperature by Miner (°C)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{
-        "expr": "max by (ip, name) (miner_temp_max_c{algorithm=\"sha256\"})",
-        "legendFormat": "{{name}} ({{ip}})",
-        "refId": "A"
-      }],
+      ],
       "fieldConfig": {
         "defaults": {
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
             "lineWidth": 2,
-            "fillOpacity": 10,
+            "fillOpacity": 8,
             "showPoints": "never",
             "spanNulls": true,
             "axisPlacement": "auto",
-            "axisLabel": "Temperature (°C)",
+            "axisLabel": "Temperature (C)",
             "scaleDistribution": {
               "type": "linear"
             }
@@ -189,17 +970,9 @@
           "unit": "celsius",
           "color": {
             "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {"value": 0, "color": "green"},
-              {"value": 75, "color": "yellow"},
-              {"value": 85, "color": "orange"},
-              {"value": 95, "color": "red"}
-            ]
           }
-        }
+        },
+        "overrides": []
       },
       "options": {
         "tooltip": {
@@ -208,166 +981,556 @@
         },
         "legend": {
           "displayMode": "table",
-          "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
         }
       }
     },
     {
-      "id": 5,
-      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 40},
       "type": "table",
-      "title": "SHA-256 Detailed Miner Statistics",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "title": "Per-board detail",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
       "targets": [
         {
-          "expr": "max by (ip, name, model, algorithm) (miner_hashrate_ths{algorithm=\"sha256\"})",
-          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_hashrate_ths{name=\"$miner\"}",
+          "refId": "A",
           "instant": true,
-          "refId": "A"
+          "format": "table"
         },
         {
-          "expr": "max by (ip) (miner_power_watts{algorithm=\"sha256\"})",
-          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_expected_hashrate_ths{name=\"$miner\"}",
+          "refId": "B",
           "instant": true,
-          "refId": "B"
+          "format": "table"
         },
         {
-          "expr": "max by (ip) (miner_temp_max_c{algorithm=\"sha256\"})",
-          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * miner_board_hashrate_ths{name=\"$miner\"} / miner_board_expected_hashrate_ths{name=\"$miner\"}",
+          "refId": "C",
           "instant": true,
-          "refId": "C"
+          "format": "table"
         },
         {
-          "expr": "max by (ip) (miner_efficiency_j_th{algorithm=\"sha256\"})",
-          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_chips_count{name=\"$miner\"}",
+          "refId": "D",
           "instant": true,
-          "refId": "D"
+          "format": "table"
         },
         {
-          "expr": "100 * (max by (ip) (miner_pool_rejected_total{algorithm=\"sha256\"}) / (max by (ip) (miner_pool_accepted_total{algorithm=\"sha256\"}) + max by (ip) (miner_pool_rejected_total{algorithm=\"sha256\"})))",
-          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_chips_expected{name=\"$miner\"}",
+          "refId": "E",
           "instant": true,
-          "refId": "E"
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_temp_c{name=\"$miner\"}",
+          "refId": "F",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_board_chip_temp_c{name=\"$miner\"}",
+          "refId": "G",
+          "instant": true,
+          "format": "table"
         }
       ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% of rated"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 50
+                    },
+                    {
+                      "color": "green",
+                      "value": 80
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Chip C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 100
+                    },
+                    {
+                      "color": "red",
+                      "value": 105
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "PCB C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      },
       "transformations": [
         {
-          "id": "merge",
-          "options": {}
+          "id": "joinByField",
+          "options": {
+            "byField": "slot",
+            "mode": "outer"
+          }
         },
         {
           "id": "organize",
           "options": {
             "excludeByName": {
               "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "Time 6": true,
+              "Time 7": true,
+              "ip": true,
+              "ip 1": true,
+              "ip 2": true,
+              "ip 3": true,
+              "ip 4": true,
+              "ip 5": true,
+              "ip 6": true,
+              "ip 7": true,
+              "name": true,
+              "name 1": true,
+              "name 2": true,
+              "name 3": true,
+              "name 4": true,
+              "name 5": true,
+              "name 6": true,
+              "name 7": true,
+              "model": true,
+              "model 1": true,
+              "model 2": true,
+              "model 3": true,
+              "model 4": true,
+              "model 5": true,
+              "model 6": true,
+              "model 7": true,
               "__name__": true,
-              "job": true,
-              "instance": true
-            },
-            "indexByName": {
-              "name": 0,
-              "ip": 1,
-              "model": 2,
-              "Value #A": 3,
-              "Value #B": 4,
-              "Value #C": 5,
-              "Value #D": 6,
-              "Value #E": 7
+              "__name__ 1": true,
+              "__name__ 2": true,
+              "__name__ 3": true,
+              "__name__ 4": true,
+              "__name__ 5": true,
+              "__name__ 6": true,
+              "__name__ 7": true
             },
             "renameByName": {
-              "name": "Miner",
-              "ip": "IP",
-              "model": "Model",
-              "Value #A": "Hashrate (TH/s)",
-              "Value #B": "Power (W)",
-              "Value #C": "Temp (°C)",
-              "Value #D": "Efficiency (J/TH)",
-              "Value #E": "Rejection (%)"
+              "slot": "Slot",
+              "Value #A": "Hashrate TH/s",
+              "Value #B": "Rated TH/s",
+              "Value #C": "% of rated",
+              "Value #D": "Chips",
+              "Value #E": "Chips expected",
+              "Value #F": "PCB C",
+              "Value #G": "Chip C"
             }
           }
         }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Cooling",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Fan speed",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_fan_speed_rpm{name=\"$miner\"}",
+          "legendFormat": "fan {{fan_id}}",
+          "refId": "A"
+        }
       ],
       "fieldConfig": {
-        "defaults": {},
-        "overrides": [
-          {
-            "matcher": {"id": "byName", "options": "Temp (°C)"},
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {"value": 0, "color": "green"},
-                    {"value": 75, "color": "yellow"},
-                    {"value": 85, "color": "orange"},
-                    {"value": 95, "color": "red"}
-                  ]
-                }
-              }
-            ]
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "auto",
+            "axisLabel": "RPM",
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
-          {
-            "matcher": {"id": "byName", "options": "Rejection (%)"},
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {"value": 0, "color": "green"},
-                    {"value": 2, "color": "yellow"},
-                    {"value": 5, "color": "red"}
-                  ]
-                }
-              },
-              {
-                "id": "decimals",
-                "value": 2
-              }
-            ]
-          },
-          {
-            "matcher": {"id": "byName", "options": "Hashrate (TH/s)"},
-            "properties": [
-              {
-                "id": "decimals",
-                "value": 1
-              }
-            ]
-          },
-          {
-            "matcher": {"id": "byName", "options": "Power (W)"},
-            "properties": [
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          },
-          {
-            "matcher": {"id": "byName", "options": "Efficiency (J/TH)"},
-            "properties": [
-              {
-                "id": "decimals",
-                "value": 1
-              }
-            ]
+          "unit": "rotrpm",
+          "color": {
+            "mode": "palette-classic"
           }
-        ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Temperature the alerts actually read (miner_temp_max_c)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_temp_max_c{name=\"$miner\"}",
+          "legendFormat": "max temp",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "auto",
+            "axisLabel": "Temperature (C)",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "unit": "celsius",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Pools and shares",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Pool alive, as the miner reports it",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "miner_pool_alive{name=\"$miner\"}",
+          "legendFormat": "{{pool_index}} {{url}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "auto",
+            "axisLabel": "1 = alive",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "max": 1.2,
+          "min": -0.2
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Share rate (accepted / rejected per second)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(miner_pool_accepted_total{name=\"$miner\"}[10m])",
+          "legendFormat": "accepted/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(miner_pool_rejected_total{name=\"$miner\"}[10m])",
+          "legendFormat": "rejected/s",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "auto",
+            "axisLabel": "shares/s",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        }
       }
     }
   ]
