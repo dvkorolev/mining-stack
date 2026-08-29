@@ -12,7 +12,12 @@ from typing import List, Dict
 # Configuration
 MINERS_CONFIG = os.getenv('MINERS_CONFIG', '/app/etc/miners.yaml')
 COLLECTION_INTERVAL = int(os.getenv('COLLECTION_INTERVAL', '2'))  # minutes
-MAX_CONCURRENT_REQUESTS = 5
+# Miners polled in parallel per cycle. Measured 2026-08-29: a full cycle over
+# 21 machines takes 7-9 s of the 120 s interval at 5, with zero skipped runs,
+# so the default is left alone -- this is env-driven only so it can be raised
+# without a rebuild if enough machines start timing out (each timeout holds a
+# slot for 15 s).
+MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', '5'))
 BACKEND_URL = os.getenv('BACKEND_URL', 'http://backend:5000')
 PUSH_TO_BACKEND = os.getenv('PUSH_TO_BACKEND', 'true').lower() == 'true'
 SYSTEM_API_KEY = os.getenv('SYSTEM_API_KEY', '')  # For authenticating with backend
