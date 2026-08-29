@@ -71,6 +71,48 @@ scheduler = None
 
 FAILURE_THRESHOLD = 5
 
+# DMI-87: consecutive failures after which a fallback method is skipped for a
+# miner. Measured on the Pi 2026-08-29: whatsminer_cgi had run 1300 attempts
+# with zero successes -- two machines whose hashrate is genuinely 0 (`.117`
+# with its pools deliberately cleared, `.58` at a flat 0) triggered a doomed
+# CGI fetch every cycle, forever, at ~1440 requests a day.
+#
+# The breaker is per (miner, method) rather than per trigger reason: the first
+# reading of this said to cut the board/fan-mismatch triggers, and the
+# measurement inverted it -- those had never fired once, while zero_hashrate,
+# the one that looked legitimate, was the entire cost.
+FALLBACK_FAILURE_THRESHOLD = 3
+
+# driver type in asic_profiles.yaml -> fallback method name.
+# 'dg1_tcp' maps to the HTTP collector deliberately; that is what the branch it
+# replaces did.
+FALLBACK_METHOD_BY_DRIVER = {
+    'whatsminer_cgi': 'whatsminer_cgi',
+    'antminer_cgi': 'antminer_cgi',
+    'dg1_tcp': 'dg1_http',
+}
+
+FALLBACK_COLLECTORS = {
+    'whatsminer_cgi': collect_whatsminer_cgi,
+    'antminer_cgi': collect_antminer_cgi,
+    'dg1_http': collect_dg1_http,
+}
+
+
+def _record_fallback_skip(method: str, miner: Dict) -> None:
+    """
+    Count a fallback attempt that was suppressed by the breaker.
+
+    Suppression is not silence (the DMI-58 rule): the skip is counted under its
+    own result label, so a method that has been switched off is visible in the
+    metric rather than simply absent from it.
+    """
+    miner_fallback_total.labels(method=method, result='skipped').inc()
+    logger.info(
+        f"  → Fallback {method} skipped for {miner['name']} ({miner['ip']}): "
+        f"{FALLBACK_FAILURE_THRESHOLD} consecutive failures"
+    )
+
 
 # ============================================================================
 # POOL HEALTH
@@ -293,6 +335,12 @@ async def collect_all_metrics():
                         fallback_reason = f"fan_mismatch ({actual_fans}/{expected_fans})"
                         logger.warning(f"  ⚠ Fan count mismatch on {miner['name']}: {actual_fans} found, {expected_fans} expected")
                 
+                if not needs_fallback:
+                    # Primary collection is healthy, so re-arm every breaker for
+                    # this machine: the next fault gets a fresh attempt instead
+                    # of inheriting one opened by an older, unrelated one.
+                    service_state.reset_fallback_failures(miner['ip'])
+
                 if needs_fallback:
                     # Bucket reason to a bounded category (strip any parenthetical detail like "(2/3)")
                     _reason_category = fallback_reason.split()[0] if fallback_reason else 'unknown'
@@ -300,7 +348,10 @@ async def collect_all_metrics():
                     logger.info(f"  → Fallback triggered for {miner['name']}: {fallback_reason}")
                     fallback_data = None
                     fallback_method = None
-                    
+                    blocked_methods = service_state.blocked_fallback_methods(
+                        miner['ip'], FALLBACK_FAILURE_THRESHOLD
+                    )
+
                     # Get profile for this miner to determine fallback drivers
                     profile = profile_library.get_profile(miner['model'], miner.get('algorithm'))
                     
@@ -317,60 +368,59 @@ async def collect_all_metrics():
                             if driver_type in ('pyasic', 'cgminer'):
                                 continue  # Already tried
 
-                            if driver_type == 'whatsminer_cgi':
-                                logger.info(f"  Trying Whatsminer CGI fallback (web interface) for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
-                                fallback_attempts += 1
-                                fallback_data = await collect_whatsminer_cgi(miner)
-                                fallback_method = 'whatsminer_cgi'
-                                if fallback_data:
-                                    break
-                            elif driver_type == 'antminer_cgi':
-                                logger.info(f"  Trying Antminer CGI fallback for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
-                                fallback_attempts += 1
-                                fallback_data = await collect_antminer_cgi(miner)
-                                fallback_method = 'antminer_cgi'
-                                if fallback_data:
-                                    break
-                            elif driver_type == 'dg1_tcp':
-                                logger.info(f"  Trying DG1 HTTP fallback for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
-                                fallback_attempts += 1
-                                fallback_data = await collect_dg1_http(miner)
-                                fallback_method = 'dg1_http'
-                                if fallback_data:
-                                    break
+                            method = FALLBACK_METHOD_BY_DRIVER.get(driver_type)
+                            if method is None:
+                                continue  # No collector for this driver type
+
+                            if method in blocked_methods:
+                                _record_fallback_skip(method, miner)
+                                continue
+
+                            logger.info(f"  Trying {method} fallback for {miner['name']} ({miner['ip']}) [profile: {profile.id}]")
+                            fallback_attempts += 1
+                            fallback_data = await FALLBACK_COLLECTORS[method](miner)
+                            fallback_method = method
+                            if fallback_data:
+                                break
                     else:
                         # No profile found, use legacy hard-coded fallback logic
                         model_lower = miner['model'].lower()
                         logger.debug(f"No profile found for {miner['model']}, using legacy fallback logic")
-                        
-                        # Try Whatsminer CGI for Whatsminer models (web interface fallback)
+
                         # Note: whatsminer_cgminer removed as it duplicates PyASIC's native CGMiner support
                         if 'whatsminer' in model_lower or 'm30' in model_lower or 'm50' in model_lower or 'm20' in model_lower:
-                            logger.info(f"  Trying Whatsminer CGI fallback (web interface) for {miner['name']} ({miner['ip']}) [legacy]")
-                            fallback_attempts += 1
-                            fallback_data = await collect_whatsminer_cgi(miner)
-                            fallback_method = 'whatsminer_cgi'
-                        
-                        # Try Antminer CGI driver for Antminers
+                            method = 'whatsminer_cgi'
                         elif 'antminer' in model_lower or 's19' in model_lower or 's17' in model_lower:
-                            logger.info(f"  Trying Antminer CGI fallback for {miner['name']} ({miner['ip']}) [legacy]")
-                            fallback_attempts += 1
-                            fallback_data = await collect_antminer_cgi(miner)
-                            fallback_method = 'antminer_cgi'
-                        
-                        # Try DG1 HTTP driver for DG1 miners
+                            method = 'antminer_cgi'
                         elif 'dg1' in model_lower:
-                            logger.info(f"  Trying DG1 HTTP fallback for {miner['name']} ({miner['ip']}) [legacy]")
+                            method = 'dg1_http'
+                        else:
+                            method = None
+
+                        if method is not None and method in blocked_methods:
+                            _record_fallback_skip(method, miner)
+                        elif method is not None:
+                            logger.info(f"  Trying {method} fallback for {miner['name']} ({miner['ip']}) [legacy]")
                             fallback_attempts += 1
-                            fallback_data = await collect_dg1_http(miner)
-                            fallback_method = 'dg1_http'
-                    
+                            fallback_data = await FALLBACK_COLLECTORS[method](miner)
+                            fallback_method = method
+
+
                     # Record the fallback attempt outcome (method is None only if no driver matched the model)
                     if fallback_method is not None:
                         miner_fallback_total.labels(
                             method=fallback_method,
                             result='success' if fallback_data else 'failure'
                         ).inc()
+                        streak = service_state.record_fallback_result(
+                            miner['ip'], fallback_method, bool(fallback_data)
+                        )
+                        if streak == FALLBACK_FAILURE_THRESHOLD:
+                            logger.warning(
+                                f"  ⚠ Fallback {fallback_method} disabled for {miner['name']} "
+                                f"({miner['ip']}) after {streak} consecutive failures; "
+                                f"re-armed when its primary collection is healthy again"
+                            )
 
                     # If fallback succeeded, merge and update metrics
                     if fallback_data:
