@@ -161,6 +161,43 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Host metrics for the Pi itself. Added 2026-08-29: mining_alerts.yml has
+  # carried HighCPUUsage, HighMemoryUsage and LowDiskSpace since the beginning,
+  # all three reading node_* series that nothing published -- `count(node_cpu_
+  # seconds_total)` returned NO SERIES. Three rules that looked like coverage
+  # and could never fire, the same shape as the pool_network_* constants
+  # removed in DMI-86.
+  #
+  # LowDiskSpace is the one that mattered: Prometheus retention was raised to
+  # 90d on the strength of 40 GB free, with nothing watching that free space.
+  node-exporter:
+    image: prom/node-exporter:latest
+    platform: linux/arm64
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.rootfs=/host'
+      # The Pi's own filesystem is the point; container and virtual mounts are
+      # noise that would also make LowDiskSpace fire on tmpfs.
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|run)($$|/)'
+    volumes:
+      - /:/host:ro,rslave
+    pid: host
+    networks:
+      - mining-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   blackbox-exporter:
     image: prom/blackbox-exporter:latest
     platform: linux/arm64

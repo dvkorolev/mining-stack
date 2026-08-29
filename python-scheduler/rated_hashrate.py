@@ -59,10 +59,11 @@ READ_TIMEOUT = 10.0
 # Source labels for `miner_expected_hashrate_source`. Same discipline as
 # DMI-58's config provenance: a fallback must never be indistinguishable from
 # the intended source.
-SOURCE_V3 = 'v3'            # asked the machine
-SOURCE_PROFILE = 'profile'  # inferred from the model string
-SOURCE_NONE = 'none'        # no expectation published at all
-SOURCES = (SOURCE_V3, SOURCE_PROFILE, SOURCE_NONE)
+SOURCE_V3 = 'v3'                # asked the machine over API v3 (port 4433)
+SOURCE_CGMINER = 'cgminer'      # `Factory GHS` from the machine's own `devs`
+SOURCE_PROFILE = 'profile'      # inferred from the model string
+SOURCE_NONE = 'none'            # no expectation published at all
+SOURCES = (SOURCE_V3, SOURCE_CGMINER, SOURCE_PROFILE, SOURCE_NONE)
 
 
 class RatedHashrate(NamedTuple):

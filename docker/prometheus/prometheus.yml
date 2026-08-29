@@ -101,6 +101,17 @@ scrape_configs:
     scrape_interval: 60s
     scrape_timeout: 10s
 
+  # Host metrics for the Pi. Without this job the node_* series do not exist,
+  # and HighCPUUsage / HighMemoryUsage / LowDiskSpace in mining_alerts.yml are
+  # rules that can never fire (verified 2026-08-29: count(node_cpu_seconds_
+  # total) returned no series).
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    metrics_path: /metrics
+    scrape_interval: 60s
+    scrape_timeout: 10s
+
   # ============================================================================
   # External Monitoring - Blackbox Exporter
   # ============================================================================
