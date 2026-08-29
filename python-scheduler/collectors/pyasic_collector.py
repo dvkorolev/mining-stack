@@ -12,7 +12,8 @@ from pyasic import get_miner
 
 from config import MAX_CONCURRENT_REQUESTS
 from parsers.cgminer_parser import parse_cgminer_response
-from asic_profile_loader import get_library, expected_hashrate_ths
+from asic_profile_loader import get_library, expected_hashrate_ths, resolve_expected_hashrate
+from rated_hashrate import SOURCES as RATED_SOURCES, get_rated
 from metrics import (
     miner_hashrate, miner_power, miner_temp_max, miner_is_mining,
     miner_uptime, miner_efficiency, miner_fault_light, miner_errors_count,
@@ -20,7 +21,8 @@ from metrics import (
     miner_pool_accepted,
     miner_pool_rejected, collection_duration, collection_success,
     collection_timestamp, miner_gaps_filled_total, update_miner_label_cache,
-    set_miner_pools, set_miner_boards, set_miner_fans
+    set_miner_pools, set_miner_boards, set_miner_fans,
+    publish_expected_hashrate_source, set_miner_expected_boards
 )
 from parsers.pool_status import extract_pool_status
 from parsers.board_readings import boards_from_devs
@@ -270,13 +272,21 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     else:
         # SHA-256: hashrate is in TH/s
         miner_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(hashrate)
-        # Publish the model's rated hashrate so the SHA-256 degradation alerts have
-        # something to compare against (DMI-59). Only when the profile actually states
-        # one: whatsminer_generic covers miners that report no model, and inventing a
-        # figure for those would make the alerts fire on a guess.
-        expected_hashrate = expected_hashrate_ths(model, algorithm)
+        # Publish the rated hashrate so the SHA-256 degradation alerts have
+        # something to compare against (DMI-59), preferring what the machine says
+        # about itself over what its model string implies (DMI-81). Only when one
+        # of the two actually states a figure: whatsminer_generic covers miners
+        # that report no model, and inventing one would make the alerts fire on a
+        # guess.
+        expected_hashrate, expected_source = resolve_expected_hashrate(ip, model, algorithm)
         if expected_hashrate:
             miner_expected_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(expected_hashrate)
+        publish_expected_hashrate_source(ip, name, expected_source, RATED_SOURCES)
+
+        # Per-board nameplate, which only the machine knows. None when it did not
+        # state one -- absent is not zero.
+        rated = get_rated(ip)
+        set_miner_expected_boards(ip, name, model, rated.boards_ghs if rated else None)
 
     power = float(data.get('power', 0) or 0)
     temperature = float(data.get('temperature', 0) or 0)

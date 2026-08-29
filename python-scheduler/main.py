@@ -27,8 +27,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 # Import our modules
+import rated_hashrate
 from config import (
-    MINERS_CONFIG, COLLECTION_INTERVAL,
+    MINERS_CONFIG, COLLECTION_INTERVAL, MAX_CONCURRENT_REQUESTS,
     BACKEND_URL, PUSH_TO_BACKEND, INTERNAL_METRICS_TOKEN,
     CONFIG_SOURCES, DEGRADED_CONFIG_SOURCES, TRUSTED_CONFIG_SOURCES,
     load_miners_config, invalidate_config_cache,
@@ -42,6 +43,7 @@ from metrics import (
     miner_fallback_trigger_total, miner_fallback_total,
     remove_miner_series, remove_miner_pool_series, publish_config_source,
     remove_miner_board_series, remove_miner_fan_series, get_stale_value_metrics,
+    remove_miner_expected_series,
     forget_unconfigured_miners
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
@@ -231,6 +233,16 @@ async def collect_all_metrics():
                     service_state.forget_miner(ip)
                     log_event(logger, 'info', 'Miner left the configuration, dropping its series',
                              miner_ip=ip, config_source=config_source)
+                rated_hashrate.forget_unconfigured(configured_ips)
+
+            # DMI-81: refresh the nameplate hashrate read off the machines
+            # themselves. Nearly always a no-op -- entries are cached for an
+            # hour, because detect-hash-rate only changes if someone physically
+            # swaps a hashboard.
+            rated_summary = await rated_hashrate.refresh(miners, MAX_CONCURRENT_REQUESTS)
+            if rated_summary['fetched']:
+                log_event(logger, 'info', 'Refreshed rated hashrates from API v3',
+                         **rated_summary)
 
             pyasic_result = await collect_pyasic_metrics(miners)
             miners_data = pyasic_result.get('miners_data', [])
@@ -519,6 +531,7 @@ async def collect_all_metrics():
                         # `algorithm`, so they need their own removal path and were
                         # missed by every earlier cleanup.
                         remove_miner_board_series(miner['ip'])
+                        remove_miner_expected_series(miner['ip'])
                         remove_miner_fan_series(miner['ip'])
                         # A miner this far past the failure threshold is telling
                         # us nothing about its pools either; leaving the last

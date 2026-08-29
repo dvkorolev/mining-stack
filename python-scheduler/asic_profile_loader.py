@@ -356,3 +356,41 @@ def expected_hashrate_ths(model: str, algorithm_override: str = None) -> Optiona
     if profile is None or profile.algorithm != 'sha256':
         return None
     return profile.get_expected_hashrate()
+
+
+def resolve_expected_hashrate(ip: str, model: str, algorithm_override: str = None):
+    """
+    Rated hashrate in TH/s and where it came from (DMI-81).
+
+    Prefers what the machine says about itself over what the model string
+    implies. The profile is a family-wide band -- `whatsminer_m30s` is 80-120
+    and returns the mean 100 for M30S, M30S+ and M30S++ alike -- so it
+    understated every one of the 18 machines that answered the 2026-08-28
+    sweep, by +5.2% in aggregate and +23.4% on `.126`.
+
+    Returns:
+        (value, source) where source is one of rated_hashrate.SOURCE_*.
+        A value of None always pairs with SOURCE_NONE and means "publish no
+        series", exactly as expected_hashrate_ths() has always meant it.
+
+    The fallback is reported rather than hidden: a machine served from the
+    profile because 4433 did not answer must not look identical to one that was
+    actually asked. Same rule as DMI-58's config provenance.
+    """
+    # Import here: rated_hashrate is only needed on this path, and keeping the
+    # import local avoids a cycle if it ever grows a profile dependency.
+    from rated_hashrate import SOURCE_NONE, SOURCE_PROFILE, SOURCE_V3, get_rated
+
+    if algorithm_override and algorithm_override.lower() != 'sha256':
+        return None, SOURCE_NONE
+
+    rated = get_rated(ip)
+    if rated is not None and rated.total_ths > 0:
+        # SCRYPT machines are excluded above; a v3 answer here is SHA-256 by
+        # construction, since only WhatsMiners speak this protocol.
+        return rated.total_ths, SOURCE_V3
+
+    value = expected_hashrate_ths(model, algorithm_override)
+    if value:
+        return value, SOURCE_PROFILE
+    return None, SOURCE_NONE
