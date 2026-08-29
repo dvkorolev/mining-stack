@@ -278,7 +278,15 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
         # of the two actually states a figure: whatsminer_generic covers miners
         # that report no model, and inventing one would make the alerts fire on a
         # guess.
-        expected_hashrate, expected_source = resolve_expected_hashrate(ip, model, algorithm)
+        # `Factory GHS` from the same `devs` response the board readings come
+        # from: a second, independent reading of the nameplate that reaches the
+        # one machine port 4433 refuses.
+        cgminer_boards = data.get('cgminer_boards') or {}
+        cgminer_rated = [b['rated'] for b in cgminer_boards.values() if b.get('rated')]
+        cgminer_rated_ths = sum(cgminer_rated) if cgminer_rated else None
+
+        expected_hashrate, expected_source = resolve_expected_hashrate(
+            ip, model, algorithm, cgminer_rated_ths)
         if expected_hashrate:
             miner_expected_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(expected_hashrate)
         publish_expected_hashrate_source(ip, name, expected_source, RATED_SOURCES)
@@ -286,7 +294,19 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
         # Per-board nameplate, which only the machine knows. None when it did not
         # state one -- absent is not zero.
         rated = get_rated(ip)
-        set_miner_expected_boards(ip, name, model, rated.boards_ghs if rated else None)
+        if rated:
+            expected_boards_ghs = rated.boards_ghs
+        elif cgminer_rated:
+            # Same order as the slots they came from, so the `slot` label lines
+            # up with miner_board_hashrate_ths.
+            expected_boards_ghs = [
+                cgminer_boards[slot]['rated'] * 1000.0
+                for slot in sorted(cgminer_boards, key=lambda s: int(s))
+                if cgminer_boards[slot].get('rated')
+            ]
+        else:
+            expected_boards_ghs = None
+        set_miner_expected_boards(ip, name, model, expected_boards_ghs)
 
     power = float(data.get('power', 0) or 0)
     temperature = float(data.get('temperature', 0) or 0)

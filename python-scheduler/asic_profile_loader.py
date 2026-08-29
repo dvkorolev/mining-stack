@@ -358,7 +358,8 @@ def expected_hashrate_ths(model: str, algorithm_override: str = None) -> Optiona
     return profile.get_expected_hashrate()
 
 
-def resolve_expected_hashrate(ip: str, model: str, algorithm_override: str = None):
+def resolve_expected_hashrate(ip: str, model: str, algorithm_override: str = None,
+                              cgminer_rated_ths: float = None):
     """
     Rated hashrate in TH/s and where it came from (DMI-81).
 
@@ -379,7 +380,8 @@ def resolve_expected_hashrate(ip: str, model: str, algorithm_override: str = Non
     """
     # Import here: rated_hashrate is only needed on this path, and keeping the
     # import local avoids a cycle if it ever grows a profile dependency.
-    from rated_hashrate import SOURCE_NONE, SOURCE_PROFILE, SOURCE_V3, get_rated
+    from rated_hashrate import (SOURCE_CGMINER, SOURCE_NONE, SOURCE_PROFILE,
+                                SOURCE_V3, get_rated)
 
     if algorithm_override and algorithm_override.lower() != 'sha256':
         return None, SOURCE_NONE
@@ -389,6 +391,13 @@ def resolve_expected_hashrate(ip: str, model: str, algorithm_override: str = Non
         # SCRYPT machines are excluded above; a v3 answer here is SHA-256 by
         # construction, since only WhatsMiners speak this protocol.
         return rated.total_ths, SOURCE_V3
+
+    # `Factory GHS` from the machine's own `devs`, summed per board. An
+    # independent second reading of the same nameplate: measured 2026-08-29 the
+    # two agree exactly (+0.0%) on 17 of 19 machines, and this one reaches .74,
+    # which refuses port 4433 altogether.
+    if cgminer_rated_ths and cgminer_rated_ths > 0:
+        return cgminer_rated_ths, SOURCE_CGMINER
 
     value = expected_hashrate_ths(model, algorithm_override)
     if value:
