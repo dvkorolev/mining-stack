@@ -38,6 +38,74 @@ const SHARE_HISTORY_WINDOW = 5 * 60 * 1000; // 5 minutes (matching Prometheus)
 const MAX_SHARE_SNAPSHOTS = 10; // Keep last 10 snapshots
 
 /**
+ * Last `miner_stats_history` row written per miner, for de-duplication (DMI-88).
+ *
+ * This reader runs on MINING_UPDATE_INTERVAL (30s) but the data it reads only
+ * changes on the scheduler's COLLECTION_INTERVAL (2 min): between polls
+ * Prometheus returns the same sample, so three rows in four were byte-identical
+ * to their predecessor apart from the timestamp. Measured on the Pi 2026-08-29:
+ * 1,758,296 rows over 30.15 days (58,318/day against 57,600 predicted), and of
+ * the last 200 rows for one miner, 149 were identical to the previous one — 75%,
+ * at exactly 30,002 ms spacing. The file was 283 MB, on an SD card, with three
+ * indexes updated per insert.
+ *
+ * In memory only: after a restart the first cycle writes a row for every miner,
+ * which is the correct behaviour anyway.
+ */
+interface HistorySnapshot {
+  hashrate: number;
+  temperature: number;
+  fanSpeed: number;
+  powerUsage: number;
+  rejectionRate: number;
+  uptime: number;
+  writtenAt: number;
+}
+
+export const lastHistoryRow = new Map<string, HistorySnapshot>();
+
+/**
+ * Write a row even when nothing changed, if the last one is older than this.
+ * Keeps the Worker Details graphs from developing unbounded gaps for a machine
+ * that is simply steady, and bounds how much a de-duplicated series can drift
+ * from the real sampling cadence.
+ */
+export const HISTORY_HEARTBEAT_MS = 10 * 60 * 1000;
+
+/**
+ * Whether this miner's row differs from the last one written for it.
+ *
+ * Comparison is exact equality across every persisted field. If a value ever
+ * carries float noise the rows simply never match and the behaviour falls back
+ * to writing every tick — the pre-DMI-88 behaviour, which is the safe direction
+ * for a de-duplication to fail in.
+ */
+export function shouldWriteHistoryRow(ip: string, next: Omit<HistorySnapshot, 'writtenAt'>, now: number): boolean {
+  const previous = lastHistoryRow.get(ip);
+  if (!previous) return true;
+  if (now - previous.writtenAt >= HISTORY_HEARTBEAT_MS) return true;
+  return (
+    previous.hashrate !== next.hashrate ||
+    previous.temperature !== next.temperature ||
+    previous.fanSpeed !== next.fanSpeed ||
+    previous.powerUsage !== next.powerUsage ||
+    previous.rejectionRate !== next.rejectionRate ||
+    previous.uptime !== next.uptime
+  );
+}
+
+/**
+ * Drop de-duplication state for miners that are no longer in the fleet, so the
+ * map cannot grow without bound across inventory changes (DMI-80's concern,
+ * applied to this cache).
+ */
+export function forgetRetiredHistoryRows(currentIps: Set<string>): void {
+  for (const ip of lastHistoryRow.keys()) {
+    if (!currentIps.has(ip)) lastHistoryRow.delete(ip);
+  }
+}
+
+/**
  * Calculate time-windowed rejection rate (similar to Prometheus rate())
  * Uses share deltas over the last 5 minutes
  */
@@ -271,6 +339,18 @@ export const getRealMiningStats = async (): Promise<MiningStats> => {
 
     const avgPower = minerStats.reduce((sum, m) => sum + (m.hardware?.powerUsage || 0), 0);
 
+    // Fleet rejection rate over the same 5-minute window the per-miner figure
+    // uses, through the same function — `shares.accepted`/`.rejected` are
+    // cumulative counters, so summing them directly would give a lifetime rate
+    // rather than a current one, and would answer a different question from the
+    // per-miner column beside it. Summing the counters first and taking the
+    // window of the sum also share-weights it for free: a machine submitting a
+    // handful of shares does not move the fleet figure like one submitting
+    // thousands.
+    const fleetAccepted = minerStats.reduce((sum, m) => sum + (m.shares?.accepted || 0), 0);
+    const fleetRejected = minerStats.reduce((sum, m) => sum + (m.shares?.rejected || 0), 0);
+    const fleetRejectionRate = calculateRejectionRate('__fleet__', fleetAccepted, fleetRejected);
+
     // Calculate aggregates
     const aggregates = calculateAggregates(minerStats, statsHistory);
 
@@ -303,22 +383,44 @@ export const getRealMiningStats = async (): Promise<MiningStats> => {
         totalMined: stats.totalMined,
         avgTemperature,
         avgPower,
-        rejectionRate: 0, // Would need pool data
+        // Fleet rejection rate over the same 5-minute window the per-miner
+        // figure uses. This was a hardcoded 0 with the comment "Would need pool
+        // data" — but the pool data is right here: rejectionRate per miner comes
+        // from miner_pool_accepted_total / miner_pool_rejected_total, collected
+        // fleet-wide. A stored zero was a fabricated measurement (DMI-88).
+        rejectionRate: fleetRejectionRate,
       };
       db.insertStats(dbRecord);
 
-      // Save per-miner stats history (for Worker Details graphs)
+      // Save per-miner stats history (for Worker Details graphs).
+      // Rows identical to the miner's previous one are skipped — see
+      // lastHistoryRow / DMI-88. The heartbeat keeps a steady machine from
+      // leaving a gap in the graphs.
+      forgetRetiredHistoryRows(new Set(minerStats.map((m) => m.ip)));
+
       for (const miner of minerStats) {
+        const row = {
+          hashrate: miner.currentHashrate,
+          temperature: miner.hardware?.temperature || 0,
+          fanSpeed: miner.hardware?.fanSpeed || 0,
+          powerUsage: miner.hardware?.powerUsage || 0,
+          rejectionRate: miner.shares?.rejectionRate || 0,
+          uptime: miner.uptime || 0,
+        };
+
+        if (!shouldWriteHistoryRow(miner.ip, row, stats.timestamp)) continue;
+
         db.insertMinerStatsHistory({
           miner_ip: miner.ip,
           timestamp: stats.timestamp,
-          hashrate: miner.currentHashrate,
-          temperature: miner.hardware?.temperature || 0,
-          fan_speed: miner.hardware?.fanSpeed || 0,
-          power_usage: miner.hardware?.powerUsage || 0,
-          rejection_rate: miner.shares?.rejectionRate || 0,
-          uptime: miner.uptime || 0,
+          hashrate: row.hashrate,
+          temperature: row.temperature,
+          fan_speed: row.fanSpeed,
+          power_usage: row.powerUsage,
+          rejection_rate: row.rejectionRate,
+          uptime: row.uptime,
         });
+        lastHistoryRow.set(miner.ip, { ...row, writtenAt: stats.timestamp });
       }
     } catch (error) {
       logger.error('Error saving stats to database:', error);
