@@ -133,6 +133,17 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      # DMI-89. Prometheus is the only place fleet data exists at real
+      # resolution -- SQLite keeps 30 days of per-miner rows, but the
+      # aggregates, board/fan/pool series and every alert input live only
+      # here. On the 15-day default the DMI-46 availability analysis was
+      # bounded at "over 15 days" because that was all there was.
+      #
+      # Measured on the Pi 2026-08-29: 225.4 MB spanning 15.46 days = 14.6
+      # MB/day at 7516 head series, against 40 GB free (27% used). 90 days
+      # is ~1.3 GB, about 3% of what is free. The TSDB is at steady state,
+      # so that rate is measured, not projected.
+      - '--storage.tsdb.retention.time=90d'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
       - '--web.enable-lifecycle'
