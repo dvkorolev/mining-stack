@@ -14,7 +14,7 @@ The repository contains three first-party services plus the monitoring stack:
 - backend
 - frontend
 - python-scheduler
-- Prometheus / Grafana / Alertmanager / blackbox-exporter
+- Prometheus / Grafana / Alertmanager / blackbox-exporter / node-exporter
 
 Primary repository:
 https://github.com/dvkorolev/mining-stack
@@ -141,6 +141,38 @@ Do not let both write `miningStats` again — that reintroduces the clobber this
   list is deliberately empty; see `docker/prometheus/targets/README.md` before adding to it.
 - **Uplink availability is `sum(rate(miner_pool_accepted_total[5m]))`** — real share submission across
   ~20 devices, riding the production path.
+
+### Expected hashrate — provenance is tracked (DMI-81)
+`miner_expected_hashrate_ths` is the nameplate a machine *should* produce, and every SHA-256 degradation
+threshold is derived from it. It is resolved in a fixed order by
+`asic_profile_loader.resolve_expected_hashrate()`, and the winner is published as
+`miner_expected_hashrate_source{ip,name,source}`:
+- `v3` — `rated_hashrate.py` asks the machine over WhatsMiner API v3 (port 4433,
+  `get.device.info` → `msg.miner.detect-hash-rate`, per-board GH/s, unauthenticated, cached 1 h).
+- `cgminer` — summed `Factory GHS` from the CGMiner `devs` response. Independent second source;
+  measured to agree exactly with `v3` on 17 of 19 machines, and reaches `.74`, which refuses 4433.
+- `profile` — inferred from the model string in `asic_profiles.yaml`. This is the *guess*, and it
+  understated every machine that can be asked (+5.2% fleet-wide, +23.4% on `.126`).
+- `none` — nothing could be resolved; no expected-hashrate series is published, deliberately, so a
+  degradation rule cannot fire against an invented figure.
+
+Same rule as `SIMULATION_MODE` and `miners_config_source`: **a fallback must never be
+indistinguishable from success.** Do not collapse this to a single number, and do not re-fit a
+threshold without checking which source produced the value it is fitted to (DMI-75).
+
+Per-board figures come from `devs`, not from pyasic, which populates them on one machine in this
+fleet: `miner_board_chips_count`, `miner_board_hashrate_ths`, `miner_board_temp_c`,
+`miner_board_chip_temp_c` (DMI-64, DMI-91). ⚠️ **`MHS av` does not carry a consistent unit across
+this fleet's firmware** — derive it from the same entry's `Factory GHS`, as `parsers/board_readings.py`
+does; never assume MH/s.
+
+### Removed: the `pool_network_*` family (DMI-86)
+The scheduler used to TCP-probe the pools in `etc/pools.yaml` and publish seven `pool_network_*`
+gauges. Four of them — `pool_network_ping_avg_ms`, `_ping_min_ms`, `_ping_max_ms` and
+`_packet_loss_percent` — were written as a literal `0.0` every cycle in this deployment, because
+`ENABLE_ICMP_PING` was off, and **three of the file's six alert rules read those constants** (`PoolHighLatency`, `PoolPacketLoss`, `PoolHighPacketLoss`). The probe, the gauges,
+`pool_network_alerts.yml` and the Pool Network Quality dashboard are all gone. Pool health is the
+DMI-56 path above; do not reintroduce either.
 
 ### Simulation (`SIMULATION_MODE`)
 Simulated/fake data is served **only** when `SIMULATION_MODE=true` (default false). It is never a silent fallback: on a Prometheus read error the backend keeps last-known real stats and logs the error; boot does not seed fake data. Do not reintroduce a `simulateMiningStats()` fallback into the real path.
