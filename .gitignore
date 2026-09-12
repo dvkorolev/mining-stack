@@ -78,3 +78,6 @@ scripts/fix-miner-name-53.sh
 .claude/agent-memory/
 .claude/worktrees/
 .claude/settings.local.json
+
+# Локальные выжимки и секреты для Claude (машинные, не в git)
+.claude/local/
