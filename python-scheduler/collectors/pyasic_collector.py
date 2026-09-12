@@ -21,11 +21,12 @@ from metrics import (
     miner_pool_accepted,
     miner_pool_rejected, collection_duration, collection_success,
     collection_timestamp, miner_gaps_filled_total, update_miner_label_cache,
-    set_miner_pools, set_miner_boards, set_miner_fans,
+    set_miner_pools, set_miner_boards, set_miner_fans, set_miner_psu,
     publish_expected_hashrate_source, set_miner_expected_boards
 )
 from parsers.pool_status import extract_pool_status
 from parsers.board_readings import boards_from_devs
+from parsers.psu_readings import psu_from_get_psu
 
 logger = logging.getLogger(__name__)
 
@@ -337,12 +338,27 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
         if hasattr(fan, 'speed'):
             fan_speeds[str(i)] = fan.speed
 
+    # Ordered weakest source first, so the better one overwrites it. pyasic's
+    # `fan_psu` is populated on effectively no machine in this fleet, while
+    # `get_psu` answers on 20 of 21 -- the same asymmetry that made `devs` the
+    # real source of per-board readings in DMI-64.
     fan_psu = data.get('fan_psu', [])
     if fan_psu and isinstance(fan_psu, (list, tuple)) and len(fan_psu) > 0:
         if hasattr(fan_psu[0], 'speed'):
             fan_speeds['psu'] = fan_psu[0].speed
 
+    psu = data.get('psu') or {}
+    if psu.get('fan') is not None:
+        fan_speeds['psu'] = psu['fan']
+
     set_miner_fans(ip, name, model, fan_speeds)
+
+    # Unconditional, including with nothing: a machine that stops answering
+    # `get_psu` must lose its PSU series rather than keep the last mains
+    # voltage it reported (DMI-94). The DG1+ never answers it at all and so
+    # publishes no PSU series, which is the correct reading for a machine with
+    # a different protocol -- not a set of zeroes.
+    set_miner_psu(ip, name, model, psu)
 
     pools = data.get('pools', [])
     if pools and isinstance(pools, (list, tuple)) and len(pools) > 0:
@@ -447,6 +463,11 @@ async def _collect_via_cgminer_only(ip: str, name: str, model: str, api_port: in
             logger.warning(f"{name}: CGMiner API not available on port {api_port}. Miner type '{model}' may not be supported.")
             return {'error': 'cgminer_not_available', 'error_type': 'unsupported'}
         
+        # PSU input readings (DMI-94). Asked for only once the API has proved
+        # it answers, and only for non-DG1 miners -- the DG1 branch above has
+        # already returned, and it has no `get_psu`.
+        psu = psu_from_get_psu(await _cgminer_command(ip, "get_psu", api_port))
+
         # Extract data
         msg = summary.get('Msg', {})
         if not isinstance(msg, dict):
@@ -476,6 +497,7 @@ async def _collect_via_cgminer_only(ip: str, name: str, model: str, api_port: in
                 'fault_light': False,
                 'errors': [],
                 'cgminer_boards': boards_from_devs(devs),
+                'psu': psu,
                 'hashboards': [],
                 'fans': [],
                 'fan_psu': [],
@@ -630,6 +652,17 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                         pyasic_data['cgminer_boards'] = boards_from_devs(devs_data)
                     except Exception as e:
                         logger.debug(f"{name}: devs unavailable for per-board readings: {e}")
+
+                # PSU input readings (DMI-94), on the same terms: one more
+                # request per miner per cycle against an API the collector
+                # already speaks, and the only source of an input voltage.
+                try:
+                    psu_response = await asyncio.wait_for(
+                        _cgminer_command(ip, "get_psu", miner_config.get('api_port', 4028)),
+                        timeout=10)
+                    pyasic_data['psu'] = psu_from_get_psu(psu_response)
+                except Exception as e:
+                    logger.debug(f"{name}: get_psu unavailable for PSU readings: {e}")
 
                 gaps = _check_data_gaps(pyasic_data, model)
 

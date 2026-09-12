@@ -20,8 +20,13 @@ from metrics import (
     miner_hashrate,
     miner_scrape_status,
     miner_state,
+    miner_psu_input_amps,
+    miner_psu_input_volts,
+    miner_psu_input_watts,
+    miner_psu_temp_c,
     remove_miner_board_series,
     remove_miner_fan_series,
+    remove_miner_psu_series,
     remove_miner_series,
     remove_miner_pool_series,
     remove_old_miner_labels,
@@ -31,6 +36,7 @@ from metrics import (
     set_miner_boards,
     set_miner_fans,
     set_miner_pools,
+    set_miner_psu,
     update_miner_label_cache,
 )
 
@@ -442,6 +448,151 @@ class BoardAndFanPublishingTest(unittest.TestCase):
         remove_miner_board_series('10.255.255.253')
         remove_miner_fan_series('10.255.255.253')
 
+def psu_sample(metric_name, ip, name, model, psu_model):
+    return REGISTRY.get_sample_value(
+        metric_name,
+        {'ip': ip, 'name': name, 'model': model, 'psu_model': psu_model})
+
+
+class PsuPublishingTest(unittest.TestCase):
+    """DMI-94: PSU input readings, and the series that must not exist."""
+
+    NAME = 'worker'
+    MODEL = 'M30S++_VH90_(Stock)'
+    PSU = 'P222B'
+
+    # 192.168.2.101 as it read on 2026-08-28.
+    HEALTHY = {'vin': 222.0, 'iin': 15.0, 'pin': 3328.0, 'temp': 32.0,
+               'fan': 7768.0, 'psu_model': PSU}
+
+    def publish(self, ip, readings):
+        self.addCleanup(remove_miner_psu_series, ip)
+        set_miner_psu(ip, self.NAME, self.MODEL, readings)
+        return ip
+
+    def volts(self, ip, psu_model=None):
+        return psu_sample('miner_psu_input_volts', ip, self.NAME, self.MODEL,
+                          psu_model or self.PSU)
+
+    def test_publishes_every_reading(self):
+        ip = self.publish('10.0.4.1', self.HEALTHY)
+
+        self.assertEqual(self.volts(ip), 222.0)
+        self.assertEqual(
+            psu_sample('miner_psu_input_amps', ip, self.NAME, self.MODEL, self.PSU), 15.0)
+        self.assertEqual(
+            psu_sample('miner_psu_input_watts', ip, self.NAME, self.MODEL, self.PSU), 3328.0)
+        self.assertEqual(
+            psu_sample('miner_psu_temp_c', ip, self.NAME, self.MODEL, self.PSU), 32.0)
+
+    def test_psu_fan_reaches_the_existing_fan_metric(self):
+        # The PSU fan has no metric of its own: `fan_id="psu"` is an existing
+        # deliberate key in miner_fan_speed_rpm, and a second metric name for
+        # the same quantity would be a permanent footnote.
+        ip = '10.0.4.2'
+        self.addCleanup(remove_miner_fan_series, ip)
+
+        set_miner_fans(ip, self.NAME, self.MODEL, {'0': 7207, 'psu': 7768.0})
+
+        self.assertEqual(fan_sample(ip, self.NAME, self.MODEL, 'psu'), 7768.0)
+
+    def test_a_miner_with_no_psu_data_publishes_nothing(self):
+        # The DG1+ at 192.168.2.78: its own protocol, no `get_psu`, and a
+        # fabricated 0 V would read as a site-wide outage in any aggregate.
+        for readings in (None, {}):
+            ip = self.publish('10.0.4.3', readings)
+            for metric_name in ('miner_psu_input_volts', 'miner_psu_input_amps',
+                                'miner_psu_input_watts', 'miner_psu_temp_c'):
+                for psu_model in (self.PSU, 'unknown'):
+                    self.assertIsNone(
+                        psu_sample(metric_name, ip, self.NAME, self.MODEL, psu_model),
+                        '{} {!r}'.format(metric_name, readings))
+
+    def test_an_unresolved_field_is_absent_not_zero(self):
+        # 192.168.2.74 reports no temperature at all.
+        ip = self.publish('10.0.4.4', dict(self.HEALTHY, temp=None))
+
+        self.assertEqual(self.volts(ip), 222.0)
+        self.assertIsNone(
+            psu_sample('miner_psu_temp_c', ip, self.NAME, self.MODEL, self.PSU))
+
+    def test_a_reading_that_stops_arriving_is_dropped(self):
+        # Not held over: a stale temperature would keep a PSU that has stopped
+        # measuring looking cool.
+        ip = self.publish('10.0.4.5', self.HEALTHY)
+        set_miner_psu(ip, self.NAME, self.MODEL, dict(self.HEALTHY, temp=None))
+
+        self.assertIsNone(
+            psu_sample('miner_psu_temp_c', ip, self.NAME, self.MODEL, self.PSU))
+        self.assertEqual(self.volts(ip), 222.0)
+
+    def test_readings_stop_when_the_psu_stops_answering(self):
+        ip = self.publish('10.0.4.6', self.HEALTHY)
+        set_miner_psu(ip, self.NAME, self.MODEL, None)
+
+        self.assertIsNone(self.volts(ip))
+
+    def test_a_psu_swap_does_not_leave_the_old_model_behind(self):
+        ip = self.publish('10.0.4.7', self.HEALTHY)
+        set_miner_psu(ip, self.NAME, self.MODEL, dict(self.HEALTHY, psu_model='P221B'))
+
+        self.assertIsNone(self.volts(ip))
+        self.assertEqual(self.volts(ip, psu_model='P221B'), 222.0)
+
+    def test_a_psu_without_a_model_is_labelled_unknown(self):
+        ip = self.publish('10.0.4.8', dict(self.HEALTHY, psu_model=None))
+
+        self.assertEqual(self.volts(ip, psu_model='unknown'), 222.0)
+
+    def test_removal_clears_every_gauge(self):
+        ip = self.publish('10.0.4.9', self.HEALTHY)
+
+        remove_miner_psu_series(ip)
+
+        for metric_name in ('miner_psu_input_volts', 'miner_psu_input_amps',
+                            'miner_psu_input_watts', 'miner_psu_temp_c'):
+            self.assertIsNone(
+                psu_sample(metric_name, ip, self.NAME, self.MODEL, self.PSU), metric_name)
+
+    def test_forget_miner_removes_the_psu_series(self):
+        ip = self.publish('10.0.4.10', self.HEALTHY)
+
+        forget_miner(ip)
+
+        self.assertIsNone(self.volts(ip))
+
+    def test_a_psu_only_miner_is_still_known(self):
+        ip = self.publish('10.0.4.11', self.HEALTHY)
+
+        self.assertIn(ip, known_miner_ips())
+
+    def test_cleanup_of_an_unknown_miner_is_a_safe_noop(self):
+        remove_miner_psu_series('10.255.255.252')
+
+    def test_psu_gauges_stay_out_of_get_all_miner_metrics(self):
+        # Not an oversight, and not safe to "fix": that list is consumed by
+        # remove_miner_series(), which calls metric.remove(ip, name, model,
+        # algorithm) positionally. A gauge carrying `psu_model` in the fourth
+        # position would be handed a value that never matches, and
+        # prometheus_client answers a non-matching label set by doing nothing
+        # -- so every cleanup would appear to run and silently leave the PSU
+        # series behind. They are removed by remove_miner_psu_series() instead,
+        # exactly as the board, fan and DMI-81 families are.
+        registered = set(get_all_miner_metrics())
+        for metric in (miner_psu_input_volts, miner_psu_input_amps,
+                       miner_psu_input_watts, miner_psu_temp_c):
+            self.assertNotIn(metric, registered)
+
+    def test_the_failure_streak_cull_reaches_psu_series(self):
+        # What main.py does once a miner passes FAILURE_THRESHOLD. A mains
+        # voltage from a machine that has not answered in hours reads as a
+        # live measurement of the site.
+        ip = self.publish('10.0.4.12', self.HEALTHY)
+
+        remove_miner_series(ip, get_stale_value_metrics())
+        remove_miner_psu_series(ip)
+
+        self.assertIsNone(self.volts(ip))
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
