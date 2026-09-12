@@ -235,6 +235,29 @@ source is exposed as `scheduler_config_source{source}` / `scheduler_miners_confi
 `docker/prometheus/rules/scheduler_alerts.yml`. Do not make the health check re-probe the backend
 instead of reporting the loaded config, and do not let a failed fetch overwrite a good list.
 
+### Miner API cadence — the 1/min rule is about writes, not reads (2026-09-12)
+
+Two APIs, and the rate rule applies to only one kind of traffic on one of them:
+
+- **Reads on 4028 (CGMiner) are the deployed polling path and stay as they are.** The scheduler
+  issues `summary`, `devs`, `pools` and `get_psu` per miner per cycle — about **2 requests/min per
+  machine at the 120 s cycle** — and has done for months with no observed harm. pyasic speaks the
+  same port.
+- **`≤1 request/min` applies to 4028 *write* commands** — `power_off`/`power_on`, `set_pools`,
+  firmware operations. The rule originated around power commands on `.117`; it was later restated
+  as "4028 is not for polling", and that generalisation is **withdrawn** — it contradicted the
+  running system.
+- In practice mass writes cannot happen anyway: a write needs **`apiswitch = 1`, which is set on
+  exactly two machines in this fleet**. Enabling it on another requires WhatsMinerTool from the
+  Windows VM with a known web password set first. So "the write channel is open on 2 of 21" is a
+  property of the hardware configuration, not a policy the code enforces.
+
+**Do not move fleet polling to the v3 API (port 4433) for tidiness.** v3 answers on 19 of 21
+machines; 4028 answers on 20, and the two sets differ where it counts. `.74` refuses 4433 while
+mining ~105 TH/s, and `.78` (DG1+) refuses both and needs its own collector. A v3-only fleet audit
+on 2026-09-12 reported both as "offline" for exactly this reason, while both were producing. Port
+coverage is why `get_psu` (DMI-94) reads from 4028.
+
 ## Commands
 
 ### Backend
