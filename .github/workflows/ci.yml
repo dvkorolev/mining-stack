@@ -58,6 +58,8 @@ jobs:
         working-directory: python-scheduler
       - run: python test_board_readings.py
         working-directory: python-scheduler
+      - run: python test_psu_readings.py
+        working-directory: python-scheduler
       - run: python test_asic_profile_matching.py
         working-directory: python-scheduler
       - run: python test_expected_hashrate.py

@@ -43,7 +43,7 @@ from metrics import (
     miner_fallback_trigger_total, miner_fallback_total,
     remove_miner_series, remove_miner_pool_series, publish_config_source,
     remove_miner_board_series, remove_miner_fan_series, get_stale_value_metrics,
-    remove_miner_expected_series,
+    remove_miner_expected_series, remove_miner_psu_series,
     forget_unconfigured_miners
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
@@ -533,6 +533,12 @@ async def collect_all_metrics():
                         remove_miner_board_series(miner['ip'])
                         remove_miner_expected_series(miner['ip'])
                         remove_miner_fan_series(miner['ip'])
+                        # PSU series carry `psu_model` instead of `algorithm`,
+                        # so they need the same treatment. A mains voltage from
+                        # a machine that has not answered in hours is worse
+                        # than none: it reads as a live measurement of the site
+                        # (DMI-94).
+                        remove_miner_psu_series(miner['ip'])
                         # A miner this far past the failure threshold is telling
                         # us nothing about its pools either; leaving the last
                         # `alive` reading behind would report a live pool from a

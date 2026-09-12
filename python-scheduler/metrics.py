@@ -36,6 +36,25 @@ miner_board_chips_expected = Gauge('miner_board_chips_expected', 'Expected numbe
 # Miner Fan Metrics
 miner_fan_speed = Gauge('miner_fan_speed_rpm', 'Fan speed in RPM', ['ip', 'name', 'model', 'fan_id'])
 
+# Miner PSU Metrics (DMI-94)
+#
+# The fleet published no voltage at all before this: a mains sag left no time
+# series behind, and the only trace of the last one was a `reason` string on
+# error code 206 -- history, not state, and not graphable.
+#
+# `psu_model` is a label rather than a separate info series because it is what
+# distinguishes the four supplies in this fleet (P221A/P221B/P222B/P222C), and
+# the two that report no chip temperature are exactly the two P222C machines --
+# PSU-specific behaviour is a thing worth being able to group by.
+#
+# There is deliberately no `miner_psu_fan_rpm`. The PSU fan goes into
+# `miner_fan_speed_rpm` under the existing `fan_id="psu"` key; a second metric
+# name for a value that already has one is a permanent footnote.
+miner_psu_input_volts = Gauge('miner_psu_input_volts', 'PSU input voltage in volts', ['ip', 'name', 'model', 'psu_model'])
+miner_psu_input_amps = Gauge('miner_psu_input_amps', 'PSU input current in amps', ['ip', 'name', 'model', 'psu_model'])
+miner_psu_input_watts = Gauge('miner_psu_input_watts', 'PSU input power in watts', ['ip', 'name', 'model', 'psu_model'])
+miner_psu_temp_c = Gauge('miner_psu_temp_c', 'PSU temperature in Celsius', ['ip', 'name', 'model', 'psu_model'])
+
 # Miner Pool Metrics
 miner_pool_accepted = Gauge('miner_pool_accepted_total', 'Total accepted shares', ['ip', 'name', 'model', 'algorithm'])
 miner_pool_rejected = Gauge('miner_pool_rejected_total', 'Total rejected shares', ['ip', 'name', 'model', 'algorithm'])
@@ -148,6 +167,11 @@ _miner_expected_source_cache = {}  # {ip: {(name, source), ...}}
 _miner_expected_board_cache = {}   # {ip: {(name, model, slot), ...}}
 _miner_fan_label_cache = {}    # {ip: {(name, model, fan_id), ...}}
 
+# PSU series published per miner (DMI-94). Carries `psu_model` where the miner
+# gauges carry `algorithm`, so like the board, fan and DMI-81 families it is
+# not reachable through get_all_miner_metrics() -- see set_miner_psu().
+_miner_psu_label_cache = {}    # {ip: {(name, model, psu_model), ...}}
+
 # The board gauges all carry the same label set, so one cache serves them all.
 _BOARD_METRICS = (miner_board_hashrate, miner_board_temp, miner_board_chip_temp,
                   miner_board_chips_count, miner_board_chips_expected)
@@ -159,6 +183,18 @@ _BOARD_FIELDS = (('hashrate', miner_board_hashrate),
                  ('chip_temp', miner_board_chip_temp),
                  ('chips', miner_board_chips_count),
                  ('expected_chips', miner_board_chips_expected))
+
+# Which PSU reading feeds which gauge, same contract as _BOARD_FIELDS. The PSU
+# fan is absent on purpose: it goes to miner_fan_speed_rpm{fan_id="psu"}.
+_PSU_FIELDS = (('vin', miner_psu_input_volts),
+               ('iin', miner_psu_input_amps),
+               ('pin', miner_psu_input_watts),
+               ('temp', miner_psu_temp_c))
+
+# Label value used when a PSU answers with readings but no model string. A
+# label has to have a value; this one states that the model is unknown rather
+# than implying a particular supply.
+PSU_MODEL_UNKNOWN = 'unknown'
 
 
 def set_miner_pools(ip: str, name: str, pools) -> None:
@@ -281,6 +317,60 @@ def set_miner_fans(ip: str, name: str, model: str, fans) -> None:
         _miner_fan_label_cache.pop(ip, None)
 
 
+def set_miner_psu(ip: str, name: str, model: str, readings) -> None:
+    """
+    Publish the PSU readings a miner reported, and drop the ones it stopped
+    reporting (DMI-94).
+
+    Args:
+        ip: miner address, the cache key.
+        name, model: the miner's own labels.
+        readings: the record parsers.psu_readings.psu_from_get_psu() returns,
+            or None/{} when the miner produced no PSU data at all. Any field
+            may be None and each is judged on its own.
+
+    Call this on every successful collection, including with nothing, so that a
+    machine which stops answering `get_psu` has its PSU series removed rather
+    than frozen at the last reading. Absent is not zero, and it is not
+    last-known either.
+
+    These gauges are deliberately NOT in get_all_miner_metrics(). That list is
+    consumed by remove_old_miner_labels() and remove_miner_series(), which call
+    `metric.remove(ip, name, model, algorithm)` -- four labels, positionally. A
+    gauge carrying `psu_model` in that fourth position would be handed a value
+    that never matches, and prometheus_client answers a non-matching label set
+    by doing nothing, so the cleanup would appear to run and silently leave
+    every PSU series behind: a machine dead for weeks would keep publishing a
+    mains voltage into every aggregate. That is the failure registering them
+    was meant to prevent, which is why the board, fan and DMI-81 families are
+    absent from that list too and each carries its own removal path. Add these
+    gauges there and the tests in test_metrics_cleanup.py will say so.
+    """
+    readings = readings or {}
+    psu_model = readings.get('psu_model') or PSU_MODEL_UNKNOWN
+    current = (name, model, psu_model)
+
+    published = set()
+    for field, metric in _PSU_FIELDS:
+        value = readings.get(field)
+        if value is None:
+            # A reading this cycle did not produce is removed, not held over.
+            # `.74` reports every PSU field except its temperature, and that
+            # silence is the correct reading for it.
+            _remove_psu_field(metric, ip, current)
+            continue
+        metric.labels(ip=ip, name=name, model=model, psu_model=psu_model).set(value)
+        published.add(current)
+
+    for stale in _miner_psu_label_cache.get(ip, set()) - published:
+        _remove_psu_series(ip, stale)
+
+    if published:
+        _miner_psu_label_cache[ip] = published
+    else:
+        _miner_psu_label_cache.pop(ip, None)
+
+
 def publish_expected_hashrate_source(ip: str, name: str, source: str, known_sources) -> None:
     """
     Publish where this miner's rated hashrate came from (DMI-81).
@@ -401,6 +491,27 @@ def remove_miner_fan_series(ip: str) -> None:
         _remove_fan_series(ip, labels)
 
 
+def _remove_psu_field(metric, ip: str, labels) -> None:
+    """Remove one PSU gauge's series; a missing combination is not an error."""
+    name, model, psu_model = labels
+    try:
+        metric.remove(ip, name, model, psu_model)
+    except (KeyError, ValueError):
+        pass
+
+
+def _remove_psu_series(ip: str, labels) -> None:
+    """Remove one label combination from every PSU gauge."""
+    for _, metric in _PSU_FIELDS:
+        _remove_psu_field(metric, ip, labels)
+
+
+def remove_miner_psu_series(ip: str) -> None:
+    """Drop every PSU series for a miner that is gone or unreachable."""
+    for labels in _miner_psu_label_cache.pop(ip, set()):
+        _remove_psu_series(ip, labels)
+
+
 def get_all_miner_metrics():
     """Return all Gauge metrics that track miners"""
     return [
@@ -519,14 +630,15 @@ def known_miner_ips() -> set:
     """
     Every miner address that has published at least one series in this process.
 
-    The union of all four label caches, so a miner that only ever produced
-    board or pool readings is still known. Used to find machines that still
-    have series but have left the configuration (DMI-80).
+    The union of the per-series label caches, so a miner that only ever
+    produced board, pool or PSU readings is still known. Used to find machines
+    that still have series but have left the configuration (DMI-80).
     """
     return (set(_miner_label_cache)
             | set(_miner_pool_label_cache)
             | set(_miner_board_label_cache)
-            | set(_miner_fan_label_cache))
+            | set(_miner_fan_label_cache)
+            | set(_miner_psu_label_cache))
 
 
 def forget_miner(ip: str) -> bool:
@@ -557,6 +669,7 @@ def forget_miner(ip: str) -> bool:
     remove_miner_fan_series(ip)
     remove_miner_pool_series(ip)
     remove_miner_expected_series(ip)
+    remove_miner_psu_series(ip)
     _miner_label_cache.pop(ip, None)
     return known
 
