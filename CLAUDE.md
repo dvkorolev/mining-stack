@@ -174,6 +174,61 @@ gauges. Four of them — `pool_network_ping_avg_ms`, `_ping_min_ms`, `_ping_max_
 `pool_network_alerts.yml` and the Pool Network Quality dashboard are all gone. Pool health is the
 DMI-56 path above; do not reintroduce either.
 
+### Error-code events and v3 PSU output (DMI-108)
+`python-scheduler/v3_telemetry.py` asks every configured miner `get.device.info` on port 4433
+**once per collection cycle** — the request DMI-81 already uses, but hourly there and every cycle
+here: a nameplate changes only when someone swaps a hashboard, while a code timestamp means nothing
+at any cadence slower than the sampling. It publishes:
+
+| metric | what |
+|---|---|
+| `miner_error_events_total{ip,name,code}` | counter, +1 per **new** occurrence of a code |
+| `miner_error_last_happened_seconds{ip,name,code}` | poll-time unix ts of that occurrence |
+| `miner_psu_vout_raw{ip,name,model,psu_model}` | PSU output voltage, firmware raw units |
+| `miner_apiswitch{ip,name,model,psu_model}` | API switch state, 0/1 as reported |
+
+- **A machine's `error-code` list holds only the LAST occurrence of each code** (measured
+  2026-09-18: `.122` carried a `233` from 09-10 next to a fresh `275`). That is why this is a counter
+  plus an append-only JSONL and not a gauge: a sampled gauge loses every earlier occurrence, which is
+  exactly the answer to "what happened while nobody was looking".
+- The JSONL lives on the scheduler's docker volume (`V3_EVENTS_DIR`, default `/app/data/events`,
+  bind-mounted at `data/python-scheduler/events`), rotates at 10 MB into `errors-<date>.jsonl`, and is
+  **the only copy of the `reason` texts** — which is why it sits in the config tier of
+  `bin/backup_prod.py`. `reason` never goes into a Prometheus label (cardinality).
+- **A code's first sighting is recorded as baseline and is not counted**; the counter is born on the
+  first *change* of an already-known pair. An absent series for a code that has been sitting on a
+  machine for weeks is therefore by design, not a dead collector.
+- `miner_error_last_happened_seconds` carries **poll** time, never the machine's `when_machine` —
+  that field is the machine's own local time with no timezone.
+- `vout` is `_raw` deliberately: the firmware states no unit, and its own code 212 gives the operating
+  border as `[1150, 1500]` in that same scale. Do not rename to `_volts` or divide by 100 until a
+  source confirms centivolts — an unconfirmed unit in a metric name is the `MHS av` failure (DMI-91),
+  repeated on every dashboard that reads it.
+- The input side of the same supply is DMI-94's `miner_psu_input_volts` / `_amps` / `_watts` /
+  `_temp_c`, from `get_psu` on **4028**. The two families share a label set but keep **separate**
+  published-set caches, so neither can prune the other's series when their `psu_model` strings
+  disagree.
+- Trap found on the first deploy (`ed0af17`): `dict.get('api_port', 4028)` does **not** substitute for
+  a present `None`, and `miners.api_port` is NULL in this database — the collector dialled port 0
+  every cycle while its log said `:4028`, so DMI-94 collected nothing at all for six days while
+  looking healthy. Where a value can legitimately be absent, `or` the default; do not rely on `.get()`.
+
+### Park rules — a standing machine, and a site power sag (DMI-109)
+`docker/prometheus/rules/park_alerts.yml` holds five rules: `ParkMinerDark`, `ParkMinerStale`,
+`ParkPowerEvent`, `ParkVinLow`, `ParkVinCluster`. They exist to **wake someone** when the farm stops
+producing — the failure mode behind ~85% of the month's measured losses, and the one that previously
+went unnoticed until a human looked.
+
+- **`component: farm` on every one is load-bearing.** This site sets
+  `ALERT_NOTIFY_EXCLUDE_COMPONENTS=miner`, so a park rule labelled `miner` would be born suppressed
+  and nobody would ever see it fire — the rule would look deployed and reach no one.
+- `ParkMinerDark` uses `max_over_time` ("every reading in the window was low") while `ParkPowerEvent`
+  uses `min_over_time` ("any low reading"). Both chosen by measurement: a reboot ramp stays under
+  500 W for 1–2 minutes, so the min-variant pages on machines that are *recovering*, while the early
+  cluster signal wants exactly that sensitivity.
+- `.58` and `.117` are excluded with `ip!~"192.168.2.(58|117)"` wherever power is counted — both are
+  stopped deliberately and would otherwise fire every park rule forever.
+
 ### Simulation (`SIMULATION_MODE`)
 Simulated/fake data is served **only** when `SIMULATION_MODE=true` (default false). It is never a silent fallback: on a Prometheus read error the backend keeps last-known real stats and logs the error; boot does not seed fake data. Do not reintroduce a `simulateMiningStats()` fallback into the real path.
 
