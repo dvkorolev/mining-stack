@@ -1,0 +1,234 @@
+{
+ "devs": {
+  "DEVS": [
+   {
+    "Chip Data": "CHIPBATCH",
+    "Chip Frequency": 886,
+    "Effective Chips": 70,
+    "Factory GHS": 36094,
+    "HS RT": 38.15,
+    "MHS 15m": 38.28,
+    "MHS 1m": 38.18,
+    "MHS av": 38.28,
+    "PCB SN": "SERIAL",
+    "Slot": 0,
+    "Temperature": 72.12,
+    "Upfreq Complete": 1
+   },
+   {
+    "Chip Data": "CHIPBATCH",
+    "Chip Frequency": 836,
+    "Effective Chips": 70,
+    "Factory GHS": 36311,
+    "HS RT": 36.11,
+    "MHS 15m": 36.24,
+    "MHS 1m": 36.14,
+    "MHS av": 36.27,
+    "PCB SN": "SERIAL",
+    "Slot": 1,
+    "Temperature": 62.44,
+    "Upfreq Complete": 1
+   },
+   {
+    "Chip Data": "CHIPBATCH",
+    "Chip Frequency": 888,
+    "Effective Chips": 70,
+    "Factory GHS": 37729,
+    "HS RT": 38.18,
+    "MHS 15m": 38.36,
+    "MHS 1m": 38.2,
+    "MHS av": 38.37,
+    "PCB SN": "SERIAL",
+    "Slot": 2,
+    "Temperature": 72.19,
+    "Upfreq Complete": 1
+   }
+  ],
+  "STATUS": [
+   {
+    "Msg": "3 ASC(s)",
+    "STATUS": "S"
+   }
+  ],
+  "id": 1
+ },
+ "get_error_code": {
+  "Code": 131,
+  "Description": "",
+  "Msg": {
+   "error_code": [
+    {
+     "207": "2026-09-18 19:54:34"
+    }
+   ]
+  },
+  "STATUS": "S",
+  "When": 1789750893
+ },
+ "get_miner_info": {
+  "Code": 131,
+  "Description": "",
+  "Msg": {
+   "dns": "192.0.2.10",
+   "gateway": "192.0.2.10",
+   "hostname": "WhatsMiner",
+   "ip": "192.0.2.10",
+   "ledstat": "auto",
+   "mac": "AA:BB:CC:DD:EE:FF",
+   "minersn": "",
+   "netmask": "192.0.2.10",
+   "powersn": "7D222601194",
+   "proto": "dhcp",
+   "upfreq_speed": "0"
+  },
+  "STATUS": "S",
+  "When": 1789750892
+ },
+ "get_psu": {
+  "Code": 131,
+  "Description": "",
+  "Msg": {
+   "enable": "1",
+   "fan_speed": "8704",
+   "hw_version": "DC1220609",
+   "iin": "16750",
+   "model": "P221B",
+   "name": "P221B",
+   "pin": "3612",
+   "serial_no": "7D222601194",
+   "sw_version": "4542.1410",
+   "temp0": "35.0",
+   "vendor": "6",
+   "vin": "21575"
+  },
+  "STATUS": "S",
+  "When": 1789750893
+ },
+ "ip": "192.0.2.10",
+ "model": "M30S++ VH40 (Stock)",
+ "pools": {
+  "POOLS": [
+   {
+    "Accepted": 8714,
+    "Bad Work": 278,
+    "Discarded": 0,
+    "Get Failures": 1,
+    "Getworks": 6067,
+    "Last Share Time": 1789750891,
+    "POOL": 1,
+    "Pool Rejected%": 0.4068,
+    "Pool Stale%": 0.0,
+    "Priority": 0,
+    "Quota": 1,
+    "Rejected": 35,
+    "Remote Failures": 0,
+    "Stale": 0,
+    "Status": "Alive",
+    "Stratum Active": true,
+    "Stratum Difficulty": 524288.0,
+    "To Remove": false,
+    "URL": "stratum+tcp://gate.emcd.network:3333",
+    "User": "worker"
+   },
+   {
+    "Accepted": 0,
+    "Bad Work": 0,
+    "Discarded": 0,
+    "Get Failures": 0,
+    "Getworks": 0,
+    "Last Share Time": 0,
+    "POOL": 2,
+    "Pool Rejected%": 0.0,
+    "Pool Stale%": 0.0,
+    "Priority": 1,
+    "Quota": 1,
+    "Rejected": 0,
+    "Remote Failures": 0,
+    "Stale": 0,
+    "Status": "Alive",
+    "Stratum Active": false,
+    "Stratum Difficulty": 0.0,
+    "To Remove": false,
+    "URL": "stratum+tcp://eu.emcd.network:3333",
+    "User": "worker"
+   },
+   {
+    "Accepted": 0,
+    "Bad Work": 0,
+    "Discarded": 0,
+    "Get Failures": 0,
+    "Getworks": 0,
+    "Last Share Time": 0,
+    "POOL": 3,
+    "Pool Rejected%": 0.0,
+    "Pool Stale%": 0.0,
+    "Priority": 2,
+    "Quota": 1,
+    "Rejected": 0,
+    "Remote Failures": 0,
+    "Stale": 0,
+    "Status": "Alive",
+    "Stratum Active": false,
+    "Stratum Difficulty": 131072.0,
+    "To Remove": false,
+    "URL": "stratum+tcp://kz.emcd.network:3333",
+    "User": "worker"
+   }
+  ],
+  "STATUS": [
+   {
+    "Msg": "3 Pool(s)",
+    "STATUS": "S"
+   }
+  ],
+  "id": 1
+ },
+ "source": "captured from the live fleet 2026-09-18, sanitised (worker accounts, serials, MACs, addresses replaced)",
+ "status": {
+  "Code": 131,
+  "Description": "",
+  "Msg": {
+   "FirmwareVersion": "20250321.14.Rel",
+   "hash_percent": "",
+   "mineroff": "false",
+   "mineroff_reason": "",
+   "mineroff_time": "",
+   "power_limit_set": "",
+   "power_mode": ""
+  },
+  "STATUS": "S",
+  "When": 1789750891
+ },
+ "summary": {
+  "Code": 131,
+  "Description": "",
+  "Msg": {
+   "Btminer Fast Boot": "disable",
+   "Chip Temp Avg": 82.61904907226562,
+   "Chip Temp Max": 99.63571166992188,
+   "Chip Temp Min": 68.11428833007812,
+   "Debug": "2.4 3.0/3.0 3.0/3.0 3.0/3.0  2A:100.0/0.36/31.8/6.0",
+   "Elapsed": 169984.59375,
+   "Env Temp": 36,
+   "Factory GHS": 110134,
+   "Fan Speed In": 6070,
+   "Fan Speed Out": 6217,
+   "HS RT": 112436936,
+   "Hash Stable": "true",
+   "Hash Stable Cost Seconds": 631,
+   "MHS 15m": 112877808,
+   "MHS 1m": 112532192,
+   "MHS av": 112924520,
+   "Pool Rejected%": 0.00406870292499661,
+   "Power": 3614.133333333333,
+   "Power Limit": 3600,
+   "Power Mode": "Normal",
+   "Power Rate": 32.144004821777344,
+   "Target Freq": 0,
+   "Uptime": 170642,
+   "freq_avg": 870
+  },
+  "STATUS": "S",
+  "When": 1789750890
+ }
+}

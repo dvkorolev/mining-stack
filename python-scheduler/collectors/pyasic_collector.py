@@ -10,8 +10,14 @@ from typing import Dict, Any, Optional, List
 
 from pyasic import get_miner
 
-from config import MAX_CONCURRENT_REQUESTS
+from asic import parity
+from asic.drivers.whatsminer import read_miner as read_whatsminer
+from asic.transport.json_tcp import cgminer_command
+from config import (COLLECTION_COMPARE, COLLECTION_COMPARE_EXPECTED,
+                    COLLECTION_PRIMARY, MAX_CONCURRENT_REQUESTS,
+                    compare_enabled_for, keeps_pyasic_source)
 from parsers.cgminer_parser import parse_cgminer_response
+from parsers.reading_compare import compare, split_results, summarise
 from asic_profile_loader import get_library, expected_hashrate_ths, resolve_expected_hashrate
 from rated_hashrate import SOURCES as RATED_SOURCES, get_rated
 from metrics import (
@@ -22,7 +28,8 @@ from metrics import (
     miner_pool_rejected, collection_duration, collection_success,
     collection_timestamp, miner_gaps_filled_total, update_miner_label_cache,
     set_miner_pools, set_miner_boards, set_miner_fans, set_miner_psu,
-    publish_expected_hashrate_source, set_miner_expected_boards
+    publish_expected_hashrate_source, set_miner_expected_boards,
+    miner_compare_mismatch_total, miner_collection_routing_total
 )
 from parsers.pool_status import extract_pool_status
 from parsers.board_readings import boards_from_devs
@@ -146,44 +153,11 @@ def _get_max_temp(data) -> float:
     return max(all_temps) if all_temps else 0.0
 
 
-async def _cgminer_command(ip: str, command: str, port: int = 4028) -> Optional[Dict]:
-    """Send cgminer API command"""
-    # `api_port` arrives as JSON null from every DB row (the column exists,
-    # unset), and dict.get(key, default) does NOT substitute for a present
-    # None -- it returns the None. open_connection(ip, None) then dials port
-    # 0 and the connect refuses, which silently cost DMI-94 its whole first
-    # live run (found during the DMI-108 deploy acceptance, 2026-09-18).
-    # Normalized here because this is the one boundary every caller shares.
-    port = port or 4028
-    try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, port), timeout=10.0)
-        cmd = json.dumps({"command": command})
-        # Send command without newline - some miners reject commands with \n
-        writer.write(cmd.encode())
-        await writer.drain()
-        data = await asyncio.wait_for(reader.read(65536), timeout=10.0)
-        writer.close()
-        await writer.wait_closed()
-        response_str = data.decode().strip('\x00').strip()
-        # Remove trailing % if present
-        if response_str.endswith('%'):
-            response_str = response_str[:-1]
-        try:
-            result = json.loads(response_str)
-            logger.debug(f"CGMiner {command} from {ip}: success")
-            return result
-        except json.JSONDecodeError as e:
-            logger.warning(f"CGMiner {command} from {ip}: JSON decode error: {e}, response: {response_str[:100]}")
-            try:
-                decoder = json.JSONDecoder()
-                obj, _ = decoder.raw_decode(response_str)
-                return obj
-            except:
-                return None
-    except Exception as e:
-        logger.warning(f"_cgminer_command failed for {ip}:{port} cmd={command}: {type(e).__name__}: {e}")
-        return None
+# The 4028 client itself now lives in asic/transport/json_tcp.py (DMI-136) so
+# that the primary path can reach a miner without importing pyasic. Behaviour
+# is unchanged; that module's docstring lists the two failure-path differences
+# (a classified reason instead of a swallowed None, and a socket that is always
+# closed).
 
 
 def _merge_data(pyasic_data: Dict, cgminer_data: Dict, gaps: Dict[str, bool], cgminer_board_temps: List[float]) -> Dict:
@@ -215,8 +189,20 @@ def _merge_data(pyasic_data: Dict, cgminer_data: Dict, gaps: Dict[str, bool], cg
     return merged
 
 
-def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: int = 2, algorithm: str = None):
-    """Update Prometheus metrics"""
+def _derive_published(data: Dict, ip: str, name: str, model: str,
+                      scrape_status: int = 2, algorithm: str = None) -> Dict[str, Any]:
+    """
+    Every value `_update_metrics` publishes, computed and nothing else.
+
+    Extracted for DMI-136 so that the parallel comparison compares *published
+    values* rather than a second opinion about them: the pyasic path and our own
+    both project through this one function, so a disagreement it reports is a
+    disagreement a dashboard would show. It also puts the derivation — the
+    is_mining overrides, the state rule, the efficiency fallback, the
+    three-source board merge — in exactly one place for both paths.
+
+    Touches no gauges and no caches; `_publish_published()` does that.
+    """
     # Ensure model is a plain string; a tuple here means a stale failure_streak key
     # leaked through state_manager deserialization — replace with "Unknown"
     if not isinstance(model, str):
@@ -266,20 +252,12 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     
     # Determine algorithm label
     algo = 'scrypt' if is_scrypt else 'sha256'
-    
-    # Clean up old metrics if miner labels changed (name/model/algorithm)
-    from metrics import update_miner_label_cache
-    update_miner_label_cache(ip, name, model, algo)
-    
-    miner_scrape_status.labels(ip=ip, name=name, model=model, algorithm=algo).set(scrape_status)
-    miner_state.labels(ip=ip, name=name, model=model, algorithm=algo).set(state)
-    
-    if is_scrypt:
-        # SCRYPT: hashrate is in MH/s, only report in MH/s metric
-        miner_hashrate_mhs.labels(ip=ip, name=name, model=model, algorithm=algo).set(hashrate)
-    else:
-        # SHA-256: hashrate is in TH/s
-        miner_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(hashrate)
+
+    expected_hashrate = None
+    expected_source = None
+    expected_boards_ghs = None
+
+    if not is_scrypt:
         # Publish the rated hashrate so the SHA-256 degradation alerts have
         # something to compare against (DMI-59), preferring what the machine says
         # about itself over what its model string implies (DMI-81). Only when one
@@ -295,9 +273,6 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
 
         expected_hashrate, expected_source = resolve_expected_hashrate(
             ip, model, algorithm, cgminer_rated_ths)
-        if expected_hashrate:
-            miner_expected_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(expected_hashrate)
-        publish_expected_hashrate_source(ip, name, expected_source, RATED_SOURCES)
 
         # Per-board nameplate, which only the machine knows. None when it did not
         # state one -- absent is not zero.
@@ -314,36 +289,32 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
             ]
         else:
             expected_boards_ghs = None
-        set_miner_expected_boards(ip, name, model, expected_boards_ghs)
 
     power = float(data.get('power', 0) or 0)
     temperature = float(data.get('temperature', 0) or 0)
     uptime = float(data.get('uptime', 0) or 0)
-    
-    miner_power.labels(ip=ip, name=name, model=model, algorithm=algo).set(power)
-    miner_temp_max.labels(ip=ip, name=name, model=model, algorithm=algo).set(temperature)
-    miner_is_mining.labels(ip=ip, name=name, model=model, algorithm=algo).set(1 if is_mining else 0)
-    miner_uptime.labels(ip=ip, name=name, model=model, algorithm=algo).set(uptime)
-    
+
     efficiency_raw = data.get('efficiency', 0) or 0
     efficiency = float(efficiency_raw) if efficiency_raw else 0.0
     if is_scrypt:
         efficiency = 0.0
     elif efficiency == 0 and hashrate > 0 and power > 0:
         efficiency = power / hashrate if hashrate > 0 else 0
-    miner_efficiency.labels(ip=ip, name=name, model=model, algorithm=algo).set(efficiency)
-    
-    miner_fault_light.labels(ip=ip, name=name, model=model, algorithm=algo).set(1 if data.get('fault_light') else 0)
-    
+
     errors = data.get('errors', [])
-    miner_errors_count.labels(ip=ip, name=name, model=model, algorithm=algo).set(len(errors) if errors else 0)
-    
+
     # Fan speeds, keyed by fan_id. A speed the miner did not report is left out
     # rather than sent as 0 -- 0 RPM is a stopped fan, and that is an alert.
     fan_speeds = {}
     for i, fan in enumerate(data.get('fans', []) or []):
         if hasattr(fan, 'speed'):
             fan_speeds[str(i)] = fan.speed
+        elif isinstance(fan, dict) and fan.get('speed') is not None:
+            # The collector-standard format (COLLECTOR_STANDARD.md) is a dict,
+            # and our own driver returns that shape. pyasic passes objects, so
+            # this branch is inert for it -- without it, a fan our path reports
+            # correctly would be dropped and read as "no fan series".
+            fan_speeds[str(i)] = fan['speed']
 
     # Ordered weakest source first, so the better one overwrites it. pyasic's
     # `fan_psu` is populated on effectively no machine in this fleet, while
@@ -358,15 +329,12 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
     if psu.get('fan') is not None:
         fan_speeds['psu'] = psu['fan']
 
-    set_miner_fans(ip, name, model, fan_speeds)
-
-    # Unconditional, including with nothing: a machine that stops answering
-    # `get_psu` must lose its PSU series rather than keep the last mains
-    # voltage it reported (DMI-94). The DG1+ never answers it at all and so
-    # publishes no PSU series, which is the correct reading for a machine with
-    # a different protocol -- not a set of zeroes.
-    set_miner_psu(ip, name, model, psu)
-
+    # Share counters. None means "nothing published for this machine", which is
+    # what the original did by simply not setting the gauges -- kept, because a
+    # machine that reports pools without counters must not publish a 0 that
+    # reads as "no shares accepted".
+    total_accepted = None
+    total_rejected = None
     pools = data.get('pools', [])
     if pools and isinstance(pools, (list, tuple)) and len(pools) > 0:
         first_pool = pools[0]
@@ -379,16 +347,13 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
         else:
             total_accepted = 0
             total_rejected = 0
-        
-        miner_pool_accepted.labels(ip=ip, name=name, model=model, algorithm=algo).set(total_accepted)
-        miner_pool_rejected.labels(ip=ip, name=name, model=model, algorithm=algo).set(total_rejected)
 
     # Per-pool identity and status (DMI-56). Outside the block above on
     # purpose: that one needs share counters, this needs only a URL, and a
     # miner that reports pools without counters still tells us which pools it
     # uses and whether they are alive.
-    set_miner_pools(ip, name, extract_pool_status(pools))
-    
+    pool_status = extract_pool_status(pools)
+
     # Per-board readings from three sources, merged by slot and published once.
     # Ordered weakest first, so a better source overwrites a poorer one and
     # never the reverse.
@@ -433,7 +398,288 @@ def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: i
                 if readings:
                     boards.setdefault(str(board.slot), {}).update(readings)
 
-    set_miner_boards(ip, name, model, boards)
+    return {
+        'model': model,
+        'algorithm': algo,
+        'scrape_status': scrape_status,
+        'state': state,
+        'is_mining': 1 if is_mining else 0,
+        'hashrate_ths': None if is_scrypt else hashrate,
+        'hashrate_mhs': hashrate if is_scrypt else None,
+        'power_watts': power,
+        'temp_max_c': temperature,
+        'uptime_seconds': uptime,
+        'efficiency': efficiency,
+        'fault_light_on': 1 if data.get('fault_light') else 0,
+        'errors_count': len(errors) if errors else 0,
+        'fan_speeds': fan_speeds,
+        'psu': psu,
+        'pool_status': pool_status,
+        'pool_accepted': total_accepted,
+        'pool_rejected': total_rejected,
+        'boards': boards,
+        'expected_hashrate_ths': expected_hashrate,
+        'expected_hashrate_source': expected_source,
+        'expected_boards_ghs': expected_boards_ghs,
+    }
+
+
+def _publish_published(published: Dict[str, Any], ip: str, name: str) -> None:
+    """
+    Write a derived projection to the gauges, in the order this collector has
+    always written them (the label cache first, so a label change still clears
+    the previous series before the new ones are written).
+
+    Side effects only: every value here was computed by `_derive_published()`.
+    """
+    model = published['model']
+    algo = published['algorithm']
+    scrape_status = published['scrape_status']
+
+    # Clean up old metrics if miner labels changed (name/model/algorithm)
+    update_miner_label_cache(ip, name, model, algo)
+
+    miner_scrape_status.labels(ip=ip, name=name, model=model, algorithm=algo).set(scrape_status)
+    miner_state.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['state'])
+
+    if published['hashrate_mhs'] is not None:
+        # SCRYPT: hashrate is in MH/s, only report in MH/s metric
+        miner_hashrate_mhs.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['hashrate_mhs'])
+    if published['hashrate_ths'] is not None:
+        # SHA-256: hashrate is in TH/s
+        miner_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['hashrate_ths'])
+        if published['expected_hashrate_ths']:
+            miner_expected_hashrate.labels(ip=ip, name=name, model=model, algorithm=algo).set(
+                published['expected_hashrate_ths'])
+        publish_expected_hashrate_source(ip, name, published['expected_hashrate_source'], RATED_SOURCES)
+        set_miner_expected_boards(ip, name, model, published['expected_boards_ghs'])
+
+    miner_power.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['power_watts'])
+    miner_temp_max.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['temp_max_c'])
+    miner_is_mining.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['is_mining'])
+    miner_uptime.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['uptime_seconds'])
+    miner_efficiency.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['efficiency'])
+    miner_fault_light.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['fault_light_on'])
+    miner_errors_count.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['errors_count'])
+
+    set_miner_fans(ip, name, model, published['fan_speeds'])
+
+    # Unconditional, including with nothing: a machine that stops answering
+    # `get_psu` must lose its PSU series rather than keep the last mains
+    # voltage it reported (DMI-94). The DG1+ never answers it at all and so
+    # publishes no PSU series, which is the correct reading for a machine with
+    # a different protocol -- not a set of zeroes.
+    set_miner_psu(ip, name, model, published['psu'])
+
+    if published['pool_accepted'] is not None:
+        miner_pool_accepted.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['pool_accepted'])
+        miner_pool_rejected.labels(ip=ip, name=name, model=model, algorithm=algo).set(published['pool_rejected'])
+
+    set_miner_pools(ip, name, published['pool_status'])
+    set_miner_boards(ip, name, model, published['boards'])
+
+
+def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: int = 2, algorithm: str = None) -> Dict[str, Any]:
+    """
+    Update Prometheus metrics.
+
+    Returns the projection it published, so a caller that wants to compare two
+    readings compares what was actually written rather than a re-derivation.
+    """
+    published = _derive_published(data, ip, name, model, scrape_status, algorithm)
+    _publish_published(published, ip, name)
+    return published
+
+
+def _flatten_published(published: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Flatten a projection to the `{field: value}` map the comparison diffs.
+
+    Keys are the published quantities themselves, named the way a reader of the
+    mismatches needs them (`fan:0`, `board_temp:2`, `pool_alive:<url>#<index>`),
+    so a line of the comparison report can be traced to one series.
+    """
+    flat: Dict[str, Any] = {
+        'scrape_status': published['scrape_status'],
+        'state': published['state'],
+        'is_mining': published['is_mining'],
+        'power_watts': published['power_watts'],
+        'temp_max_c': published['temp_max_c'],
+        'uptime_seconds': published['uptime_seconds'],
+        'efficiency': published['efficiency'],
+        'fault_light_on': published['fault_light_on'],
+        'errors_count': published['errors_count'],
+    }
+    if published['hashrate_ths'] is not None:
+        flat['hashrate_ths'] = published['hashrate_ths']
+    if published['hashrate_mhs'] is not None:
+        flat['hashrate_mhs'] = published['hashrate_mhs']
+    if published['expected_hashrate_ths']:
+        flat['expected_hashrate_ths'] = published['expected_hashrate_ths']
+        flat['expected_hashrate_source'] = published['expected_hashrate_source']
+    if published['pool_accepted'] is not None:
+        flat['pool_accepted'] = published['pool_accepted']
+        flat['pool_rejected'] = published['pool_rejected']
+
+    for fan_id, rpm in published['fan_speeds'].items():
+        if rpm is None:
+            # `set_miner_fans` does not publish a None speed, and one must not
+            # reach the comparison either: it would report a series on both
+            # sides with no value, which is a difference in nothing.
+            continue
+        flat[f'fan:{fan_id}'] = rpm
+    for field, value in (published['psu'] or {}).items():
+        if value is not None:
+            flat[f'psu:{field}'] = value
+    for pool in published['pool_status']:
+        flat[f"pool_alive:{pool['url']}#{pool['index']}"] = 1 if pool['alive'] else 0
+    for slot, readings in published['boards'].items():
+        for field, value in readings.items():
+            flat[f'board_{field}:{slot}'] = value
+    for slot, ghs in enumerate(published['expected_boards_ghs'] or []):
+        flat[f'board_expected_hashrate:{slot}'] = ghs
+
+    return flat
+
+
+def _uses_our_path(model: str, algorithm: str = None) -> bool:
+    """
+    Whether our WhatsMiner driver is the right reader for this machine.
+
+    Decided by the profile library's manufacturer, not by a regex over the
+    model string: an unknown machine, an Antminer or the DG1+ all keep the path
+    they have today, and a new WhatsMiner profile picks this path up without a
+    code change. Scrypt machines are excluded because the driver is SHA-256.
+    """
+    try:
+        profile = get_library().get_profile(model, algorithm)
+    except Exception as exc:  # noqa: BLE001 - a lookup failure must not decide a path
+        logger.warning(f"Profile lookup failed for {model!r}: {exc}")
+        return False
+    if profile is None:
+        return False
+    return profile.manufacturer == 'MicroBT' and profile.algorithm != 'scrypt'
+
+
+async def _read_with_our_driver(miner_config: Dict) -> Dict:
+    """Our path, with the same failure contract the pyasic path returns."""
+    try:
+        return await read_whatsminer(miner_config)
+    except Exception as exc:  # noqa: BLE001 - one machine must not abort the cycle
+        logger.warning(f"own-path read failed for {miner_config.get('ip')}: "
+                       f"{type(exc).__name__}: {exc}")
+        return {'error': str(exc), 'error_type': 'other'}
+
+
+def _scrape_status_for(result: Dict) -> float:
+    """
+    The scrape_status a result will be published with.
+
+    One implementation for both paths: the numbers only mean anything if a
+    failure is bucketed the same way whoever produced it.
+    """
+    if result.get('data'):
+        return 1 if result.get('has_gaps') else 2
+    error_type = result.get('error_type', 'other')
+    if error_type == 'timeout':
+        return 0
+    if error_type == 'refused':
+        return -1
+    return -2
+
+
+_compare_stats = {'machines': 0, 'fields': 0, 'mismatches': 0, 'expected': 0,
+                  'unreadable': 0, 'published_by': {}}
+
+# Cycles the comparison has run for, so COLLECTION_COMPARE_CYCLES can end a
+# bounded window. A list rather than an int because the inner coroutines close
+# over it, and rebinding a module global from inside a function does not do
+# what it looks like it does.
+_compare_cycles_run = [0]
+
+
+def _reset_compare_stats() -> None:
+    _compare_stats.update({'machines': 0, 'fields': 0, 'mismatches': 0,
+                           'expected': 0, 'unreadable': 0, 'published_by': {}})
+
+
+def _compare_summary_line() -> str:
+    published = ','.join(f'{method}={count}'
+                         for method, count in sorted(_compare_stats['published_by'].items()))
+    return (f"parallel comparison: machines={_compare_stats['machines']} "
+            f"fields_compared={_compare_stats['fields']} "
+            f"unexplained={_compare_stats['mismatches']} "
+            f"expected={_compare_stats['expected']} "
+            f"unreadable={_compare_stats['unreadable']} "
+            f"published_by[{published}]")
+
+
+def _canonical_provenance(provenance: Dict) -> Dict:
+    """
+    Map each side's provenance words onto one vocabulary.
+
+    The two paths name the same field differently (`pyasic.hashrate` is
+    `SUMMARY[0]["MHS 1m"]`), so without this every field would look like a
+    source difference. `asic/parity.py` owns the mapping.
+    """
+    return {key: parity.canonical_source(value)
+            for key, value in (provenance or {}).items()}
+
+
+def _report_comparison(miner_config: Dict, theirs: Dict, own: Dict) -> None:
+    """
+    Diff the two readings and log the differences, per machine.
+
+    Both sides go through `_derive_published`/`_flatten_published`, so what is
+    compared is what each path would publish, not a second opinion about it.
+    Nothing here writes a gauge other than the mismatch counter: the path that
+    publishes is chosen by COLLECTION_PRIMARY and never by this function.
+    """
+    ip = miner_config.get('ip')
+    name = miner_config.get('name')
+    model = miner_config.get('model') or 'Unknown'
+    algorithm = miner_config.get('algorithm')
+
+    published_by = _compare_stats['published_by']
+    method = theirs.get('method', 'error') if theirs.get('data') else f"error:{theirs.get('error_type','other')}"
+    published_by[method] = published_by.get(method, 0) + 1
+    _compare_stats['machines'] += 1
+
+    theirs_data = theirs.get('data')
+    ours_data = own.get('data')
+    if not theirs_data or not ours_data:
+        _compare_stats['unreadable'] += 1
+        logger.warning(
+            f'compare {ip} [{name}] one path produced no reading: '
+            f'theirs={theirs.get("error") or theirs.get("method")} '
+            f'ours={own.get("error") or own.get("method")} '
+            f'(published by {method})')
+        return
+
+    their_projection = _flatten_published(_derive_published(
+        theirs_data, ip, name, model, _scrape_status_for(theirs), algorithm))
+    our_projection = _flatten_published(_derive_published(
+        ours_data, ip, name, model, _scrape_status_for(own), algorithm))
+
+    findings = compare(
+        their_projection, our_projection,
+        _canonical_provenance(theirs.get('provenance')),
+        _canonical_provenance(own.get('provenance')),
+        expected_reason=COLLECTION_COMPARE_EXPECTED.get(ip))
+
+    for finding in findings:
+        miner_compare_mismatch_total.labels(
+            field=finding['field'], result=finding['result']).inc()
+    mismatches, expected = split_results(findings)
+    _compare_stats['fields'] += len(their_projection)
+    _compare_stats['mismatches'] += mismatches
+    _compare_stats['expected'] += expected
+
+    shape = (own.get('provenance') or {}).get('shape', '')
+    line = summarise(name, ip, findings, len(their_projection), shape=shape)
+    logger.info(f'{line} published_by={method}')
+    if mismatches:
+        logger.warning(f'compare {ip} [{name}]: {mismatches} unexplained disagreement(s)')
 
 
 async def _collect_via_cgminer_only(ip: str, name: str, model: str, api_port: int, miner_config: Dict = None) -> Dict:
@@ -461,9 +707,9 @@ async def _collect_via_cgminer_only(ip: str, name: str, model: str, api_port: in
     # For other miners, try CGMiner API
     try:
         # Get all data from CGMiner API
-        stats = await _cgminer_command(ip, "stats", api_port)
-        summary = await _cgminer_command(ip, "summary", api_port)
-        devs = await _cgminer_command(ip, "devs", api_port)
+        stats = await cgminer_command(ip, "stats", api_port)
+        summary = await cgminer_command(ip, "summary", api_port)
+        devs = await cgminer_command(ip, "devs", api_port)
         
         if not summary:
             # CGMiner API not available
@@ -473,7 +719,7 @@ async def _collect_via_cgminer_only(ip: str, name: str, model: str, api_port: in
         # PSU input readings (DMI-94). Asked for only once the API has proved
         # it answers, and only for non-DG1 miners -- the DG1 branch above has
         # already returned, and it has no `get_psu`.
-        psu = psu_from_get_psu(await _cgminer_command(ip, "get_psu", api_port))
+        psu = psu_from_get_psu(await cgminer_command(ip, "get_psu", api_port))
 
         # Extract data
         msg = summary.get('Msg', {})
@@ -494,6 +740,18 @@ async def _collect_via_cgminer_only(ip: str, name: str, model: str, api_port: in
         logger.info(f"{name}: Collected via CGMiner only - hashrate={hashrate:.2f} TH/s, power={power}W, temp={chip_temp}°C")
         
         return {
+            'provenance': {
+                'hashrate_ths': 'msg.mhs_av',
+                'power_watts': 'msg.power',
+                'temp_max_c': 'devs.temperature',
+                'uptime_seconds': 'msg.elapsed',
+                'is_mining': 'hardcoded_true',
+                'fault_light_on': 'hardcoded_false',
+                'errors_count': 'hardcoded_zero',
+                'pools': 'none',
+                'boards': 'devs',
+                'psu': 'get_psu',
+            },
             'data': {
                 'hashrate': hashrate,
                 'power': power,
@@ -528,11 +786,77 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
     Note: Temperature is collected directly via PyASIC's CGMiner API access.
           Power for Antminers is not available via API (hardware limitation).
     """
-    logger.info(f"Starting batch collection...")
+    logger.info(f"Starting batch collection... path={COLLECTION_PRIMARY} "
+                f"compare={'on' if COLLECTION_COMPARE else 'off'}")
     start_time = time.time()
-    
+
+    if COLLECTION_COMPARE:
+        _compare_cycles_run[0] += 1
+        _reset_compare_stats()
+
     sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-    
+    # Our path gets its own slot budget rather than sharing the pyasic one:
+    # in comparison mode both paths run for the same machine in the same cycle,
+    # and one semaphore shared by two nested readers would either deadlock or
+    # silently halve the fleet's concurrency.
+    own_sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+
+    async def collect_one(miner_config: Dict) -> Dict:
+        """
+        Run the path(s) for one machine and return the result that publishes.
+
+        Which path publishes is COLLECTION_PRIMARY and nothing else — the
+        comparison observes, it never decides. A machine our driver does not
+        speak for (unknown profile, Antminer, the DG1+) never reaches this code.
+        """
+        ip = miner_config.get('ip')
+        name = miner_config.get('name')
+        model = miner_config.get('model') or 'Unknown'
+
+        if not _uses_our_path(model, miner_config.get('algorithm')):
+            return await collect_pyasic_one(miner_config)
+
+        comparing = compare_enabled_for(ip, _compare_cycles_run[0])
+        async with own_sem:
+            own = await _read_with_our_driver(miner_config)
+
+        if COLLECTION_PRIMARY != 'cgminer':
+            theirs = await collect_pyasic_one(miner_config)
+            if comparing:
+                _report_comparison(miner_config, theirs, own)
+            return theirs
+
+        # PRIMARY == cgminer: publish ours, except on a machine whose published
+        # board values come out of pyasic's registry rather than off the machine.
+        # Two ways that happens, both *stated* exceptions rather than silent
+        # fallbacks: they are logged every cycle and counted, so a machine routed
+        # away from our path is visible rather than merely absent from it.
+        reason = ''
+        if own.get('pyasic_registry_tainted'):
+            reason = 'pyasic_registry'
+            logger.warning(
+                f"{name} ({ip}): keeping the pyasic source — its devs response is one pyasic "
+                f"can parse, so its board series carry pyasic registry values "
+                f"(expected chips, placeholder slots) that our driver cannot derive")
+        elif keeps_pyasic_source(model):
+            reason = 'registry_chips:' + keeps_pyasic_source(model)
+            logger.warning(
+                f"{name} ({ip}): keeping the pyasic source — pyasic's registry states a chip "
+                f"count per board for this model and publishes it as "
+                f"miner_board_chips_expected, which no machine reports (DMI-136)")
+
+        if reason:
+            miner_collection_routing_total.labels(reason=reason).inc()
+            theirs = await collect_pyasic_one(miner_config)
+            if comparing:
+                _report_comparison(miner_config, theirs, own)
+            return theirs
+
+        if comparing:
+            theirs = await collect_pyasic_one(miner_config)
+            _report_comparison(miner_config, theirs, own)
+        return own
+
     async def collect_pyasic_one(miner_config: Dict):
         async with sem:
             ip = miner_config['ip']
@@ -555,7 +879,24 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 chip_temp = _safe_float(_get_max_temp(data))
                 hashrate = _safe_float(data.hashrate)
                 power = _safe_float(data.wattage)
-                
+
+                # Where each published field actually came from. Recorded for
+                # both paths (DMI-136): a disagreement in the parallel run is
+                # only diagnosable if it can say *which field* each side read,
+                # not merely that the numbers differ.
+                provenance = {
+                    'hashrate_ths': 'pyasic.hashrate' if hashrate else 'none',
+                    'power_watts': 'pyasic.wattage' if power else 'none',
+                    'temp_max_c': 'pyasic.hashboards' if chip_temp else 'none',
+                    'uptime_seconds': 'pyasic.uptime' if data.uptime is not None else 'none',
+                    'is_mining': 'pyasic.is_mining',
+                    'errors_count': 'pyasic.errors',
+                    'fault_light_on': 'pyasic.fault_light',
+                    'pools': 'pyasic.pools',
+                    'boards': 'devs',
+                    'psu': 'get_psu',
+                }
+
                 # If PyASIC returns None/0 for critical metrics, try CGMiner API
                 if (chip_temp == 0 or hashrate == 0 or power == 0) and hasattr(miner_obj, 'api'):
                     try:
@@ -568,9 +909,11 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                                     if hashrate == 0 and 'MHS av' in msg:
                                         # Convert MH/s to TH/s
                                         hashrate = msg['MHS av'] / 1_000_000
+                                        provenance['hashrate_ths'] = 'cdc.msg_mhs_av'
                                         logger.debug(f"{name}: Got hashrate from CGMiner API: {hashrate:.2f} TH/s")
                                     if power == 0 and 'Power' in msg:
                                         power = msg['Power']
+                                        provenance['power_watts'] = 'cdc.msg_power'
                                         logger.debug(f"{name}: Got power from CGMiner API: {power}W")
                         
                         # Get devs for temperature
@@ -580,6 +923,7 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                                 temps = [d.get('Temperature') for d in devs_data['DEVS'] if d.get('Temperature')]
                                 if temps:
                                     chip_temp = max(temps)
+                                    provenance['temp_max_c'] = 'cdc.devs_temperature'
                                     logger.debug(f"{name}: Got chip temp from CGMiner API: {chip_temp}°C")
                     except Exception as e:
                         logger.debug(f"{name}: Failed to get data from CGMiner API: {e}")
@@ -665,7 +1009,7 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                 # already speaks, and the only source of an input voltage.
                 try:
                     psu_response = await asyncio.wait_for(
-                        _cgminer_command(ip, "get_psu", miner_config.get('api_port', 4028)),
+                        cgminer_command(ip, "get_psu", miner_config.get('api_port', 4028)),
                         timeout=10)
                     pyasic_data['psu'] = psu_from_get_psu(psu_response)
                 except Exception as e:
@@ -690,14 +1034,16 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                                     'priority': pool.get('Priority', 0)
                                 })
                             pyasic_data['pools'] = pools_list
+                            provenance['pools'] = 'collector.pools'
                             logger.debug(f"{name}: Added pool data from CGMiner API")
                     except Exception as e:
                         logger.debug(f"{name}: Failed to get pool data: {e}")
-                
+
                 return {
                     'data': pyasic_data,
                     'has_gaps': any(gaps.values()),
                     'gaps': gaps,
+                    'provenance': provenance,
                     'method': 'pyasic'
                 }
                 
@@ -717,8 +1063,11 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
                     return {'error': str(e), 'error_type': 'api_error'}
                 return {'error': str(e), 'error_type': 'other'}
     
-    tasks = [collect_pyasic_one(miner) for miner in miners]
+    tasks = [collect_one(miner) for miner in miners]
     pyasic_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    if COLLECTION_COMPARE:
+        logger.info(_compare_summary_line())
     
     success_count = 0
     miners_data = []
@@ -731,13 +1080,26 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
         miner_name = miner.get('name') or f'miner-{miner_ip}'
         miner_model = miner.get('model') or 'Unknown'
         
+        if isinstance(result, BaseException):
+            # `gather(return_exceptions=True)` exists so one machine cannot take
+            # the cycle with it, but the result then has to be handled as an
+            # exception: it was reaching `result.get(...)` and raising
+            # AttributeError out of the loop, which lost *every* machine's data
+            # rather than the one that failed. Found by reading the traceback in
+            # the DMI-136 parallel run.
+            logger.error(f"Collection for {miner_name} ({miner_ip}) raised "
+                         f"{type(result).__name__}: {result}", exc_info=result)
+            result = {'error': str(result), 'error_type': 'other'}
+
         if result and isinstance(result, dict) and result.get('data'):
             data = result['data']
             has_gaps = result.get('has_gaps', False)
             
-            # Scrape status: 2 = full data, 1 = partial data (has gaps)
-            scrape_status = 1 if has_gaps else 2
-            
+            # Scrape status: 2 = full data, 1 = partial data (has gaps).
+            # Shared with the comparison's projection, so both sides are
+            # bucketed by one rule (DMI-136).
+            scrape_status = _scrape_status_for(result)
+
             _update_metrics(data, miner_ip, miner_name, miner_model, scrape_status, miner.get('algorithm'))
             success_count += 1
             
@@ -798,13 +1160,8 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             miners_data.append(miner_data)
         else:
             error_type = result.get('error_type', 'other') if result else 'other'
-            if error_type == 'timeout':
-                scrape_status = 0
-            elif error_type == 'refused':
-                scrape_status = -1
-            else:
-                scrape_status = -2
-            
+            scrape_status = _scrape_status_for(result or {})
+
             # Detect algorithm for error case metrics
             model_normalized = miner_model.replace(" ", "_")
             is_scrypt = _is_scrypt_miner(miner_model, miner.get('algorithm'))
