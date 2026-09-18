@@ -156,10 +156,19 @@ def parse_apiswitch(msg) -> Optional[int]:
 
     Interesting precisely because it changes without the machine breaking --
     it is how "the owners flipped it" becomes visible (plan section 2).
+
+    The field lives at msg.system.apiswitch -- the 2026-08-28 sweep artifact
+    flattened it to a top-level 'apisw', and a parser built against that
+    stand-in shape read the wrong path and published nothing on every live
+    machine (found live 2026-09-18; the same lesson as rule 7 -- a check run
+    against a reduced copy proves the copy, not the wire). Both spellings
+    are accepted so the recorded payloads stay valid fixtures.
     """
     if not isinstance(msg, dict):
         return None
     raw = msg.get('apiswitch')
+    if raw is None and isinstance(msg.get('system'), dict):
+        raw = msg['system'].get('apiswitch')
     if isinstance(raw, bool):
         return int(raw)
     number = _number(raw)

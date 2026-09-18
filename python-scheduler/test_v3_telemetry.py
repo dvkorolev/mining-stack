@@ -74,14 +74,22 @@ ERRORS_58 = [
 
 def device_info(power=None, error_code=None, apiswitch=None):
     """A `get.device.info` reply shaped like the fleet's, with only the
-    parts a test cares about."""
+    parts a test cares about.
+
+    `apiswitch` is nested under msg.system, where the wire actually carries
+    it (read live 2026-09-18: msg keys are error-code/miner/network/power/
+    salt/system, and apiswitch sits inside system). The 2026-08-28 sweep
+    artifact flattened it to a top-level 'apisw', and building the fixture
+    from that stand-in is exactly what let a wrong-path parser pass its
+    tests while publishing nothing on any live machine.
+    """
     msg = {'miner': {'type': 'M30S++_VH95'}}
     if power is not None:
         msg['power'] = power
     if error_code is not None:
         msg['error-code'] = error_code
     if apiswitch is not None:
-        msg['apiswitch'] = apiswitch
+        msg.setdefault('system', {})['apiswitch'] = apiswitch
     return {'msg': msg}
 
 
@@ -146,6 +154,18 @@ class ParseApiswitchTest(unittest.TestCase):
         self.assertEqual(parse_apiswitch({'apiswitch': 1}), 1)
         self.assertEqual(parse_apiswitch({'apiswitch': True}), 1)
         self.assertEqual(parse_apiswitch({'apiswitch': 0}), 0)
+
+    def test_the_wire_path_msg_system_apiswitch(self):
+        # Read off a live machine 2026-09-18: the field rides inside
+        # msg.system, not at the top level. The regression this pins:
+        # a parser that read only msg['apiswitch'] published no series
+        # on any of the 19 answering machines while every test stayed
+        # green against the flattened sweep artifact.
+        self.assertEqual(
+            parse_apiswitch({'system': {'apiswitch': '0'}}), 0)
+        self.assertEqual(
+            parse_apiswitch({'system': {'apiswitch': '1'}}), 1)
+        self.assertIsNone(parse_apiswitch({'system': {}}))
 
     def test_anything_else_is_absent(self):
         self.assertIsNone(parse_apiswitch({'apiswitch': 'on'}))
