@@ -1,0 +1,196 @@
+{
+ "devs": {
+  "DEVS": [
+   {
+    "ASC": 0,
+    "Accepted": 5444,
+    "Chip Data": "CHIPBATCH",
+    "Chip Frequency": 759,
+    "Chip Temp Avg": 89.56,
+    "Chip Temp Max": 95.96,
+    "Chip Temp Min": 84.09,
+    "Effective Chips": 78,
+    "Enabled": "Y",
+    "Factory GHS": 33762,
+    "HS RT": 36142507.68,
+    "Last Valid Work": 1789750895,
+    "MHS 15m": 36112957.85,
+    "MHS 1m": 36114623.13,
+    "MHS 5m": 36142507.68,
+    "MHS 5s": 35904206.81,
+    "MHS av": 36164762.43,
+    "PCB SN": "SERIAL",
+    "Rejected": 15,
+    "Slot": 0,
+    "Status": "Alive",
+    "Temperature": 74.69,
+    "Upfreq Complete": 1,
+    "chip_vol_diff": 15
+   },
+   {
+    "ASC": 1,
+    "Accepted": 5248,
+    "Chip Data": "CHIPBATCH",
+    "Chip Frequency": 741,
+    "Chip Temp Avg": 83.72,
+    "Chip Temp Max": 93.0,
+    "Chip Temp Min": 72.12,
+    "Effective Chips": 78,
+    "Enabled": "Y",
+    "Factory GHS": 34944,
+    "HS RT": 35581961.19,
+    "Last Valid Work": 1789750895,
+    "MHS 15m": 35602383.08,
+    "MHS 1m": 35573261.97,
+    "MHS 5m": 35581961.19,
+    "MHS 5s": 35546143.79,
+    "MHS av": 35591585.74,
+    "PCB SN": "SERIAL",
+    "Rejected": 16,
+    "Slot": 1,
+    "Status": "Alive",
+    "Temperature": 72.81,
+    "Upfreq Complete": 1,
+    "chip_vol_diff": 14
+   },
+   {
+    "ASC": 2,
+    "Accepted": 5152,
+    "Chip Data": "CHIPBATCH",
+    "Chip Frequency": 712,
+    "Chip Temp Avg": 85.86,
+    "Chip Temp Max": 94.38,
+    "Chip Temp Min": 75.56,
+    "Effective Chips": 78,
+    "Enabled": "Y",
+    "Factory GHS": 31797,
+    "HS RT": 33870258.7,
+    "Last Valid Work": 1789750895,
+    "MHS 15m": 33819217.54,
+    "MHS 1m": 33764145.33,
+    "MHS 5m": 33870258.7,
+    "MHS 5s": 33356257.76,
+    "MHS av": 33817034.04,
+    "PCB SN": "SERIAL",
+    "Rejected": 11,
+    "Slot": 2,
+    "Status": "Alive",
+    "Temperature": 76.06,
+    "Upfreq Complete": 1,
+    "chip_vol_diff": 14
+   }
+  ],
+  "STATUS": [
+   {
+    "Msg": "3 ASC(s)",
+    "STATUS": "S"
+   }
+  ],
+  "id": 1
+ },
+ "get_error_code": {
+  "Code": 131,
+  "Description": "",
+  "Msg": {
+   "error_code": []
+  },
+  "STATUS": "S",
+  "When": 1789750898
+ },
+ "get_miner_info": {
+  "Code": 131,
+  "Description": "",
+  "Msg": {
+   "dns": "192.0.2.10",
+   "gateway": "192.0.2.10",
+   "hostname": "WhatsMiner",
+   "ip": "192.0.2.10",
+   "ledstat": "auto",
+   "mac": "AA:BB:CC:DD:EE:FF",
+   "netmask": "192.0.2.10",
+   "proto": "dhcp"
+  },
+  "STATUS": "S",
+  "When": 1789750898
+ },
+ "get_psu": {
+  "Code": 131,
+  "Description": "",
+  "Msg": {
+   "fan_speed": "7624",
+   "hw_version": "WW1230903",
+   "iin": "15093",
+   "model": "P222B",
+   "name": "P222B",
+   "pin": "3400",
+   "serial_no": "40234002332",
+   "sw_version": "3442.1410",
+   "vender": "6",
+   "vin": "22575"
+  },
+  "STATUS": "S",
+  "When": 1789750899
+ },
+ "ip": "192.0.2.10",
+ "model": "M30S++ VH90 (Stock)",
+ "pools": null,
+ "pools_note": "truncated on the wire and unparseable on the pyasic path too: other: unparseable response: {\"STATUS\":[{\"STATUS\":\"S\",\"Msg\":\"3 Pool(s)\"}],\"POOLS\":[{\"POOL\":1,\"URL\":\"stratum+tcp://gate.emcd.netwo",
+ "source": "captured from the live fleet 2026-09-18, sanitised (worker accounts, serials, MACs, addresses replaced)",
+ "status": {
+  "Code": 131,
+  "Description": "",
+  "Msg": {
+   "FirmwareVersion": "20221009.17.Rel",
+   "btmineroff": "false"
+  },
+  "STATUS": "S",
+  "When": 1789750897
+ },
+ "summary": {
+  "STATUS": [
+   {
+    "Msg": "Summary",
+    "STATUS": "S"
+   }
+  ],
+  "SUMMARY": [
+   {
+    "Accepted": 15844,
+    "Btminer Fast Boot": "disable",
+    "Chip Temp Avg": 86.37,
+    "Chip Temp Max": 95.96,
+    "Chip Temp Min": 72.19,
+    "Debug": "21.8 3.0/3.0 3.0/3.0 2.0/2.3  A:99.8/0.39/31.8/3.2",
+    "Elapsed": 321920,
+    "Env Temp": 33.5,
+    "Factory GHS": 100503,
+    "Fan Speed In": 5400,
+    "Fan Speed Out": 5400,
+    "HS RT": 105611905.84,
+    "Hash Deviation%": 0.0198,
+    "Hash Stable": true,
+    "Hash Stable Cost Seconds": 454,
+    "MHS 15m": 105536410.02,
+    "MHS 1m": 107245760.04,
+    "MHS 5m": 105611905.84,
+    "MHS 5s": 126131220.01,
+    "MHS av": 105573489.19,
+    "Pool Rejected%": 0.2641,
+    "Pool Stale%": 0.0,
+    "Power": 3402,
+    "Power Limit": 3500,
+    "Power Mode": "Normal",
+    "Power Rate": 32.22,
+    "Rejected": 42,
+    "Security Mode": 0,
+    "Target Freq": 686,
+    "Target MHS": 100166976,
+    "Temperature": 76.06,
+    "Total MH": 33986190946671.0,
+    "Uptime": 3645646,
+    "freq_avg": 737
+   }
+  ],
+  "id": 1
+ }
+}
