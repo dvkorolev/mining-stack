@@ -232,6 +232,36 @@ went unnoticed until a human looked.
 ### Simulation (`SIMULATION_MODE`)
 Simulated/fake data is served **only** when `SIMULATION_MODE=true` (default false). It is never a silent fallback: on a Prometheus read error the backend keeps last-known real stats and logs the error; boot does not seed fake data. Do not reintroduce a `simulateMiningStats()` fallback into the real path.
 
+### Collection path (`COLLECTION_PRIMARY`, DMI-136)
+WhatsMiner-class machines can be read by two collectors: `asic/` (our own 4028 client and driver,
+DMI-135's layer) and the pyasic path the scheduler grew up on. `COLLECTION_PRIMARY` says which one
+**publishes** — `pyasic` (default, today's behaviour) or `cgminer` (ours). The default matters: a
+deploy that changes nothing but the code cannot change a value.
+
+`COLLECTION_COMPARE=on` runs **both** paths against the same machine in the same cycle and logs every
+field that disagrees, per machine, with the source field each side read. It never decides which path
+publishes, so it is a measurement of the switch and not part of it. Bound it — it roughly doubles
+4028 traffic — with `COLLECTION_COMPARE_CYCLES` / `COLLECTION_COMPARE_IPS`.
+`COLLECTION_COMPARE_EXPECTED=ip:reason,…` is the written record of machines allowed to differ; a
+difference with no reason is the finding, and `miner_compare_mismatch_total{field,result}` keeps the
+count. The active path is published as `scheduler_collection_path` — a mode that runs must not be
+invisible.
+
+Two things to keep true:
+
+- **`asic/parity.py` reproduces pyasic's field *selection*, not a better one.** This fleet answers
+  `summary` in two shapes — `{"SUMMARY":[…]}` on 13 machines, `{"STATUS":"S","Msg":{…}}` on 7 — and
+  pyasic reads only the first; a `KeyError` is a `LookupError`, which `_get_hashrate` catches, so on
+  the Msg-shaped machines the published hashrate and power already come from *our* gap-filler. `MHS
+  av` and `MHS 1m` are both in **MH/s** here, while `asic_profiles.yaml` declares TH/s for
+  WhatsMiner — wrong by 10^6, and its own ticket; reproducing it is what this phase requires, fixing
+  it is a published-value change.
+- **A machine whose `devs` pyasic can parse keeps the pyasic source even when `COLLECTION_PRIMARY=cgminer`**
+  (the driver reports it as `pyasic_registry_tainted`). Its board series carry pyasic *registry*
+  values — chips per model, and a placeholder slot per `expected_hashboards` — that no machine
+  states, so our driver cannot reproduce them. Measured 2026-09-18: one machine out of twenty, `.74`,
+  where it is not cosmetic — its headline temperature is pyasic's rounded chip average.
+
 ### Alert delivery (`ALERT_NOTIFY_*`, DMI-78/79)
 `notifier.service.ts` owns delivery, and its contract is **"say what happened"**, not "send a
 message": every call returns `delivered` / `not_delivered` / `unverified` and is counted in

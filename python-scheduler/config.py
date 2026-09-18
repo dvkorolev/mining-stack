@@ -24,6 +24,108 @@ SYSTEM_API_KEY = os.getenv('SYSTEM_API_KEY', '')  # For authenticating with back
 INTERNAL_METRICS_TOKEN = os.getenv('INTERNAL_METRICS_TOKEN', '')  # For authenticating metrics push to backend
 USE_DATABASE_CONFIG = os.getenv('USE_DATABASE_CONFIG', 'true').lower() == 'true'  # Use database instead of YAML
 
+# ----------------------------------------------------------------------------
+# Collection path (DMI-136)
+#
+# Two collectors can serve a WhatsMiner-class machine: the pyasic path the
+# scheduler has always used, and the CGMiner 4028 path we own (`asic/`). Which
+# one publishes is this switch, and the default is today's behaviour — a deploy
+# that changes nothing but the code cannot change a value.
+#
+#   COLLECTION_PRIMARY=pyasic    the pyasic path publishes (default)
+#   COLLECTION_PRIMARY=cgminer   our path publishes
+#
+# COLLECTION_COMPARE runs *both* paths against the same machine in the same
+# cycle and logs every field that disagrees; it does not change which path
+# publishes. That is the acceptance instrument for the switch, so it is
+# deliberately independent of it. Bounded, because it roughly doubles the 4028
+# traffic: `COLLECTION_COMPARE_CYCLES` stops it after N cycles (0 = until
+# switched off) and `COLLECTION_COMPARE_IPS` limits it to a subset of machines.
+#
+# `COLLECTION_COMPARE_EXPECTED` is the written record of machines that are
+# *allowed* to differ and why, as `ip:reason` pairs. Empty by default, so a
+# difference is unexplained until someone writes down what explains it — an
+# excuse entered in advance is not an explanation.
+# ----------------------------------------------------------------------------
+COLLECTION_PATHS = ('pyasic', 'cgminer')
+COLLECTION_PRIMARY = os.getenv('COLLECTION_PRIMARY', 'pyasic').strip().lower()
+if COLLECTION_PRIMARY not in COLLECTION_PATHS:
+    print(f"WARNING: COLLECTION_PRIMARY='{COLLECTION_PRIMARY}' is not one of "
+          f"{COLLECTION_PATHS}; falling back to 'pyasic' (today's behaviour)")
+    COLLECTION_PRIMARY = 'pyasic'
+COLLECTION_COMPARE = os.getenv('COLLECTION_COMPARE', 'false').strip().lower() == 'true'
+COLLECTION_COMPARE_CYCLES = int(os.getenv('COLLECTION_COMPARE_CYCLES', '0'))
+COLLECTION_COMPARE_IPS = {
+    ip.strip() for ip in os.getenv('COLLECTION_COMPARE_IPS', '').split(',') if ip.strip()
+}
+
+
+def _parse_expected(raw: str) -> Dict[str, str]:
+    """`ip:reason,ip:reason` -> {ip: reason}. A malformed pair is kept, not dropped."""
+    expected = {}
+    for pair in raw.split(','):
+        pair = pair.strip()
+        if not pair:
+            continue
+        ip, _, reason = pair.partition(':')
+        expected[ip.strip()] = reason.strip() or 'expected difference, no reason given'
+    return expected
+
+
+COLLECTION_COMPARE_EXPECTED = _parse_expected(
+    os.getenv('COLLECTION_COMPARE_EXPECTED', ''))
+
+# Models that keep the pyasic source even when COLLECTION_PRIMARY=cgminer.
+#
+# pyasic's model registry states a chip count per board (`expected_chips`) and
+# the collector publishes it as `miner_board_chips_expected`, even on machines
+# whose `devs` pyasic cannot parse -- the placeholder `HashBoard` objects carry
+# it and nothing else. A machine never states it, so our driver has no way to
+# produce it, and DMI-136's rule is that a field we cannot reproduce keeps the
+# source it has today.
+#
+# Measured 2026-09-18 by resolving the fleet with pyasic 0.60.0 (see the DMI-136
+# report): M30S++ VH90/VH95 -> 78 chips, M50 VH50 -> 105, M50 VH80 -> 111. The
+# M50 VH70 machines and the ones pyasic cannot name resolve to a class with no
+# chip count at all, so they need no entry here.
+#
+# The real fix is to carry chips-per-board in `asic_profiles.yaml`, where our
+# own registry belongs (DMI-135); this list is what makes the current phase
+# value-preserving in the meantime.
+COLLECTION_PYASIC_SOURCE_MODELS = tuple(
+    model.strip() for model in os.getenv(
+        'COLLECTION_PYASIC_SOURCE_MODELS',
+        'M30S++ VH90,M30S++ VH95,M50 VH50,M50 VH80',
+    ).split(',') if model.strip()
+)
+
+
+def keeps_pyasic_source(model: str) -> str:
+    """The matched marker when this model must keep the pyasic source, else ''."""
+    lowered = (model or '').lower()
+    for marker in COLLECTION_PYASIC_SOURCE_MODELS:
+        if marker.lower() in lowered:
+            return marker
+    return ''
+
+
+def compare_enabled_for(ip: str, cycles_run: int) -> bool:
+    """
+    Whether to run the second path against this machine in this cycle.
+
+    Bounded by both the cycle count and the optional machine list: an
+    instrument left running forever is a load increase nobody is watching. The
+    count is held by the caller rather than here, so this module stays a
+    description of the configuration and not a place state accumulates.
+    """
+    if not COLLECTION_COMPARE:
+        return False
+    if COLLECTION_COMPARE_CYCLES and cycles_run >= COLLECTION_COMPARE_CYCLES:
+        return False
+    if COLLECTION_COMPARE_IPS and ip not in COLLECTION_COMPARE_IPS:
+        return False
+    return True
+
 # Cache miners config at startup
 miners_config_cache = None
 last_config_load = 0

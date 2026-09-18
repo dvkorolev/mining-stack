@@ -46,7 +46,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install pyyaml prometheus-client==0.19.0 requests
-      - run: python -m py_compile python-scheduler/main.py python-scheduler/metrics.py python-scheduler/config.py python-scheduler/health_check.py python-scheduler/asic_profile_loader.py python-scheduler/rated_hashrate.py python-scheduler/v3_telemetry.py python-scheduler/state_manager.py python-scheduler/collectors/*.py python-scheduler/parsers/*.py
+      - run: python -m py_compile python-scheduler/main.py python-scheduler/metrics.py python-scheduler/config.py python-scheduler/health_check.py python-scheduler/asic_profile_loader.py python-scheduler/rated_hashrate.py python-scheduler/v3_telemetry.py python-scheduler/state_manager.py python-scheduler/collectors/*.py python-scheduler/parsers/*.py python-scheduler/asic/*.py python-scheduler/asic/transport/*.py python-scheduler/asic/drivers/*.py
       - run: python bin/test_farm_init.py
       - run: python bin/test_wan_watchdog.py
       - run: python python-scheduler/test_metrics_cleanup.py
@@ -69,6 +69,14 @@ jobs:
       - run: python test_v3_telemetry.py
         working-directory: python-scheduler
       - run: python test_dockerfile_completeness.py
+        working-directory: python-scheduler
+      # DMI-136. These three are pyasic-free on purpose: the primary path must
+      # be testable where pyasic is not installed, which is here.
+      - run: python test_asic_parity.py
+        working-directory: python-scheduler
+      - run: python test_reading_compare.py
+        working-directory: python-scheduler
+      - run: python test_whatsminer_driver.py
         working-directory: python-scheduler
 
   router-exporter:

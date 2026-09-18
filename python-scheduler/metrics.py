@@ -149,6 +149,25 @@ miner_fallback_total = Counter('miner_fallback_total', 'Count of fallback collec
 scheduler_config_source = Gauge('scheduler_config_source', 'Active miner-config source (1=active, 0=inactive)', ['source'])
 scheduler_miners_configured = Gauge('scheduler_miners_configured', 'Number of miners in the active configuration')
 
+# Collection-path provenance (DMI-136): which collector is publishing, and what
+# the parallel comparison found. Same rule as scheduler_config_source — a mode
+# that is running must not be invisible, and every known path keeps a series so
+# the inactive one reads 0 rather than vanishing.
+scheduler_collection_path = Gauge('scheduler_collection_path', 'Active collection path (1=active, 0=inactive)', ['path'])
+scheduler_collection_compare = Gauge('scheduler_collection_compare', 'Parallel comparison running (1=yes, 0=no)')
+miner_compare_mismatch_total = Counter('miner_compare_mismatch_total', 'Field-by-field disagreements between the two collection paths', ['field', 'result'])
+# A machine deliberately left on the pyasic source while our path is primary,
+# by reason. Counted rather than merely logged, so "routed elsewhere" is a
+# signal an alert can read and not a line somebody has to notice.
+miner_collection_routing_total = Counter('miner_collection_routing_total', 'Machines kept on the pyasic source by reason', ['reason'])
+
+
+def publish_collection_path(path: str, known_paths, comparing: bool) -> None:
+    """Publish the active collection path and whether the comparison is running."""
+    for known in known_paths:
+        scheduler_collection_path.labels(path=known).set(1 if known == path else 0)
+    scheduler_collection_compare.set(1 if comparing else 0)
+
 
 def publish_config_source(source: str, miner_count: int, known_sources) -> None:
     """
