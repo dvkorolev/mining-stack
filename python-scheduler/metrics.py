@@ -55,6 +55,25 @@ miner_psu_input_amps = Gauge('miner_psu_input_amps', 'PSU input current in amps'
 miner_psu_input_watts = Gauge('miner_psu_input_watts', 'PSU input power in watts', ['ip', 'name', 'model', 'psu_model'])
 miner_psu_temp_c = Gauge('miner_psu_temp_c', 'PSU temperature in Celsius', ['ip', 'name', 'model', 'psu_model'])
 
+# PSU output and API switch, from the v3 `get.device.info` reply (DMI-108).
+# Same label set as the input family so the two sides of one supply join on
+# everything but the metric name. vout is RAW: the firmware states no unit,
+# and its own error code 212 gives the operating border as [1150, 1500] in
+# these same units -- centivolts is the only physical reading of that
+# (11.5-15.0 V, the WhatsMiner board rail) but no source says so, and a
+# `_volts` suffix nobody can vouch for is the `MHS av` failure mode (DMI-91).
+# Rename with a /100 rescale only once the unit is confirmed.
+miner_psu_vout_raw = Gauge('miner_psu_vout_raw', 'PSU output voltage in the firmware\'s raw vout units (unit unstated; firmware border [1150, 1500]; likely centivolts)', ['ip', 'name', 'model', 'psu_model'])
+miner_apiswitch = Gauge('miner_apiswitch', 'WhatsMiner v3 API switch state as reported (1=enabled, 0=disabled)', ['ip', 'name', 'model', 'psu_model'])
+
+# Error-code events from the same v3 reply (DMI-108). The machine's
+# `error-code` list holds only the last occurrence per code, so the counter
+# counts *new* events -- a changed `when_machine` -- and the gauge carries the
+# poll-time unix ts of the last one. `reason` deliberately stays out of the
+# labels (cardinality): the text lives in the JSONL event log.
+miner_error_events = Counter('miner_error_events_total', 'New error-code events by code (changed when_machine, plausible dates only)', ['ip', 'name', 'code'])
+miner_error_last_happened = Gauge('miner_error_last_happened_seconds', 'Poll-time unix timestamp of the last new event for this code', ['ip', 'name', 'code'])
+
 # Miner Pool Metrics
 miner_pool_accepted = Gauge('miner_pool_accepted_total', 'Total accepted shares', ['ip', 'name', 'model', 'algorithm'])
 miner_pool_rejected = Gauge('miner_pool_rejected_total', 'Total rejected shares', ['ip', 'name', 'model', 'algorithm'])
@@ -172,6 +191,17 @@ _miner_fan_label_cache = {}    # {ip: {(name, model, fan_id), ...}}
 # not reachable through get_all_miner_metrics() -- see set_miner_psu().
 _miner_psu_label_cache = {}    # {ip: {(name, model, psu_model), ...}}
 
+# v3-sourced PSU output series (DMI-108). Separate cache from DMI-94's on
+# purpose: two publishers feed the PSU family from two APIs (4028 get_psu and
+# 4433 get.device.info), and a shared published-set would let either side
+# prune the other's label combinations the moment their `psu_model` strings
+# disagreed -- a self-inflicted flapping series.
+_miner_psu_v3_label_cache = {}  # {ip: {(name, model, psu_model), ...}}
+
+# Error-event series (DMI-108). Own label set (`code`), own removal path,
+# like every family that is not reachable through get_all_miner_metrics().
+_miner_error_label_cache = {}   # {ip: {(name, code), ...}}
+
 # The board gauges all carry the same label set, so one cache serves them all.
 _BOARD_METRICS = (miner_board_hashrate, miner_board_temp, miner_board_chip_temp,
                   miner_board_chips_count, miner_board_chips_expected)
@@ -195,6 +225,10 @@ _PSU_FIELDS = (('vin', miner_psu_input_volts),
 # label has to have a value; this one states that the model is unknown rather
 # than implying a particular supply.
 PSU_MODEL_UNKNOWN = 'unknown'
+
+# Which v3-sourced reading feeds which gauge, same contract as _PSU_FIELDS.
+_PSU_V3_FIELDS = (('vout', miner_psu_vout_raw),
+                  ('apiswitch', miner_apiswitch))
 
 
 def set_miner_pools(ip: str, name: str, pools) -> None:
@@ -371,6 +405,63 @@ def set_miner_psu(ip: str, name: str, model: str, readings) -> None:
         _miner_psu_label_cache.pop(ip, None)
 
 
+def set_miner_psu_v3(ip: str, name: str, model: str, readings) -> None:
+    """
+    Publish the v3-sourced PSU readings (vout, apiswitch), DMI-108.
+
+    Same contract as set_miner_psu(): call it with whatever the reply carried,
+    including nothing, and each field is judged on its own -- a missing `vout`
+    is removed, not held over, and absent is never zero. A separate cache from
+    DMI-94's because the two PSU families are fed by two publishers (see
+    _miner_psu_v3_label_cache).
+
+    Args:
+        ip: miner address, the cache key.
+        name, model: the miner's own labels.
+        readings: {'vout': float|None, 'apiswitch': int|None,
+                   'psu_model': str|None}.
+    """
+    readings = readings or {}
+    psu_model = readings.get('psu_model') or PSU_MODEL_UNKNOWN
+    current = (name, model, psu_model)
+
+    published = set()
+    for field, metric in _PSU_V3_FIELDS:
+        value = readings.get(field)
+        if value is None:
+            _remove_psu_field(metric, ip, current)
+            continue
+        metric.labels(ip=ip, name=name, model=model, psu_model=psu_model).set(value)
+        published.add(current)
+
+    for stale in _miner_psu_v3_label_cache.get(ip, set()) - published:
+        _remove_psu_v3_series(ip, stale)
+
+    if published:
+        _miner_psu_v3_label_cache[ip] = published
+    else:
+        _miner_psu_v3_label_cache.pop(ip, None)
+
+
+def record_miner_error_event(ip: str, name: str, code: str, happened_ts: float) -> None:
+    """
+    Count one new error-code event and stamp it (DMI-108).
+
+    Called only for events whose machine date is plausible -- the counter is
+    the fleet's event rate, and clock steps must not manufacture events.
+
+    The counter's children are never pruned by the failure-streak cull, only
+    by forget_miner(): a temporarily-offline machine's event history is real,
+    and deleting the child would reset the count mid-life, which rate() reads
+    as a spurious reset. The last_happened gauge is a value reading and
+    follows the usual stale-cull rule instead.
+    """
+    code = str(code)
+    miner_error_events.labels(ip=ip, name=name, code=code).inc()
+    miner_error_last_happened.labels(ip=ip, name=name, code=code).set(happened_ts)
+    _miner_error_label_cache.setdefault(ip, set()).add((name, code))
+
+
 def publish_expected_hashrate_source(ip: str, name: str, source: str, known_sources) -> None:
     """
     Publish where this miner's rated hashrate came from (DMI-81).
@@ -512,6 +603,47 @@ def remove_miner_psu_series(ip: str) -> None:
         _remove_psu_series(ip, labels)
 
 
+def _remove_psu_v3_series(ip: str, labels) -> None:
+    """Remove one label combination from every v3-sourced PSU gauge."""
+    for _, metric in _PSU_V3_FIELDS:
+        _remove_psu_field(metric, ip, labels)
+
+
+def remove_miner_psu_v3_series(ip: str) -> None:
+    """Drop every v3 PSU series (vout, apiswitch) for a gone/unreachable miner."""
+    for labels in _miner_psu_v3_label_cache.pop(ip, set()):
+        _remove_psu_v3_series(ip, labels)
+
+
+def expire_miner_error_last_happened(ip: str) -> None:
+    """
+    Failure-streak cull for error-event series: drop the stale value gauge.
+
+    Only the gauge; the counter children survive a temporarily-offline
+    machine (see record_miner_error_event). The label cache is kept too --
+    it is what remove_miner_error_series() still needs if the miner is later
+    decommissioned, and re-recording an event simply re-adds to it. An old
+    last_happened from a machine that has not answered in hours would
+    otherwise keep looking like a recent event in
+    `time() - miner_error_last_happened_seconds`.
+    """
+    for name, code in _miner_error_label_cache.get(ip, set()):
+        try:
+            miner_error_last_happened.remove(ip, name, code)
+        except (KeyError, ValueError):
+            pass
+
+
+def remove_miner_error_series(ip: str) -> None:
+    """Drop every error-event series (counter and gauge) for a gone miner."""
+    for name, code in _miner_error_label_cache.pop(ip, set()):
+        for metric in (miner_error_events, miner_error_last_happened):
+            try:
+                metric.remove(ip, name, code)
+            except (KeyError, ValueError):
+                pass
+
+
 def get_all_miner_metrics():
     """Return all Gauge metrics that track miners"""
     return [
@@ -638,7 +770,9 @@ def known_miner_ips() -> set:
             | set(_miner_pool_label_cache)
             | set(_miner_board_label_cache)
             | set(_miner_fan_label_cache)
-            | set(_miner_psu_label_cache))
+            | set(_miner_psu_label_cache)
+            | set(_miner_psu_v3_label_cache)
+            | set(_miner_error_label_cache))
 
 
 def forget_miner(ip: str) -> bool:
@@ -670,6 +804,8 @@ def forget_miner(ip: str) -> bool:
     remove_miner_pool_series(ip)
     remove_miner_expected_series(ip)
     remove_miner_psu_series(ip)
+    remove_miner_psu_v3_series(ip)
+    remove_miner_error_series(ip)
     _miner_label_cache.pop(ip, None)
     return known
 
