@@ -121,15 +121,57 @@ class Uptime(unittest.TestCase):
 
 class Fans(unittest.TestCase):
     def test_summary_shape_publishes_fan_in_and_out(self):
+        # DMI-192 must not move this: the native view carries the pair, so a
+        # SUMMARY-shaped machine reads exactly the view pyasic read.
         speeds, source = parity.fan_speeds(SUMMARY_SHAPE['summary'], 'M30S++ VH90 (Stock)')
         self.assertEqual(source, 'summary.fan_speed_in_out')
         self.assertEqual(speeds['0'], SUMMARY_SHAPE['summary']['SUMMARY'][0]['Fan Speed In'])
         self.assertEqual(speeds['1'], SUMMARY_SHAPE['summary']['SUMMARY'][0]['Fan Speed Out'])
 
-    def test_msg_shape_publishes_no_fans(self):
+    def test_msg_shape_reads_fans_from_msg(self):
+        # DMI-192, and a deliberate published-value change: pyasic's
+        # `SUMMARY[0].get("Fan Speed In", 0)` default fires on this machine and
+        # publishes a fabricated 0 RPM, while the real speeds sit one level down
+        # in `Msg`. Ours reads them, and says which view they came from.
         speeds, source = parity.fan_speeds(MSG_SHAPE['summary'], 'M30S++ VH40 (Stock)')
-        self.assertEqual(speeds, {})
-        self.assertEqual(source, 'summary.absent')
+        msg = MSG_SHAPE['summary']['Msg']
+        self.assertEqual(source, 'msg.fan_speed_in_out')
+        self.assertEqual(speeds['0'], msg['Fan Speed In'])
+        self.assertEqual(speeds['1'], msg['Fan Speed Out'])
+        self.assertGreater(speeds['0'], 0)
+
+    def test_the_native_view_wins_when_it_can_supply_the_pair(self):
+        # Precedence, not just presence: a response carrying both views is still
+        # read from `SUMMARY`, so the fallback cannot silently take over.
+        both = dict(SUMMARY_SHAPE['summary'])
+        both['Msg'] = dict(MSG_SHAPE['summary']['Msg'])
+        speeds, source = parity.fan_speeds(both, 'M30S++ VH90 (Stock)')
+        self.assertEqual(source, 'summary.fan_speed_in_out')
+        self.assertEqual(speeds['0'], SUMMARY_SHAPE['summary']['SUMMARY'][0]['Fan Speed In'])
+
+    def test_a_native_view_without_fan_fields_falls_back_to_msg(self):
+        response = {'SUMMARY': [{'Power': 3301}],
+                    'Msg': {'Fan Speed In': 1000, 'Fan Speed Out': 1100}}
+        speeds, source = parity.fan_speeds(response, 'M30S++ VH90 (Stock)')
+        self.assertEqual(source, 'msg.fan_speed_in_out')
+        self.assertEqual(speeds, {'0': 1000.0, '1': 1100.0})
+
+    def test_nothing_reported_publishes_no_series(self):
+        # No fan series, and no invented value standing in for one. The native
+        # view being absent is what `summary.absent` names.
+        self.assertEqual(parity.fan_speeds({'Msg': {'Power': 1}}, 'M30S++ VH90 (Stock)'),
+                         ({}, 'summary.absent'))
+        self.assertEqual(parity.fan_speeds({'SUMMARY': [{'Power': 1}]}, 'M30S++ VH90 (Stock)'),
+                         ({}, 'summary.fan_speed_absent'))
+
+    def test_the_two_fan_tokens_do_not_canonicalise_together(self):
+        # Contrast `msg.elapsed`, which *does* collapse onto `summary.elapsed`
+        # because both shapes carry the same `Elapsed` field. pyasic's fan value
+        # never comes from `Msg`, so this pair must stay distinct (DMI-192).
+        self.assertEqual(parity.canonical_source('msg.fan_speed_in_out'),
+                         'msg.fan_speed_in_out')
+        self.assertNotEqual(parity.canonical_source('msg.fan_speed_in_out'),
+                            parity.canonical_source('summary.fan_speed_in_out'))
 
     def test_expected_fans_is_two_for_the_fleet(self):
         # Measured against pyasic 0.60.0's registry on 2026-09-18: every class

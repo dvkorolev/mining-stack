@@ -1,12 +1,16 @@
 """
-pyasic 0.60.0's field selection, reproduced exactly.
+pyasic 0.60.0's field selection, reproduced exactly — with one deliberate
+exception, `fan_speeds()`, which reads the value the machine states rather than
+reproducing pyasic's fabricated zero (DMI-192, and its docstring says why).
 
 **This module exists for phase 1 only (DMI-136) and is meant to be deleted or
 rewritten in DMI-138.** Phase 1's claim is "the primary path is ours and no
 published value changes", and the only way both halves of that can be true at
 once is for our path to choose the same *source field* pyasic chose — not the
-better field, the same one. Each function below names the pyasic method it
-mirrors so the difference is visible rather than folklore.
+better field, the same one. That rule is knowingly broken in exactly one place,
+the fan reading named above, and a fan series is therefore the one published
+value this phase is allowed to change. Each function below names the pyasic
+method it mirrors so the difference is visible rather than folklore.
 
 Measured against the live fleet 2026-09-18 (raw 4028 captures, all 20 answering
 WhatsMiners). The fleet answers `summary` in two shapes and pyasic only reads
@@ -168,6 +172,11 @@ def uptime_seconds(response: Optional[Dict]) -> Tuple[int, str]:
     return 0, 'none'
 
 
+# The two fan speeds a `summary` view states, keyed by the fan_id pyasic's
+# `Fan` list position becomes. Read from whichever view carries them (DMI-192).
+_FAN_FIELDS = (('0', 'Fan Speed In'), ('1', 'Fan Speed Out'))
+
+
 # pyasic's `expected_fans` defaults to 2 (`BaseMiner.expected_fans`) and only a
 # few WhatsMiner classes override it to 0. `_get_fans` returns an empty list
 # when it is 0, so the fan series exist for one group and not the other — and
@@ -191,32 +200,73 @@ def expected_fans(model: str) -> int:
     return FAN_COUNT_DEFAULT
 
 
+def _fan_pair(view: Dict) -> Dict[str, Any]:
+    """The two fan speeds a `summary` view states, keyed by fan_id."""
+    speeds: Dict[str, Any] = {}
+    for fan_id, field in _FAN_FIELDS:
+        value = _number(view.get(field))
+        if value is not None:
+            speeds[fan_id] = value
+    return speeds
+
+
 def fan_speeds(response: Optional[Dict], model: str) -> Tuple[Dict[str, Any], str]:
     """
-    Fan speeds keyed by fan_id, on pyasic's terms.
+    Fan speeds keyed by fan_id — **our read, not pyasic's**.
 
-    pyasic `BTMiner._get_fans` returns
+    This is the one place in this module that deliberately does not reproduce
+    pyasic's field selection, and it is a deliberate published-value change
+    (DMI-192) rather than drift. The module's rule everywhere else is "choose
+    the same *source field* pyasic chose, not the better one"; the fan reading is
+    knowingly exempt, and what it now is — our own read of the machine — is what
+    this docstring records. The emulation-fidelity question it raises is its own
+    ticket (DMI-201), not this function's.
+
+    pyasic `BTMiner._get_fans` builds
     `[Fan(SUMMARY[0].get("Fan Speed In", 0)), Fan(...Fan Speed Out...)]` when
-    `expected_fans > 0`, and `[Fan() for _ in range(0)]` (an empty list) when it
-    is 0. `Fan.speed` defaults to None, so a machine whose shape it cannot read
-    yields `Fan(None)` and the metric layer drops it (DMI-62) rather than
-    publishing 0 RPM, which would read as a stopped fan.
+    `expected_fans > 0`, and an empty list when it is 0. The `.get(..., 0)`
+    default is the defect: on the machines that answer `summary` in the Msg
+    shape, `SUMMARY[0]` *resolves* — its sibling `_get_uptime` reads
+    `SUMMARY[0]["Elapsed"]` from the same object and publishes a real 172 533 s
+    on `.53` — but carries no fan keys, so the default fires and pyasic publishes
+    `fan:0 = 0` / `fan:1 = 0`. That is a fabricated zero of the DMI-62 family and
+    it is not dropped downstream: `_flatten_published` skips only `None`, so a
+    `0` reaches the comparison as a number. Measured in the DMI-136 window
+    (`dmi136_fleet4.log`):
+    `compare 192.168.2.53 … fan:0(only_pyasic): theirs=0 ours=None …
+    published_by=pyasic`.
+
+    The RPM is real and sits one nesting level down, in `Msg`: `.53` reports
+    `Fan Speed In` 6070 / `Fan Speed Out` 6217. Every Msg-shaped machine in this
+    fleet does — `.53 .58 .70 .89 .98 .117 .121`. So both views are tried in the
+    same order as `uptime_seconds` above, with a provenance token naming the one
+    actually read: the native `SUMMARY` view first, then `Msg`.
+
+    Repairing a fabricated value is the point; do not read the change as an
+    accident of the Msg fallback.
 
     Returns ({fan_id: rpm}, provenance). An empty dict means "publish no fan
-    series" — which is what the pyasic path produces for the 7 Msg-shaped
-    machines in this fleet, because it cannot read `SUMMARY` on them.
+    series" — no placeholder is invented to stand in for a reading nobody
+    supplied.
     """
     if expected_fans(model) <= 0:
         return {}, 'pyasic.expected_fans=0'
+
     native = summary_view(response)
-    if not native:
-        return {}, 'summary.absent'
-    speeds = {}
-    for fan_id, field in (('0', 'Fan Speed In'), ('1', 'Fan Speed Out')):
-        value = _number(native.get(field))
-        if value is not None:
-            speeds[fan_id] = value
-    return speeds, 'summary.fan_speed_in_out'
+    speeds = _fan_pair(native)
+    if len(speeds) == len(_FAN_FIELDS):
+        # Both fields from the view pyasic read: a SUMMARY-shaped machine's fan
+        # output does not move.
+        return speeds, 'summary.fan_speed_in_out'
+
+    msg_speeds = _fan_pair(msg_view(response))
+    if msg_speeds:
+        return msg_speeds, 'msg.fan_speed_in_out'
+    if speeds:
+        # A partial native pair and nothing in `Msg`: keep the reading rather
+        # than withdraw a series that is published today.
+        return speeds, 'summary.fan_speed_in_out'
+    return {}, ('summary.absent' if not native else 'summary.fan_speed_absent')
 
 
 def efficiency(power: float, hashrate_ths: Optional[float], shape: str) -> Tuple[float, str]:
@@ -457,6 +507,19 @@ SOURCE_CANON = {
     # 172 450 s on both sides); the value comparison is what would catch it if
     # they ever stopped agreeing.
     'msg.elapsed': 'summary.elapsed',
+    # `msg.fan_speed_in_out` is deliberately **not** collapsed onto
+    # `summary.fan_speed_in_out`, unlike `msg.elapsed` just above: `Elapsed` is
+    # the same field of the same command in both shapes, and the fleet measured
+    # the two equal, whereas pyasic's fan value is never read from `Msg` at all —
+    # it is the `.get(..., 0)` default in `_get_fans` (DMI-192). Collapsing would
+    # assert the very identity that change repairs.
+    #
+    # Note this entry cannot fire in today's comparison: the pyasic side sets no
+    # `fan:*` provenance at all (`collectors/pyasic_collector.py`), and
+    # `compare()` reports a source difference only when *both* sides name one, so
+    # a fan difference stays value-based. It is here to keep the vocabulary
+    # complete and the distinction intact for the day that provenance is added.
+    'msg.fan_speed_in_out': 'msg.fan_speed_in_out',
     'devs.temperature': 'devs.temperature',
     'collector.pools': 'collector.pools',
     'get_psu': 'get_psu',
