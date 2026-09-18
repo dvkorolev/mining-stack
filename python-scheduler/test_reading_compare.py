@@ -86,8 +86,14 @@ class Disagreement(unittest.TestCase):
         self.assertEqual(fields(compare(base(), ours)), ['is_mining', 'state'])
 
     def test_a_series_only_one_side_publishes_is_a_finding(self):
-        # The fan case: pyasic publishes no fans for a Msg-shaped machine, so a
-        # fan series on our side is a value change even though no value differs.
+        # A series only one path derives is a value change even though no value
+        # differs between them -- e.g. a board series.
+        #
+        # Fans used to be the example here; they are not one any more. pyasic
+        # publishes `0` for them rather than nothing, because `_get_fans` falls
+        # back to `.get(..., 0)` on a `SUMMARY[0]` that resolves without the fan
+        # keys (`dmi136_fleet4.log`: `fan:0(only_pyasic): theirs=0`). That is a
+        # fabricated zero, and DMI-192 repairs it in asic/parity.py::fan_speeds.
         theirs = base()
         theirs.pop('fan:0')
         theirs.pop('fan:1')
