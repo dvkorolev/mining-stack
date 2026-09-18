@@ -119,6 +119,10 @@ CONFIG_PATHS = [
     "docker-compose.prod.yml",
     "docker-compose.logging.yml",
     "docker",
+    # DMI-108: the scheduler's error-code event log lives on a bind mount
+    # (data/python-scheduler/events). Tiny, and the only copy of the fleet's
+    # error history with reason texts -- config tier, always backed up.
+    "data/python-scheduler/events",
 ]
 
 
