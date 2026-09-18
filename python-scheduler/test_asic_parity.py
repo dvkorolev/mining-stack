@@ -106,13 +106,17 @@ class Uptime(unittest.TestCase):
         self.assertEqual(source, 'summary.elapsed')
         self.assertEqual(value, int(SUMMARY_SHAPE['summary']['SUMMARY'][0]['Elapsed']))
 
-    def test_msg_shape_publishes_zero_despite_carrying_elapsed(self):
-        # pyasic's _get_uptime has no Msg branch, so this machine's uptime is
-        # 0 today even though the value is right there one level down. Kept
-        # deliberately (the phase forbids changing it) and worth its own ticket.
+    def test_msg_shape_uses_msg_elapsed(self):
+        # Measured 2026-09-18, against what pyasic's source suggests: the
+        # published uptime on the Msg-shaped machines is real, so the Msg's
+        # `Elapsed` is what the value has to come from.
         self.assertIn('Elapsed', MSG_SHAPE['summary']['Msg'])
         value, source = parity.uptime_seconds(MSG_SHAPE['summary'])
-        self.assertEqual((value, source), (0, 'none'))
+        self.assertEqual(source, 'msg.elapsed')
+        self.assertEqual(value, int(MSG_SHAPE['summary']['Msg']['Elapsed']))
+
+    def test_no_elapsed_anywhere_is_zero(self):
+        self.assertEqual(parity.uptime_seconds({'Msg': {'Power': 1}}), (0, 'none'))
 
 
 class Fans(unittest.TestCase):

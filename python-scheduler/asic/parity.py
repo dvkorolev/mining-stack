@@ -141,22 +141,31 @@ def power_watts(response: Optional[Dict], profile_typical: Optional[float] = Non
 
 def uptime_seconds(response: Optional[Dict]) -> Tuple[int, str]:
     """
-    Uptime in seconds. **No gap-filling**, which is the point.
+    Uptime in seconds, from whichever shape of the response carries `Elapsed`.
 
-    pyasic `BTMiner._get_uptime` reads `SUMMARY[0]["Elapsed"]` and returns None
-    when it is absent -- there is no `Msg` branch, so on the 7 Msg-shaped
-    machines (which do carry `Elapsed` one level down) the published uptime is
-    today 0. Reproduced here because the phase forbids changing it; the
-    consequence is that the collector's "stuck uptime" heuristic cannot fire on
-    those machines at all. Worth its own ticket.
+    pyasic's `BTMiner._get_uptime` reads `SUMMARY[0]["Elapsed"]`, and reading its
+    source suggests the Msg-shaped machines therefore publish 0. The parallel run
+    measured the opposite on 2026-09-18: their published uptime is real
+    (172 450 s on `.53`, 252 633 s on `.70`), so pyasic's client is seeing an
+    `Elapsed` our single `summary` request does not. The fleet decides, so both
+    shapes are read here.
 
     `.117`'s pre-flash firmware reports `Uptime` and no `Elapsed`, so 0 is
-    correct there too.
+    correct there.
     """
     native = _number(summary_view(response).get('Elapsed'))
-    if native is None:
-        return 0, 'none'
-    return int(native), 'summary.elapsed'
+    if native is not None:
+        return int(native), 'summary.elapsed'
+    # Measured 2026-09-18, and it contradicts what reading pyasic's source
+    # suggests: on the Msg-shaped machines the *published* uptime is real
+    # (172 450 s on `.53`), so pyasic's client reads an `Elapsed` that a plain
+    # `summary` request from us does not see. The fleet is the authority, so the
+    # same field is used here; the mechanism (pyasic's multicommand view
+    # differing from a single-command one) is an open question for DMI-138.
+    filler = _number(msg_view(response).get('Elapsed'))
+    if filler is not None:
+        return int(filler), 'msg.elapsed'
+    return 0, 'none'
 
 
 # pyasic's `expected_fans` defaults to 2 (`BaseMiner.expected_fans`) and only a
@@ -443,6 +452,11 @@ SOURCE_CANON = {
     'summary.power': 'summary.power',
     'msg.power': 'msg.power',
     'summary.elapsed': 'summary.elapsed',
+    # The same field of the same command, one nesting level apart, on machines
+    # that answer in the other shape. The values agree (measured 2026-09-18:
+    # 172 450 s on both sides); the value comparison is what would catch it if
+    # they ever stopped agreeing.
+    'msg.elapsed': 'summary.elapsed',
     'devs.temperature': 'devs.temperature',
     'collector.pools': 'collector.pools',
     'get_psu': 'get_psu',

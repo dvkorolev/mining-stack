@@ -522,6 +522,11 @@ def _flatten_published(published: Dict[str, Any]) -> Dict[str, Any]:
         flat['pool_rejected'] = published['pool_rejected']
 
     for fan_id, rpm in published['fan_speeds'].items():
+        if rpm is None:
+            # `set_miner_fans` does not publish a None speed, and one must not
+            # reach the comparison either: it would report a series on both
+            # sides with no value, which is a difference in nothing.
+            continue
         flat[f'fan:{fan_id}'] = rpm
     for field, value in (published['psu'] or {}).items():
         if value is not None:

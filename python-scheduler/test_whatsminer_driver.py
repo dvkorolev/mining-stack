@@ -140,9 +140,9 @@ class DriverReading(unittest.TestCase):
         msg = fx['summary']['Msg']
         self.assertAlmostEqual(data['hashrate'], msg['MHS av'] / 1e6, places=6)
         self.assertEqual(data['power'], msg['Power'])
-        # No Msg branch in pyasic's uptime and no fan series at all, both
-        # reproduced deliberately (see asic/parity.py).
-        self.assertEqual(data['uptime'], 0)
+        # The uptime comes from the Msg (measured against the published value);
+        # no fan series at all, reproduced deliberately (see asic/parity.py).
+        self.assertEqual(data['uptime'], int(msg['Elapsed']))
         self.assertEqual(data['fans'], [])
         self.assertEqual(result['provenance']['hashrate_ths'], 'msg.mhs_av')
         self.assertEqual(result['provenance']['shape'], 'msg')
