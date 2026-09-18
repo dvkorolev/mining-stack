@@ -113,6 +113,15 @@ class TestDockerfileCompleteness(unittest.TestCase):
                       'rated_hashrate should be reachable from main.py')
         self.assertNotIn('rated_hashrate', copied)
 
+    def test_the_check_would_have_caught_a_missing_v3_telemetry_copy(self):
+        # DMI-108: v3_telemetry.py sits at top level beside rated_hashrate,
+        # exactly the shape that shipped un-COPYed once already.
+        copied = copied_modules() - {'v3_telemetry'}
+        reachable = reachable_local_modules()
+        self.assertIn('v3_telemetry', reachable,
+                      'v3_telemetry should be reachable from main.py')
+        self.assertNotIn('v3_telemetry', copied)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

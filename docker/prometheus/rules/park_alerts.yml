@@ -1,0 +1,101 @@
+# Park rules (DMI-109): "a machine is standing still" and "the site's power
+# just sagged", as native Prometheus rules.
+#
+# Validated as a prototype first (tools/park_watch.py on the dev Mac, plan
+# section 3a): its very first run caught a live trip on .122. The prototype
+# stays as a manual --dry / --selfcheck utility; these rules are the always-on
+# version -- the Mac is a workstation with no cron, per the owner's 2026-09-18
+# decision that all monitoring lives on the Pi.
+#
+# `component: farm` on every rule is load-bearing, not decoration: this site
+# sets ALERT_NOTIFY_EXCLUDE_COMPONENTS=miner (per-machine heat and error codes
+# are recorded and dashboarded, never pushed -- DMI-79), and a rule labelled
+# component: miner would be silently born suppressed. These five exist to wake
+# someone, so they are farm-level by label and by nature.
+#
+# The two idle machines are excluded everywhere power is counted:
+# ip!~"192.168.2.(58|117)" (.58 and .117 are stopped deliberately -- 107 W and
+# 168 W against 2.9-3.6 kW on the nineteen live machines -- and would fire
+# every park rule forever). The dots in the pattern are unanchored-regex loose
+# on purpose, matching the plan's spec; nothing at 192x168y2zNN exists.
+groups:
+  - name: park
+    interval: 30s
+    rules:
+      # 500 W splits this fleet's two power populations with room on both
+      # sides: mining machines draw 2900-3630 W, a tripped or idle one
+      # 107-168 W (measured 2026-08-28). max_over_time is the deliberate
+      # semantics -- "every reading in the window was low" -- because that
+      # is what "the machine has been standing for 15 minutes" means. A
+      # reboot ramp sits below 500 W for 1-2 min (measured over the month,
+      # miner-ops 2026-09-18), and the min-variant would have paged on every
+      # recovering machine, ~2 false alarms a day, all at the moment things
+      # got better. Brief single dips (<0.5% of all dark minutes) are
+      # swallowed on purpose: they are ParkPowerEvent's and the error-code
+      # counter's business, not a per-machine warning's.
+      - alert: ParkMinerDark
+        expr: max_over_time(miner_power_watts{ip!~"192.168.2.(58|117)"}[15m]) < 500
+        labels:
+          severity: warning
+          component: farm
+        annotations:
+          summary: "Miner {{ $labels.name }} at or below {{ $value | printf \"%.0f\" }}W for the whole last 15m"
+          description: "Every reading in the last 15m was under 500W; a machine that keeps mining sits at 2.9-3.6kW. Reboot ramps (1-2min) do not fire this."
+
+      # 900 s is the window in seconds: the scheduler publishes every 2 min,
+      # so a healthy series is never older than ~2 min. This fires on the data
+      # flow stopping while the series still exists (scheduler wedged, scrape
+      # gaps); a machine that stops answering entirely loses its power series
+      # to the DMI-55 cull and is MinerOffline's business, not this rule's.
+      - alert: ParkMinerStale
+        expr: time() - timestamp(miner_power_watts{ip!~"192.168.2.(58|117)"}) > 900
+        labels:
+          severity: warning
+          component: farm
+        annotations:
+          summary: "Miner {{ $labels.name }} power reading {{ $value | printf \"%.0f\" }}s old"
+          description: "No fresh miner_power_watts for over 15m -- scrape or scheduler gap, not just a dead miner."
+
+      # The main signal (plan 3a: 85% of the month's losses). Three or more
+      # machines with a sub-500 W reading inside 15 m is a site event -- a
+      # mains sag or a manual walk-through -- not any single machine's own
+      # fault; the 2026-09-17 10:05 sag stamped code 205 onto four machines.
+      # Single-machine trips stay ParkMinerDark's business.
+      # min semantics here is deliberate, the mirror of ParkMinerDark's max:
+      # any dip counts, so this is the early signal. It honestly sees all
+      # three site-scale shapes -- a sag, an owner-driven mass reboot, and a
+      # mass recovery ramp -- and all three are worth a look.
+      - alert: ParkPowerEvent
+        expr: count(min_over_time(miner_power_watts{ip!~"192.168.2.(58|117)"}[15m]) < 500) >= 3
+        labels:
+          severity: critical
+          component: farm
+        annotations:
+          summary: "{{ $value }} miners under 500W in the last 15m"
+          description: "Power sag or a manual walk-through at the site. This is the signal that catches the night events."
+
+      # 190 V is below everything healthy and above the sag: fleet PSU input
+      # measured 218.5-225.75 V (DMI-94), and the 2026-09-16 sag reached
+      # 172 V before the trace vanished. Deliberately no window and no `for`:
+      # the plan asks for the sag in the open, not after a wait. No ip
+      # exclusion here -- .78 publishes nothing (different protocol) and .74
+      # answers, so there is nobody to exclude for a live voltage.
+      - alert: ParkVinLow
+        expr: miner_psu_input_volts < 190
+        labels:
+          severity: warning
+          component: farm
+        annotations:
+          summary: "Miner {{ $labels.name }} PSU input {{ $value | printf \"%.1f\" }}V"
+          description: "Below 190V (fleet norm 219-226V) -- mains sag visible in the open, no window wait."
+
+      # The cluster form of ParkVinLow: three or more supplies seeing the
+      # same low mains at once is the site's input, not any one PSU.
+      - alert: ParkVinCluster
+        expr: count(miner_psu_input_volts < 190) >= 3
+        labels:
+          severity: critical
+          component: farm
+        annotations:
+          summary: "{{ $value }} miners under 190V PSU input"
+          description: "Cluster sag on the mains side; single-machine dips stay ParkVinLow's business."

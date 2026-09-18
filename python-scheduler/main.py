@@ -28,6 +28,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 # Import our modules
 import rated_hashrate
+import v3_telemetry
 from config import (
     MINERS_CONFIG, COLLECTION_INTERVAL, MAX_CONCURRENT_REQUESTS,
     BACKEND_URL, PUSH_TO_BACKEND, INTERNAL_METRICS_TOKEN,
@@ -44,6 +45,7 @@ from metrics import (
     remove_miner_series, remove_miner_pool_series, publish_config_source,
     remove_miner_board_series, remove_miner_fan_series, get_stale_value_metrics,
     remove_miner_expected_series, remove_miner_psu_series,
+    remove_miner_psu_v3_series, expire_miner_error_last_happened,
     forget_unconfigured_miners
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
@@ -234,6 +236,7 @@ async def collect_all_metrics():
                     log_event(logger, 'info', 'Miner left the configuration, dropping its series',
                              miner_ip=ip, config_source=config_source)
                 rated_hashrate.forget_unconfigured(configured_ips)
+                v3_telemetry.forget_unconfigured(configured_ips)
 
             # DMI-81: refresh the nameplate hashrate read off the machines
             # themselves. Nearly always a no-op -- entries are cached for an
@@ -243,6 +246,20 @@ async def collect_all_metrics():
             if rated_summary['fetched']:
                 log_event(logger, 'info', 'Refreshed rated hashrates from API v3',
                          **rated_summary)
+
+            # DMI-108: PSU output (vout, apiswitch) and error-code events off
+            # the same API v3 port, but every cycle -- the nameplate above is
+            # hourly because a rating never changes, while an error-code
+            # timestamp only means anything at the frequency the codes are
+            # sampled. Internally per-miner isolated, and wrapped here too:
+            # telemetry must never be able to abort the collection cycle.
+            try:
+                v3_summary = await v3_telemetry.collect(miners, MAX_CONCURRENT_REQUESTS)
+                if v3_summary['asked']:
+                    log_event(logger, 'info', 'Collected v3 PSU and error telemetry',
+                             **v3_summary)
+            except Exception as e:
+                logger.error(f'v3 telemetry pass failed: {e}')
 
             pyasic_result = await collect_pyasic_metrics(miners)
             miners_data = pyasic_result.get('miners_data', [])
@@ -539,6 +556,12 @@ async def collect_all_metrics():
                         # than none: it reads as a live measurement of the site
                         # (DMI-94).
                         remove_miner_psu_series(miner['ip'])
+                        # Same for the v3-sourced PSU output and the error-event
+                        # gauges (DMI-108): a stale vout or a stale "code
+                        # happened at" reads as live state from a machine that
+                        # has gone quiet.
+                        remove_miner_psu_v3_series(miner['ip'])
+                        expire_miner_error_last_happened(miner['ip'])
                         # A miner this far past the failure threshold is telling
                         # us nothing about its pools either; leaving the last
                         # `alive` reading behind would report a live pool from a
@@ -623,7 +646,18 @@ async def lifespan(app_instance: FastAPI):
     state_stats = service_state.get_stats()
     logger.info(f"  Last collection: {state_stats['last_collection_timestamp'] or 'Never'}")
     logger.info(f"  Tracked miners: {state_stats['tracked_miners']}")
-    
+
+    # DMI-108: prime the error-event dedup state from the JSONL tail, so a
+    # container restart neither loses the events that happened while it was
+    # down nor re-fires the codes already on disk.
+    try:
+        v3_prime = v3_telemetry.init()
+        logger.info(f"Error event log: {v3_prime['path']} "
+                    f"({v3_prime['primed']} pairs primed, "
+                    f"{'writable' if v3_prime['writable'] else 'NOT WRITABLE'})")
+    except Exception as e:
+        logger.warning(f"Error event log init failed: {e}")
+
     logger.info("=" * 60)
 
     # Publish the config-source gauge before the first collection, so the

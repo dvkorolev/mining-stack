@@ -148,6 +148,13 @@ def _get_max_temp(data) -> float:
 
 async def _cgminer_command(ip: str, command: str, port: int = 4028) -> Optional[Dict]:
     """Send cgminer API command"""
+    # `api_port` arrives as JSON null from every DB row (the column exists,
+    # unset), and dict.get(key, default) does NOT substitute for a present
+    # None -- it returns the None. open_connection(ip, None) then dials port
+    # 0 and the connect refuses, which silently cost DMI-94 its whole first
+    # live run (found during the DMI-108 deploy acceptance, 2026-09-18).
+    # Normalized here because this is the one boundary every caller shares.
+    port = port or 4028
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(ip, port), timeout=10.0)
@@ -175,7 +182,7 @@ async def _cgminer_command(ip: str, command: str, port: int = 4028) -> Optional[
             except:
                 return None
     except Exception as e:
-        logger.warning(f"_cgminer_command failed for {ip}:4028 cmd={command}: {type(e).__name__}: {e}")
+        logger.warning(f"_cgminer_command failed for {ip}:{port} cmd={command}: {type(e).__name__}: {e}")
         return None
 
 
