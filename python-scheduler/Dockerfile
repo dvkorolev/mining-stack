@@ -41,6 +41,7 @@ COPY main.py config.py metrics.py logging_config.py /app/
 COPY models.py /app/
 COPY collectors/ /app/collectors/
 COPY parsers/ /app/parsers/
+COPY asic/ /app/asic/
 COPY asic_profile_loader.py /app/
 COPY rated_hashrate.py /app/
 COPY v3_telemetry.py /app/
