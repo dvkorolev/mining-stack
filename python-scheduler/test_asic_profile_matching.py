@@ -14,7 +14,8 @@ import logging
 import os
 import unittest
 
-from asic_profile_loader import ASICProfileLibrary
+import asic_profile_loader
+from asic_profile_loader import ASICProfileLibrary, expected_chips_per_board
 
 PROFILES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'asic_profiles.yaml')
 
@@ -140,5 +141,117 @@ class ProfileShapeTest(unittest.TestCase):
                 self.assertEqual(self.lib.get_profile_by_id(pid).algorithm, 'sha256')
 
 
+class ChipsPerBoardTest(unittest.TestCase):
+    """
+    The per-board chip expectation moved out of pyasic's registry (DMI-189).
+
+    pyasic 0.60.0 states `expected_chips` per model class and the collector
+    published it as `miner_board_chips_expected`, even though no machine reports
+    the figure. It now comes from `asic_profiles.yaml`, and the values below are
+    pyasic's own — measured 2026-09-19 by executing its class resolution for
+    every model in this fleet — so the move is value-preserving.
+
+    The values are the *point* of this test: if one is edited, the published
+    figure for that machine changes, and that is a decision rather than a typo.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = ASICProfileLibrary(PROFILES)
+        # expected_chips_per_board() resolves through the module-level singleton.
+        asic_profile_loader._library = cls.lib
+
+    def test_the_declared_maps_are_exactly_pyasics_values(self):
+        self.assertEqual(self.lib.get_profile_by_id('whatsminer_m30s').get_chips_per_board(),
+                         {'M30S++ VH90': 78, 'M30S++ VH95': 78, 'M30S++ VH40': 70})
+        self.assertEqual(self.lib.get_profile_by_id('whatsminer_m50').get_chips_per_board(),
+                         {'M50 VH50': 105, 'M50 VH80': 111})
+
+    def test_no_other_profile_declares_a_chip_count(self):
+        """pyasic states none for these, so the profiles must stay silent."""
+        for pid in ('whatsminer_m50s', 'whatsminer_m60', 'whatsminer_generic',
+                    'antminer_s19', 'elphapex_dg1'):
+            with self.subTest(profile=pid):
+                self.assertEqual(self.lib.get_profile_by_id(pid).get_chips_per_board(), {})
+
+    def test_every_fleet_model_resolves_to_pyasics_own_figure(self):
+        """
+        One row per machine in the fleet, against pyasic's registry.
+
+        13 machines carry a count and 8 do not. The 8 are not a gap: pyasic's
+        M50VH70 and M50SVH50 classes declare none, and the M60s and the M50S++
+        VL30 fall through to its `WhatsminerUnknown` class, so all 8 publish no
+        expected-chips series today and must not start.
+        """
+        expected = {
+            'M30S++ VH90 (Stock)': 78,    # .101 .117 .40 .64 .65 .74
+            'M30S++ VH95 (Stock)': 78,    # .122 .132 -- pyasic rewrites the
+                                          # model key's last char to "0", so
+                                          # these resolve to its VH90 class
+            'M30S++ VH40 (Stock)': 70,    # .70 .89 .53 -- the three machines the
+                                          # gate does NOT protect (DMI-209)
+            'M50 VH50 (Stock)': 105,      # .130
+            'M50 VH80 (Stock)': 111,      # .87
+            'M50 VH70 (Stock)': None,     # .137 .52 .145
+            'M50S VH50 (Stock)': None,    # .98
+            'M50S++ VL30 (Stock)': None,  # .126
+            'M60 VK6A (Stock)': None,     # .121 .58
+            'DG1+ (Stock)': None,         # .78 -- scrypt, not this driver
+        }
+        for model, want in expected.items():
+            with self.subTest(model=model):
+                self.assertEqual(expected_chips_per_board(model), want)
+
+    def test_m50s_vh50_does_not_inherit_the_plain_m50_count(self):
+        """
+        The trap a bare grade marker would fall into.
+
+        `.98` is "M50S VH50 (Stock)" and pyasic states no count for it, while
+        "M50 VH50 (Stock)" gets 105. A key of just "VH50" would hand `.98` a
+        fabricated 105; the full marker is why it does not.
+        """
+        self.assertEqual(expected_chips_per_board('M50 VH50 (Stock)'), 105)
+        self.assertIsNone(expected_chips_per_board('M50S VH50 (Stock)'))
+        self.assertIsNone(expected_chips_per_board('M50S++ VH50 (Stock)'))
+
+    def test_the_underscored_label_form_resolves_the_same(self):
+        """
+        Model strings reach the loader in two shapes: main.py passes the miner's
+        own spaced string, `_update_metrics()` may pass the label's underscored
+        form. Both must resolve, or the same machine gets a count from one
+        caller and none from the other.
+        """
+        for spaced, underscored in (
+            ('M30S++ VH40 (Stock)', 'M30S++_VH40_(Stock)'),
+            ('M50 VH80 (Stock)', 'M50_VH80_(Stock)'),
+            ('M50S VH50 (Stock)', 'M50S_VH50_(Stock)'),
+        ):
+            with self.subTest(model=spaced):
+                self.assertEqual(expected_chips_per_board(spaced),
+                                 expected_chips_per_board(underscored))
+
+    def test_an_unmatched_model_publishes_nothing_rather_than_zero(self):
+        """Absent is not zero -- a 0 here would be an expectation of no chips."""
+        for model in ('', None, 'Unknown', 'WhatsMiner (Stock)', 'S19 Pro (Stock)'):
+            with self.subTest(model=model):
+                self.assertIsNone(expected_chips_per_board(model))
+
+    def test_the_placeholder_slot_count_is_not_this_fields_board_count(self):
+        """
+        Two different notions that must not be wired together.
+
+        `expected.board_count` arms main.py's board-mismatch fallback, and every
+        profile leaves it unset on purpose -- pinned by
+        `test_no_profile_declares_board_or_fan_counts` above. The number of
+        placeholder slots comes from pyasic's registry instead
+        (`asic.parity.expected_hashboards`), which is unconditional and says
+        nothing about the machine.
+        """
+        from asic import parity
+        self.assertIsNone(self.lib.get_profile_by_id('whatsminer_m30s').get_expected_board_count())
+        self.assertEqual(parity.expected_hashboards('M30S++ VH40 (Stock)'), 3)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+

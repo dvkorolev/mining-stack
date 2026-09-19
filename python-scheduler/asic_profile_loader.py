@@ -107,6 +107,23 @@ class ASICProfile:
             Expected fan count, or None if not defined
         """
         return self.expected.get('fan_count')
+
+    def get_chips_per_board(self) -> Dict[str, int]:
+        """
+        Chips per board by model marker, as pyasic's registry states it (DMI-189).
+
+        The raw map, keyed by the marker that identifies the model *within this
+        profile* ("M30S++ VH40"), not the resolved value -- marker matching needs
+        the model string, which is what `expected_chips_per_board()` below has.
+
+        Returns:
+            {marker: chips}, empty when this profile declares none. An empty
+            map means "pyasic states no chip count for anything this profile
+            matches", which is the case for whatsminer_m60, whatsminer_m50s and
+            every non-WhatsMiner profile.
+        """
+        chips = self.expected.get('chips_per_board') or {}
+        return chips if isinstance(chips, dict) else {}
     
     def __repr__(self):
         return f"ASICProfile({self.id}, {self.name}, {self.algorithm})"
@@ -356,6 +373,56 @@ def expected_hashrate_ths(model: str, algorithm_override: str = None) -> Optiona
     if profile is None or profile.algorithm != 'sha256':
         return None
     return profile.get_expected_hashrate()
+
+
+def expected_chips_per_board(model: str, algorithm_override: str = None) -> Optional[int]:
+    """
+    Chips per board for a model, from `asic_profiles.yaml`, or None (DMI-189).
+
+    Backs `miner_board_chips_expected`. pyasic supplies this figure from its own
+    model registry, where no machine can state it; carrying it in the profile
+    puts it where it can be reviewed, and lets the machine's own class move off
+    pyasic's registry without losing the series.
+
+    None means "publish no expectation", and it is a real answer rather than a
+    failure: pyasic states no chip count for the M50 VH70 machines, for
+    M50S VH50, or for anything it cannot name (the M60s and the M50S++ VL30,
+    which fall through to its `WhatsminerUnknown` class). Those machines publish
+    no expected-chips series today, and must not start. Same rule as
+    `expected_hashrate_ths()` and DMI-58: absent is not zero, and a guess here
+    would give `MinerMissingChips` a figure to fire against.
+
+    Lives here rather than in the driver or the collector for the same reason as
+    `expected_hashrate_ths()`: it is testable without pyasic, and the driver
+    stays free of a YAML dependency.
+
+    Unlike `expected_hashrate_ths()` this does NOT refuse a SCRYPT override, and
+    that asymmetry is deliberate rather than an oversight: the hashrate figure is
+    in a unit that depends on the algorithm (TH/s vs MH/s), while a chip count
+    is a count and carries no unit. The scrypt machines in this fleet (the DG1+)
+    match no Whatsminer profile and so return None here anyway.
+
+    Args:
+        model: the miner's model string.
+        algorithm_override: as in `get_profile()`.
+    """
+    profile = get_library().get_profile(model, algorithm_override)
+    if profile is None:
+        return None
+
+    # Markers are the spaced form, matching `COLLECTION_PYASIC_SOURCE_MODELS`
+    # and the profile `exact` rules. Model strings reach here in two shapes --
+    # main.py passes the miner's own "M30S++ VH40 (Stock)", while
+    # `_update_metrics()` first rewrites spaces to underscores for the label and
+    # may look up "M30S++_VH40_(Stock)" -- so the underscored form is normalised
+    # before matching. Without this the lookup would silently miss on one of the
+    # two callers, which is the failure `get_profile()`'s own underscore retry
+    # exists to prevent.
+    lowered = (model or '').replace('_', ' ').lower()
+    for marker, chips in profile.get_chips_per_board().items():
+        if str(marker).lower() in lowered:
+            return chips
+    return None
 
 
 def resolve_expected_hashrate(ip: str, model: str, algorithm_override: str = None,

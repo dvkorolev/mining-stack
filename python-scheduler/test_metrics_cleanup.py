@@ -37,6 +37,9 @@ from metrics import (
     set_miner_fans,
     set_miner_pools,
     set_miner_psu,
+    publish_board_chips_source,
+    remove_miner_expected_series,
+    BOARD_CHIPS_SOURCES,
     update_miner_label_cache,
 )
 
@@ -327,6 +330,100 @@ def fan_sample(ip, name, model, fan_id):
     return REGISTRY.get_sample_value(
         'miner_fan_speed_rpm',
         {'ip': ip, 'name': name, 'model': model, 'fan_id': fan_id})
+
+
+def chips_source_sample(ip, name, source):
+    return REGISTRY.get_sample_value(
+        'miner_board_chips_expected_source',
+        {'ip': ip, 'name': name, 'source': source})
+
+
+class BoardChipsSourceTest(unittest.TestCase):
+    """
+    Where the per-board chip expectation came from (DMI-189).
+
+    The figure used to arrive from pyasic's model registry with nothing saying
+    so, which made a registry guess indistinguishable from a measurement — the
+    DMI-81 shape, in a different metric. The source is now published beside it,
+    as a complete set so an inactive value reads 0 rather than vanishing
+    (the DMI-58 rule).
+    """
+
+    NAME = 'worker'
+
+    def publish(self, ip, source):
+        self.addCleanup(remove_miner_expected_series, ip)
+        publish_board_chips_source(ip, self.NAME, source, BOARD_CHIPS_SOURCES)
+
+    def test_every_known_source_is_published_with_exactly_one_active(self):
+        ip = '10.0.3.1'
+        self.publish(ip, 'profile')
+
+        values = {source: chips_source_sample(ip, self.NAME, source)
+                  for source in BOARD_CHIPS_SOURCES}
+        self.assertEqual(values, {'pyasic': 0, 'profile': 1, 'none': 0})
+
+    def test_pyasic_sourced_counts_read_pyasic(self):
+        # What this fleet publishes today, and what our path has to reproduce.
+        ip = '10.0.3.2'
+        self.publish(ip, 'pyasic')
+        self.assertEqual(chips_source_sample(ip, self.NAME, 'pyasic'), 1)
+        self.assertEqual(chips_source_sample(ip, self.NAME, 'profile'), 0)
+
+    def test_a_machine_with_no_expectation_says_none_rather_than_nothing(self):
+        # M50 VH70, M50S VH50 and the M60s: no figure is published, and that is
+        # a stated outcome rather than an absent series.
+        ip = '10.0.3.3'
+        self.publish(ip, 'none')
+        self.assertEqual(chips_source_sample(ip, self.NAME, 'none'), 1)
+        self.assertEqual(chips_source_sample(ip, self.NAME, 'profile'), 0)
+        self.assertEqual(chips_source_sample(ip, self.NAME, 'pyasic'), 0)
+
+    def test_switching_source_moves_the_one_rather_than_adding_one(self):
+        """The set is complete every cycle, so exactly one stays active."""
+        ip = '10.0.3.4'
+        self.publish(ip, 'pyasic')
+        self.assertEqual(chips_source_sample(ip, self.NAME, 'pyasic'), 1)
+
+        # The miner moved onto our path, or lost its expectation.
+        publish_board_chips_source(ip, self.NAME, 'profile', BOARD_CHIPS_SOURCES)
+
+        self.assertEqual(chips_source_sample(ip, self.NAME, 'pyasic'), 0)
+        self.assertEqual(chips_source_sample(ip, self.NAME, 'profile'), 1)
+        self.assertEqual(chips_source_sample(ip, self.NAME, 'none'), 0)
+
+    def test_a_renamed_miner_does_not_leave_its_old_source_behind(self):
+        ip = '10.0.3.5'
+        self.publish(ip, 'profile')
+        self.assertEqual(chips_source_sample(ip, 'worker', 'profile'), 1)
+
+        publish_board_chips_source(ip, 'worker-renamed', 'profile', BOARD_CHIPS_SOURCES)
+
+        self.assertIsNone(chips_source_sample(ip, 'worker', 'profile'))
+        self.assertEqual(chips_source_sample(ip, 'worker-renamed', 'profile'), 1)
+
+    def test_forgetting_a_miner_clears_the_source_series(self):
+        ip = '10.0.3.6'
+        self.publish(ip, 'profile')
+
+        remove_miner_expected_series(ip)
+
+        for source in BOARD_CHIPS_SOURCES:
+            with self.subTest(source=source):
+                self.assertIsNone(chips_source_sample(ip, self.NAME, source))
+
+    def test_cleaning_up_an_unknown_miner_is_a_safe_noop(self):
+        # No cache entry: the series were never published, so this must not raise.
+        remove_miner_expected_series('10.255.255.253')
+
+    def test_the_family_is_not_reachable_through_get_all_miner_metrics(self):
+        """
+        It carries `source` where the miner gauges carry `algorithm`, so a
+        blanket remove(ip, name, model, algorithm) would raise (DMI-55's gap) —
+        which is why it has its own removal path and must not be added there.
+        """
+        self.assertNotIn('miner_board_chips_expected_source',
+                         [m._name for m in get_all_miner_metrics()])
 
 
 class BoardAndFanPublishingTest(unittest.TestCase):
