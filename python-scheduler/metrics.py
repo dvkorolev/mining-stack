@@ -127,6 +127,33 @@ miner_expected_hashrate_source = Gauge(
     'Source of miner_expected_hashrate_ths (1=active, 0=inactive)',
     ['ip', 'name', 'source'])
 
+# Where the per-board chip expectation came from (DMI-189). A machine never
+# states how many chips a board should have: pyasic carried the figure in its own
+# model registry and published it as `miner_board_chips_expected`, which made a
+# registry guess look like a measurement. It now comes from
+# `asic_profiles.yaml`, and the source is published beside the value so a
+# profile-declared figure stays distinguishable from a registry-declared one —
+# the DMI-81 rule, and the same reason `miner_expected_hashrate_source` exists.
+#
+# Published as a complete set of series per miner, so an inactive source reads 0
+# rather than vanishing and an alert on a source change has the label to fire on
+# before the change happens.
+#
+# Per-miner, not per-slot, deliberately: every slot of a machine takes its count
+# from the same one lookup, so a `slot` label would triple the series carrying
+# three identical values and need a slot-keyed prune cache for no information.
+miner_board_chips_expected_source = Gauge(
+    'miner_board_chips_expected_source',
+    'Source of miner_board_chips_expected (1=active, 0=inactive)',
+    ['ip', 'name', 'source'])
+
+# The vocabulary of that label.
+#   pyasic  -- pyasic's model registry supplied it (what this fleet publishes
+#              today, and what our own path has to reproduce)
+#   profile -- `asic_profiles.yaml`'s `chips_per_board` supplied it
+#   none    -- nothing stated a figure; no expectation series is published
+BOARD_CHIPS_SOURCES = ('pyasic', 'profile', 'none')
+
 # Rated output of each hashboard separately, straight from the machine (DMI-81).
 # This has no equivalent in asic_profiles.yaml, which only ever knew a
 # whole-machine figure. It makes per-board degradation expressible -- "slot 2 is
@@ -203,6 +230,11 @@ _miner_board_label_cache = {}  # {ip: {(name, model, slot), ...}}
 # neither is reachable through get_all_miner_metrics().
 _miner_expected_source_cache = {}  # {ip: {(name, source), ...}}
 _miner_expected_board_cache = {}   # {ip: {(name, model, slot), ...}}
+
+# Where the per-board chip expectation came from (DMI-189). Own label set
+# (`source`), so like the DMI-81 family above it is not reachable through
+# get_all_miner_metrics() and needs its own removal path.
+_miner_board_chips_source_cache = {}  # {ip: {(name, source), ...}}
 _miner_fan_label_cache = {}    # {ip: {(name, model, fan_id), ...}}
 
 # PSU series published per miner (DMI-94). Carries `psu_model` where the miner
@@ -506,6 +538,35 @@ def publish_expected_hashrate_source(ip: str, name: str, source: str, known_sour
     _miner_expected_source_cache[ip] = published
 
 
+def publish_board_chips_source(ip: str, name: str, source: str, known_sources) -> None:
+    """
+    Publish where this miner's per-board chip expectation came from (DMI-189).
+
+    Same contract as publish_expected_hashrate_source: every known source gets a
+    series, so the inactive ones read 0 rather than vanishing, and a machine
+    whose expectation comes from the profile is distinguishable from one whose
+    count pyasic supplied — or from one where nothing stated a figure at all.
+
+    Args:
+        ip, name: the miner.
+        source: the active source (BOARD_CHIPS_SOURCES).
+        known_sources: every possible value (BOARD_CHIPS_SOURCES).
+    """
+    published = set()
+    for known in known_sources:
+        miner_board_chips_expected_source.labels(
+            ip=ip, name=name, source=known).set(1 if known == source else 0)
+        published.add((name, known))
+
+    for stale in _miner_board_chips_source_cache.get(ip, set()) - published:
+        _remove_board_chips_source_series(ip, stale)
+
+    if published:
+        _miner_board_chips_source_cache[ip] = published
+    else:
+        _miner_board_chips_source_cache.pop(ip, None)
+
+
 def set_miner_expected_boards(ip: str, name: str, model: str, boards_ghs) -> None:
     """
     Publish each hashboard's rated output, from the machine's own report.
@@ -546,6 +607,15 @@ def _remove_expected_source_series(ip: str, labels) -> None:
         pass
 
 
+def _remove_board_chips_source_series(ip: str, labels) -> None:
+    """Remove one board-chips-source series."""
+    name, source = labels
+    try:
+        miner_board_chips_expected_source.remove(ip, name, source)
+    except (KeyError, ValueError):
+        pass
+
+
 def _remove_expected_board_series(ip: str, labels) -> None:
     """Remove one per-board rated-hashrate series."""
     name, model, slot = labels
@@ -568,6 +638,8 @@ def remove_miner_expected_series(ip: str) -> None:
         _remove_expected_source_series(ip, labels)
     for labels in _miner_expected_board_cache.pop(ip, set()):
         _remove_expected_board_series(ip, labels)
+    for labels in _miner_board_chips_source_cache.pop(ip, set()):
+        _remove_board_chips_source_series(ip, labels)
 
 
 def _remove_board_series(ip: str, labels) -> None:

@@ -260,6 +260,32 @@ class ErrorsLedAndMining(unittest.TestCase):
         self.assertEqual(parity.is_mining({'Msg': {'btmineroff': True}}), (True, 'status.btmineroff'))
 
 
+class ExpectedHashboards(unittest.TestCase):
+    """
+    pyasic's `expected_hashboards` — the placeholder slot count (DMI-189).
+
+    `BaseMiner.get_data` seeds this many `HashBoard` objects, each already
+    carrying `expected_chips`, and `BTMiner._get_hashboards` only fills them in.
+    The count decides how many slots our driver states a chip expectation on, so
+    it is part of the value-preservation contract rather than a detail.
+    """
+
+    def test_three_for_every_model_in_this_fleet(self):
+        # Measured 2026-09-19 by executing pyasic 0.60.0's class resolution for
+        # every fleet model: all 21 resolve with expected_hashboards = 3,
+        # including the ones falling through to `WhatsminerUnknown`.
+        for model in ('M30S++ VH90 (Stock)', 'M30S++ VH40 (Stock)', 'M50 VH70 (Stock)',
+                      'M60 VK6A (Stock)', 'M50S VH50 (Stock)'):
+            with self.subTest(model=model):
+                self.assertEqual(parity.expected_hashboards(model), 3)
+
+    def test_an_unknown_model_still_gets_the_inherited_default(self):
+        # `WhatsminerUnknown` inherits BaseMiner's 3 as well, so an unrecognised
+        # machine is not a reason to publish fewer slots.
+        self.assertEqual(parity.expected_hashboards('Unknown'), 3)
+        self.assertEqual(parity.expected_hashboards(''), 3)
+        self.assertEqual(parity.expected_hashboards(None), 3)
+
 class PoolsRouting(unittest.TestCase):
     def test_the_fleet_models_keep_their_pool_parsing(self):
         for model in ('M30S++ VH90 (Stock)', 'M50 VH70 (Stock)', 'WhatsMiner (Stock)'):

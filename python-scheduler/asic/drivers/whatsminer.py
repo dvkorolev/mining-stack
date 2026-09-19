@@ -16,10 +16,18 @@ What it deliberately does not do in phase 1:
   through one implementation of them.
 - It does not touch a machine that answers `devs` in the shape pyasic can parse.
   `pyasic_hashboards_parsed(devs)` is the routing gate: on such a machine
-  pyasic's registry values (its chip counts, and a phantom board slot per
-  `expected_hashboards`) reach published series that this driver cannot
-  reproduce from the machine's own answers, so the caller keeps that machine on
-  the pyasic source. Measured 2026-09-18: that is `.74`, one machine in twenty.
+  pyasic's registry values reach published series in a form this driver cannot
+  reproduce from the machine's own answers — its slot numbering comes from
+  `ASC`, and its temperature and chip temperature are `round()`ed — so the
+  caller keeps that machine on the pyasic source. Measured 2026-09-18: that is
+  `.74`, one machine in twenty, and on it this is not cosmetic: its headline
+  temperature is pyasic's rounded chip average.
+- The one registry value this driver *does* reproduce is the per-board chip
+  expectation (DMI-189), which no machine states and which pyasic carried in its
+  own model table. It arrives as the `chips_per_board` argument, resolved from
+  `asic_profiles.yaml` by the caller, and is published on the same slots pyasic
+  would have used — including slots beyond the boards the machine reported,
+  because pyasic's placeholder slots are part of today's series set.
 
 Read-only. Every command here is a `*.get_*` or `summary`/`devs`/`pools`/
 `status` read; nothing in this module can change a machine.
@@ -50,7 +58,8 @@ _PSU = 'get_psu'
 _PER_READ_TIMEOUT = 12.0
 
 
-async def read_miner(miner_config: Dict) -> Dict[str, Any]:
+async def read_miner(miner_config: Dict,
+                     chips_per_board: Optional[int] = None) -> Dict[str, Any]:
     """
     Read one WhatsMiner over 4028.
 
@@ -59,6 +68,15 @@ async def read_miner(miner_config: Dict) -> Dict[str, Any]:
     `{'error': ..., 'error_type': ...}` with a reason from the same vocabulary
     (`timeout` / `refused` / `other` / `unsupported`), which is what the caller
     maps to `miner_scrape_status`.
+
+    Args:
+        miner_config: the miner record (`ip`, `model`, `api_port`).
+        chips_per_board: the per-board chip expectation for this model, already
+            resolved from `asic_profiles.yaml` by the caller
+            (`asic_profile_loader.expected_chips_per_board`), or None when the
+            profile states none. Passed in rather than looked up here so this
+            module keeps no profile/YAML dependency. None means "publish no
+            expectation" and is a real answer, not a failure.
     """
     ip = miner_config.get('ip')
     model = miner_config.get('model') or 'Unknown'
@@ -79,7 +97,7 @@ async def read_miner(miner_config: Dict) -> Dict[str, Any]:
 
     responses = await _read_rest(ip, model, port)
 
-    data, provenance = _build_reading(summary, responses, model)
+    data, provenance = _build_reading(summary, responses, model, chips_per_board)
     return {
         'data': data,
         'provenance': provenance,
@@ -118,7 +136,8 @@ async def _read_rest(ip: str, model: str, port: int) -> Dict[str, Optional[Dict]
 
 
 def _build_reading(summary: Optional[Dict], responses: Dict[str, Optional[Dict]],
-                   model: str) -> Tuple[Dict[str, Any], Dict[str, str]]:
+                   model: str,
+                   chips_per_board: Optional[int] = None) -> Tuple[Dict[str, Any], Dict[str, str]]:
     """Assemble the collector-standard dict and the provenance of each field."""
     devs = responses.get(_DEVS)
     status = responses.get(_STATUS)
@@ -161,7 +180,8 @@ def _build_reading(summary: Optional[Dict], responses: Dict[str, Optional[Dict]]
         'fans': [{'speed': rpm} for rpm in fans.values()],
         'fan_psu': [],
         'pools': _pools(pools_response, model),
-        'cgminer_boards': boards_from_devs(devs),
+        'cgminer_boards': _with_expected_chips(boards_from_devs(devs),
+                                               chips_per_board, model),
         'psu': psu_from_get_psu(psu_response),
     }
 
@@ -177,11 +197,50 @@ def _build_reading(summary: Optional[Dict], responses: Dict[str, Optional[Dict]]
         'is_mining': mining_source,
         'pools': 'pools' if data['pools'] else 'none',
         'boards': 'devs' if data['cgminer_boards'] else 'none',
+        'board_chips': 'profile' if chips_per_board is not None else 'none',
         'psu': 'get_psu' if data['psu'] else 'none',
     }
     for fan_id in fans:
         provenance[f'fan:{fan_id}'] = fans_source
+    if chips_per_board is not None:
+        # Read by `collect_pyasic_collector._derive_published` to publish the
+        # provenance gauge beside the value. Absent means "this path supplied no
+        # expectation", which is a different statement from "none is published"
+        # and is what lets the collector tell our source from pyasic's.
+        data['expected_chips_source'] = 'profile'
     return data, provenance
+
+
+def _with_expected_chips(boards: Dict[str, Dict], chips: Optional[int],
+                         model: str) -> Dict[str, Dict]:
+    """
+    State the chip expectation on the board slots pyasic would state it on.
+
+    pyasic seeds `expected_hashboards` placeholder `HashBoard` objects, each
+    already carrying `expected_chips`, and only ever *fills* them in
+    (`BaseMiner.get_data`, `BTMiner._get_hashboards` — see `asic/parity.py`). So
+    the count is published on slots 0..N-1 whether or not the machine reported
+    that board, and reproducing today's series set means creating the absent
+    slots here on purpose.
+
+    Dropping them is not a cosmetic loss: `MinerMissingChips` joins
+    `miner_board_chips_count` to this metric `on (ip, name, slot)`, so a slot
+    with no expectation drops out of the rule's evaluation entirely — the
+    blindness DMI-62 was about. Measured 2026-09-19: `.117` and `.58` answer
+    `devs` with `{"STATUS":"E","Code":132}` rather than a board list, and pyasic
+    publishes three phantom slots from that; a port that published only
+    reported boards would publish none.
+
+    Args:
+        boards: {slot: {field: value}} from `boards_from_devs` (mutated).
+        chips: the expectation, or None to add nothing.
+        model: for pyasic's `expected_hashboards`.
+    """
+    if chips is None:
+        return boards
+    for slot in range(parity.expected_hashboards(model)):
+        boards.setdefault(str(slot), {})['expected_chips'] = chips
+    return boards
 
 
 def _devs_temperature(devs: Optional[Dict]) -> Tuple[float, str]:

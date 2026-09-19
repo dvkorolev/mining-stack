@@ -89,7 +89,8 @@ def raw_responses(fx: dict) -> dict:
     return responses
 
 
-def read_through_server(responses: dict, model: str, silent: bool = False):
+def read_through_server(responses: dict, model: str, silent: bool = False,
+                        chips_per_board: int = None):
     """
     Run one driver read against a fake miner, all inside one event loop.
 
@@ -102,7 +103,8 @@ def read_through_server(responses: dict, model: str, silent: bool = False):
         try:
             result = await whatsminer.read_miner(
                 {'ip': '127.0.0.1', 'name': 'test', 'model': model,
-                 'api_port': server.port})
+                 'api_port': server.port},
+                chips_per_board)
             return result, server.commands
         finally:
             await server.stop()
@@ -186,6 +188,132 @@ class DriverReading(unittest.TestCase):
         result = self.read(fx, raw_responses(fx))
         self.assertTrue(result['data']['psu'])
         self.assertEqual(result['provenance']['psu'], 'get_psu')
+
+
+class BoardChipExpectation(unittest.TestCase):
+    """
+    The per-board chip expectation our driver states (DMI-189).
+
+    pyasic carried this figure in its own model registry and published it as
+    `miner_board_chips_expected`; the driver now takes it from the profile and
+    states it on the same slots pyasic would have used.
+    """
+
+    # A real captured `devs` response, from `.117` and `.58` in the DMI-136
+    # window (2026-09-18). Those two answer the command with an error object
+    # rather than a board list, which is the case that makes the placeholder
+    # slots visible: pyasic returns three untouched placeholders from the same
+    # input, so a port that only published reported boards would publish nothing.
+    DEVS_ERROR = ('{"STATUS":"E","When":1789750887,"Code":132,'
+                  '"Msg":"API btminer unknow err","Description":""}')
+
+    def boards_with(self, fx, chips):
+        result, _commands = read_through_server(raw_responses(fx), fx['model'],
+                                                chips_per_board=chips)
+        return result
+
+    def test_the_expectation_lands_on_every_reported_board(self):
+        fx = fixture('whatsminer_summary_shape.json')   # M30S++ VH90
+        result = self.boards_with(fx, 78)
+        boards = result['data']['cgminer_boards']
+
+        self.assertEqual(sorted(boards), ['0', '1', '2'])
+        for slot, readings in boards.items():
+            with self.subTest(slot=slot):
+                self.assertEqual(readings['expected_chips'], 78)
+
+    def test_the_only_field_added_is_the_expectation(self):
+        """
+        The move is value-preserving: nothing else about a board reading changes.
+
+        This is the contract the ticket rests on, so it is asserted as a diff
+        rather than by listing fields.
+        """
+        fx = fixture('whatsminer_summary_shape.json')
+        without = self.boards_with(fx, None)['data']['cgminer_boards']
+        with_chips = self.boards_with(fx, 78)['data']['cgminer_boards']
+
+        self.assertEqual(sorted(without), sorted(with_chips))
+        for slot, readings in without.items():
+            added = {k: v for k, v in with_chips[slot].items() if k not in readings}
+            with self.subTest(slot=slot):
+                self.assertEqual(added, {'expected_chips': 78})
+            for field, value in readings.items():
+                with self.subTest(slot=slot, field=field):
+                    self.assertEqual(with_chips[slot][field], value)
+
+    def test_placeholder_slots_are_emitted_when_devs_answers_with_an_error(self):
+        """
+        The phantom slot, decided deliberately.
+
+        pyasic publishes `expected_chips` on `expected_hashboards` (3)
+        placeholders whether or not the machine reported those boards, so this
+        input produces three expected-chips series and no other board series.
+        `MinerMissingChips` joins `miner_board_chips_count` to this metric on
+        (ip, name, slot), so dropping them would drop those slots from the
+        rule's evaluation entirely.
+        """
+        fx = fixture('whatsminer_summary_shape.json')
+        responses = raw_responses(fx)
+        responses['devs'] = self.DEVS_ERROR
+
+        result, _commands = read_through_server(responses, fx['model'],
+                                                chips_per_board=78)
+        boards = result['data']['cgminer_boards']
+
+        self.assertEqual(sorted(boards), ['0', '1', '2'])
+        for slot, readings in boards.items():
+            with self.subTest(slot=slot):
+                self.assertEqual(readings, {'expected_chips': 78})
+
+    def test_no_such_series_without_an_expectation(self):
+        """A model pyasic states no count for publishes no expectation at all."""
+        fx = dict(fixture('whatsminer_msg_shape.json'), model='M60 VK6A (Stock)')
+        responses = raw_responses(fx)
+        responses['devs'] = self.DEVS_ERROR
+
+        result, _commands = read_through_server(responses, fx['model'],
+                                                chips_per_board=None)
+        self.assertEqual(result['data']['cgminer_boards'], {})
+        self.assertNotIn('expected_chips_source', result['data'])
+        self.assertEqual(result['provenance']['board_chips'], 'none')
+
+    def test_the_source_is_tagged_only_when_a_count_was_applied(self):
+        fx = fixture('whatsminer_summary_shape.json')
+
+        applied = self.boards_with(fx, 78)
+        self.assertEqual(applied['data']['expected_chips_source'], 'profile')
+        self.assertEqual(applied['provenance']['board_chips'], 'profile')
+
+        absent = self.boards_with(fx, None)
+        self.assertNotIn('expected_chips_source', absent['data'])
+        self.assertEqual(absent['provenance']['board_chips'], 'none')
+
+    def test_the_registry_tainted_machine_still_gets_its_expectation(self):
+        """
+        `.74` keeps the pyasic source for other reasons, but the expectation is
+        the one registry value our driver can now state, so it must be present
+        here too rather than silently depending on which path publishes.
+        """
+        fx = fixture('whatsminer_hashboards_parseable.json')   # M30S++ VH90
+        result = self.boards_with(fx, 78)
+        self.assertTrue(result['pyasic_registry_tainted'])
+        for slot, readings in result['data']['cgminer_boards'].items():
+            with self.subTest(slot=slot):
+                self.assertEqual(readings['expected_chips'], 78)
+
+    def test_the_vh40_fixture_reports_seventy_chips_of_its_own(self):
+        """
+        `whatsminer_msg_shape.json` is a `M30S++ VH40` board, and its own
+        `Effective Chips` is 70 — the same figure pyasic's M30S++VH40 class
+        declares. Independent corroboration that 70, not 78 and not None, is the
+        right expectation for the three VH40 machines, which is the correction
+        this slice makes to the ticket (they are `DMI-209`'s three).
+        """
+        fx = fixture('whatsminer_msg_shape.json')
+        chips = [d['Effective Chips'] for d in fx['devs']['DEVS']]
+        self.assertEqual(chips, [70, 70, 70])
+        self.assertEqual(fx['model'], 'M30S++ VH40 (Stock)')
 
 
 class DriverFailures(unittest.TestCase):

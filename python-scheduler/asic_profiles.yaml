@@ -143,6 +143,27 @@ profiles:
       power_max: 3500
       temp_max: 85
 
+      # Chips per board, as pyasic's model registry states it (DMI-189). No
+      # machine reports this figure — it is registry data — so it lives here
+      # where it can be reviewed, and is published with its source beside the
+      # value. The values are pyasic's own, unchanged, so the move is
+      # value-preserving.
+      #
+      # VH95 -> 78 because pyasic rewrites the last character of a machine's
+      # model string to "0" before its class lookup
+      # (`factory.get_miner_model_whatsminer`), so a machine stating
+      # M30S++_VH95 resolves to pyasic's M30S++VH90 class. There is no VH95
+      # class at all.
+      #
+      # A model with no entry here gets NO series — pyasic states no count for
+      # it either (its M50VH70 and M50SVH50 classes carry none, and anything it
+      # cannot name falls through to `WhatsminerUnknown`). Publishing a guess
+      # is the defect this ticket is about.
+      chips_per_board:
+        "M30S++ VH90": 78
+        "M30S++ VH95": 78
+        "M30S++ VH40": 70
+
   # M60 series (DMI-45). Two of these are in the fleet, at .121 and .58, and
   # until 2026-08-21 both were recorded as something else -- .121 as an
   # "M30S++ VH90 (Stock)", .58 as a bare "WhatsMiner (Stock)". The cost was not
@@ -273,6 +294,18 @@ profiles:
       power_min: 2900
       power_max: 3500
       temp_max: 85
+
+      # Chips per board, from pyasic's model registry (DMI-189) — see the long
+      # note on whatsminer_m30s for the mechanism and the rules.
+      #
+      # M50 VH70 has no entry on purpose: pyasic's M50VH70 class carries no
+      # chip count, so it publishes no expected-chips series today and must not
+      # start. The M50S profile above is keyed separately, which is why the
+      # bare grade alone would not do — "M50 VH50" is not a substring of
+      # "M50S VH50 (Stock)".
+      chips_per_board:
+        "M50 VH50": 105
+        "M50 VH80": 111
 
   whatsminer_generic:
     name: "Whatsminer (model not reported)"

@@ -18,7 +18,8 @@ from config import (COLLECTION_COMPARE, COLLECTION_COMPARE_EXPECTED,
                     compare_enabled_for, keeps_pyasic_source)
 from parsers.cgminer_parser import parse_cgminer_response
 from parsers.reading_compare import compare, split_results, summarise
-from asic_profile_loader import get_library, expected_hashrate_ths, resolve_expected_hashrate
+from asic_profile_loader import (expected_chips_per_board, expected_hashrate_ths,
+                                 get_library, resolve_expected_hashrate)
 from rated_hashrate import SOURCES as RATED_SOURCES, get_rated
 from metrics import (
     miner_hashrate, miner_power, miner_temp_max, miner_is_mining,
@@ -29,6 +30,7 @@ from metrics import (
     collection_timestamp, miner_gaps_filled_total, update_miner_label_cache,
     set_miner_pools, set_miner_boards, set_miner_fans, set_miner_psu,
     publish_expected_hashrate_source, set_miner_expected_boards,
+    publish_board_chips_source, BOARD_CHIPS_SOURCES,
     miner_compare_mismatch_total, miner_collection_routing_total
 )
 from parsers.pool_status import extract_pool_status
@@ -418,10 +420,36 @@ def _derive_published(data: Dict, ip: str, name: str, model: str,
         'pool_accepted': total_accepted,
         'pool_rejected': total_rejected,
         'boards': boards,
+        'board_chips_source': _board_chips_source(data, boards),
         'expected_hashrate_ths': expected_hashrate,
         'expected_hashrate_source': expected_source,
         'expected_boards_ghs': expected_boards_ghs,
     }
+
+
+def _board_chips_source(data: Dict, boards: Dict) -> str:
+    """
+    Which producer supplied the per-board chip expectation (DMI-189).
+
+    Measured off the data rather than assumed from the configured path, so the
+    label states what actually happened:
+
+    - our driver tags its own output (`expected_chips_source`), and only when the
+      profile stated a figure — so `profile` means the expectation came from
+      `asic_profiles.yaml`;
+    - otherwise, an expectation present in the merged boards can only have come
+      from pyasic's board objects, which carry `expected_chips` from its registry;
+    - otherwise nothing stated one, which is a real answer for the M50 VH70,
+      M50S VH50 and M60 models.
+
+    `none` is published rather than withheld: an absent source series and a
+    machine whose figure is simply unknown look identical in a graph.
+    """
+    if data.get('expected_chips_source') == 'profile':
+        return 'profile'
+    if any(record.get('expected_chips') is not None for record in boards.values()):
+        return 'pyasic'
+    return 'none'
 
 
 def _publish_published(published: Dict[str, Any], ip: str, name: str) -> None:
@@ -477,6 +505,8 @@ def _publish_published(published: Dict[str, Any], ip: str, name: str) -> None:
 
     set_miner_pools(ip, name, published['pool_status'])
     set_miner_boards(ip, name, model, published['boards'])
+    publish_board_chips_source(ip, name, published['board_chips_source'],
+                               BOARD_CHIPS_SOURCES)
 
 
 def _update_metrics(data: Dict, ip: str, name: str, model: str, scrape_status: int = 2, algorithm: str = None) -> Dict[str, Any]:
@@ -561,10 +591,15 @@ def _uses_our_path(model: str, algorithm: str = None) -> bool:
     return profile.manufacturer == 'MicroBT' and profile.algorithm != 'scrypt'
 
 
-async def _read_with_our_driver(miner_config: Dict) -> Dict:
-    """Our path, with the same failure contract the pyasic path returns."""
+async def _read_with_our_driver(miner_config: Dict, chips_per_board: int = None) -> Dict:
+    """
+    Our path, with the same failure contract the pyasic path returns.
+
+    `chips_per_board` is resolved by the caller and handed through, so the driver
+    keeps no profile/YAML dependency of its own (DMI-189).
+    """
     try:
-        return await read_whatsminer(miner_config)
+        return await read_whatsminer(miner_config, chips_per_board)
     except Exception as exc:  # noqa: BLE001 - one machine must not abort the cycle
         logger.warning(f"own-path read failed for {miner_config.get('ip')}: "
                        f"{type(exc).__name__}: {exc}")
@@ -817,8 +852,16 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
             return await collect_pyasic_one(miner_config)
 
         comparing = compare_enabled_for(ip, _compare_cycles_run[0])
+
+        # The per-board chip expectation, which no machine states (DMI-189).
+        # Resolved here rather than in the driver because the profile library is
+        # this module's dependency, and None is a real answer: pyasic states no
+        # count for the M50 VH70, M50S VH50 and M60 models, and neither publishes
+        # one.
+        chips_per_board = expected_chips_per_board(model, miner_config.get('algorithm'))
+
         async with own_sem:
-            own = await _read_with_our_driver(miner_config)
+            own = await _read_with_our_driver(miner_config, chips_per_board)
 
         if COLLECTION_PRIMARY != 'cgminer':
             theirs = await collect_pyasic_one(miner_config)

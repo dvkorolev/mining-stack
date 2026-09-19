@@ -200,6 +200,36 @@ def expected_fans(model: str) -> int:
     return FAN_COUNT_DEFAULT
 
 
+# pyasic's `expected_hashboards` (`BaseMiner.expected_hashboards`, default 3) —
+# the number of *placeholder* board slots its registry fills, not a statement
+# about the machine.
+#
+# `BaseMiner.get_data` seeds its board list with this many `HashBoard` objects,
+# each already carrying `expected_chips`, and `BTMiner._get_hashboards` only ever
+# *fills* those entries in. So the chip count reaches slots 0..N-1 whether or not
+# the machine reported that board: the `LookupError` on a missing `ASC` (every
+# machine here but `.74`) leaves the placeholders untouched, and a `devs` error
+# never enters the loop at all. Reproducing pyasic's series set therefore means
+# emitting those slots deliberately — see `drivers/whatsminer.py`.
+#
+# Measured 2026-09-19 by executing pyasic 0.60.0's own class resolution for every
+# model in this fleet: all 21 resolve with `expected_hashboards = 3`, including
+# the ones that fall through to the `WhatsminerUnknown` class. A class that
+# overrode it would appear as a slot-count difference in the parallel
+# comparison, which is where a fleet-wide change to this constant would have to
+# be re-measured.
+#
+# Deliberately NOT `asic_profiles.yaml`'s `expected.board_count`: that one arms
+# main.py's board-mismatch fallback, and every profile leaves it unset on purpose
+# (pinned by test_asic_profile_matching.test_no_profile_declares_board_or_fan_counts).
+EXPECTED_HASHBOARDS_DEFAULT = 3
+
+
+def expected_hashboards(model: str) -> int:
+    """pyasic's `expected_hashboards` for this model string."""
+    return EXPECTED_HASHBOARDS_DEFAULT
+
+
 def _fan_pair(view: Dict) -> Dict[str, Any]:
     """The two fan speeds a `summary` view states, keyed by fan_id."""
     speeds: Dict[str, Any] = {}
