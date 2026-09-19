@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Every top-level module the scheduler imports must be COPYed into the image.
+Every local module and package the scheduler imports must be COPYed into the image.
 
 Written after DMI-81 shipped a `rated_hashrate.py` that was never added to the
 Dockerfile's COPY list. Everything passed -- unit tests, py_compile, the full
@@ -14,6 +14,14 @@ appeared for the first time in production, as a crash loop:
 
 The scheduler restarted every few seconds and the fleet went unpolled. Nothing
 in CI could have caught it, because nothing in CI looked at the Dockerfile.
+
+DMI-207 is the same failure a second time, in the half this check could not
+see. DMI-136 phase 1 made `asic/` a package the collector imports at startup,
+and the Dockerfile never gained a `COPY asic/` line. All three tests below
+stayed green, because the comparison ran through `COPIED_DIRS` -- the very list
+that was missing the entry -- and then filtered candidates to files ending in
+`.py`, which no package has. The list is now discovered from the source tree
+rather than maintained by hand, and packages are compared like modules.
 """
 
 import ast
@@ -25,13 +33,21 @@ from pathlib import Path
 HERE = Path(__file__).parent
 DOCKERFILE = HERE / 'Dockerfile'
 
-# Packages copied wholesale as directories.
-COPIED_DIRS = ('collectors', 'parsers')
-
-
 def local_modules():
     """Top-level .py files that could be imported as local modules."""
     return {p.stem for p in HERE.glob('*.py') if not p.name.startswith('test_')}
+
+
+def local_packages():
+    """Directories that are importable local packages.
+
+    Discovered rather than listed. A hand-maintained tuple was the first half
+    of DMI-207: it was both the thing the Dockerfile parse validated against
+    and the thing that was wrong, so the check could only ever confirm what the
+    list already claimed.
+    """
+    return {p.name for p in HERE.iterdir()
+            if p.is_dir() and (p / '__init__.py').exists()}
 
 
 def imports_of(path: Path):
@@ -49,8 +65,9 @@ def imports_of(path: Path):
 
 
 def copied_modules():
-    """Module names the Dockerfile copies into the image."""
+    """Module and package names the Dockerfile copies into the image."""
     copied = set()
+    packages = local_packages()
     for line in DOCKERFILE.read_text().splitlines():
         line = line.strip()
         if not line.upper().startswith('COPY'):
@@ -63,31 +80,41 @@ def copied_modules():
             m = re.match(r'^([\w\-.]+)\.py$', token)
             if m:
                 copied.add(m.group(1))
-            elif token.rstrip('/') in COPIED_DIRS:
+            elif token.rstrip('/') in packages:
                 copied.add(token.rstrip('/'))
     return copied
 
 
 def reachable_local_modules():
-    """Local modules reachable from main.py, following local imports."""
-    local = local_modules()
+    """Local modules and packages reachable from main.py, following imports."""
+    known = local_modules() | local_packages()
+
+    def source_of(name: str):
+        for candidate in (HERE / f'{name}.py', HERE / name / '__init__.py'):
+            if candidate.exists():
+                return candidate
+        return None
+
     seen, queue = set(), ['main']
     while queue:
         name = queue.pop()
         if name in seen:
             continue
         seen.add(name)
-        for candidate in (HERE / f'{name}.py', HERE / name / '__init__.py'):
-            if candidate.exists():
-                for imported in imports_of(candidate):
-                    if imported in local or (HERE / imported).is_dir():
-                        queue.append(imported)
-                break
-    # Package sub-modules import local modules too.
-    for pkg in COPIED_DIRS:
-        for py in (HERE / pkg).glob('*.py'):
+        source = source_of(name)
+        if source is None:
+            continue
+        for imported in imports_of(source):
+            if imported in known:
+                queue.append(imported)
+
+    # Sub-modules of a package import local code too, and walking `__init__.py`
+    # does not reach them: the module that imports `asic` here is
+    # collectors/pyasic_collector.py, not collectors/__init__.py (DMI-207).
+    for pkg in local_packages():
+        for py in (HERE / pkg).rglob('*.py'):
             for imported in imports_of(py):
-                if imported in local:
+                if imported in known:
                     seen.add(imported)
     return seen
 
@@ -96,13 +123,16 @@ class TestDockerfileCompleteness(unittest.TestCase):
 
     def test_every_imported_local_module_is_copied(self):
         copied = copied_modules()
-        missing = sorted(m for m in reachable_local_modules()
-                         if m not in copied and (HERE / f'{m}.py').exists())
+        # A package has no top-level .py, which is the filter that hid `asic`
+        # for the life of DMI-136 phase 1 (DMI-207).
+        reachable = {m for m in reachable_local_modules()
+                     if (HERE / f'{m}.py').exists() or (HERE / m).is_dir()}
+        missing = sorted(reachable - copied)
         self.assertEqual(
             missing, [],
-            f"These modules are imported but never COPYed into the image, so the "
-            f"container will crash on startup: {missing}. Add them to "
-            f"python-scheduler/Dockerfile.")
+            f"These modules and packages are imported but never COPYed into the "
+            f"image, so the container will crash on startup: {missing}. Add them "
+            f"to python-scheduler/Dockerfile.")
 
     def test_the_check_would_have_caught_the_dmi81_regression(self):
         # Guard the guard: with rated_hashrate removed from the copied set, the
@@ -121,6 +151,16 @@ class TestDockerfileCompleteness(unittest.TestCase):
         self.assertIn('v3_telemetry', reachable,
                       'v3_telemetry should be reachable from main.py')
         self.assertNotIn('v3_telemetry', copied)
+
+    def test_the_check_would_have_caught_a_missing_package_copy(self):
+        # DMI-207: a package is the shape this file used to be blind to. With
+        # the `COPY asic/` line removed -- the state `main` was actually in --
+        # the check must fail, and `asic` must be named as reachable.
+        copied = copied_modules() - {'asic'}
+        reachable = reachable_local_modules()
+        self.assertIn('asic', reachable,
+                      'asic should be reachable from main.py')
+        self.assertNotIn('asic', copied)
 
 
 if __name__ == '__main__':
