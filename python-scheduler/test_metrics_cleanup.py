@@ -412,6 +412,46 @@ class BoardChipsSourceTest(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertIsNone(chips_source_sample(ip, self.NAME, source))
 
+    def test_the_derivation_names_the_producer_that_actually_supplied_it(self):
+        """
+        `_board_chips_source` decides the label off the data, not the config.
+
+        It is the one new branch in the publish path, and a wrong label here is
+        exactly the failure DMI-189 exists to prevent: a registry-supplied figure
+        presented as something else. The collector imports pyasic at module
+        import, so it is stubbed in the same shape `test_dockerfile_completeness`
+        and the scratch harnesses use.
+        """
+        import sys
+        import types
+        stub = types.ModuleType('pyasic')
+        stub.get_miner = lambda *a, **k: None
+        saved = sys.modules.get('pyasic')
+        sys.modules['pyasic'] = stub
+        try:
+            from collectors.pyasic_collector import _board_chips_source
+        finally:
+            if saved is None:
+                sys.modules.pop('pyasic', None)
+            else:
+                sys.modules['pyasic'] = saved
+
+        # Our driver tagged its own output: the figure came from the profile.
+        self.assertEqual(
+            _board_chips_source({'expected_chips_source': 'profile'},
+                                {'0': {'expected_chips': 70}}),
+            'profile')
+
+        # No tag, but an expectation is in the merged boards: only pyasic's
+        # board objects could have put it there.
+        self.assertEqual(
+            _board_chips_source({}, {'0': {'expected_chips': 78}, '1': {}}),
+            'pyasic')
+
+        # Nothing stated a figure -- the M50 VH70 / M50S VH50 / M60 case.
+        self.assertEqual(_board_chips_source({}, {'0': {'chips': 78, 'temp': 70}}), 'none')
+        self.assertEqual(_board_chips_source({}, {}), 'none')
+
     def test_cleaning_up_an_unknown_miner_is_a_safe_noop(self):
         # No cache entry: the series were never published, so this must not raise.
         remove_miner_expected_series('10.255.255.253')
