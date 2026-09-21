@@ -78,9 +78,12 @@ jobs:
         working-directory: python-scheduler
       - run: python test_whatsminer_driver.py
         working-directory: python-scheduler
-      # DMI-211. Both reach a real collection cycle without pyasic: the first
-      # stubs its one import, the second reads the source rather than importing.
+      # DMI-211 and DMI-208. The first two reach a real collection cycle without
+      # pyasic by stubbing its one import; the third reads the source rather
+      # than importing anything from the scheduler.
       - run: python test_collection_path.py
+        working-directory: python-scheduler
+      - run: python test_collection_read_gating.py
         working-directory: python-scheduler
       - run: python test_metric_wiring.py
         working-directory: python-scheduler
