@@ -206,6 +206,24 @@ def _derive_published(data: Dict, ip: str, name: str, model: str,
     three-source board merge — in exactly one place for both paths.
 
     Touches no gauges and no caches; `_publish_published()` does that.
+
+    **Six producers reach this function, and a change here changes all of
+    them** — enumerated 2026-09-21 (DMI-212). Five return `fans` as dicts and
+    one as objects, which is why the fan branch below has two arms:
+
+      * `collectors/dg1_tcp_collector.py`, `collectors/dg1_http_collector.py`,
+        `collectors/antminer_cgi_collector.py`,
+        `collectors/whatsminer_cgi_collector.py` — reached through the fallback
+        path, where `main.py` calls `_update_metrics(fallback_data, ...)`;
+      * `asic/drivers/whatsminer.py` — our own driver, publishing once the
+        `COLLECTION_PRIMARY` flip lands;
+      * the pyasic path, from `collect_pyasic_metrics()`.
+
+    This list is here because DMI-136 described its phase as changing no
+    published value after enumerating two of the six, and the DG1+ gained four
+    fan series from the difference. "Inert" is a claim about every producer, so
+    the enumeration belongs beside the code, not in whoever's memory was
+    consulted last.
     """
     # Ensure model is a plain string; a tuple here means a stale failure_streak key
     # leaked through state_manager deserialization — replace with "Unknown"
@@ -315,9 +333,18 @@ def _derive_published(data: Dict, ip: str, name: str, model: str,
             fan_speeds[str(i)] = fan.speed
         elif isinstance(fan, dict) and fan.get('speed') is not None:
             # The collector-standard format (COLLECTOR_STANDARD.md) is a dict,
-            # and our own driver returns that shape. pyasic passes objects, so
-            # this branch is inert for it -- without it, a fan our path reports
-            # correctly would be dropped and read as "no fan series".
+            # and five of the six producers named in `_derive_published`'s
+            # docstring return that shape -- our driver, the two DG1
+            # collectors, and both CGI fallbacks. pyasic passes objects, so
+            # this branch is inert *for pyasic* and for nothing else.
+            #
+            # It published the DG1+'s four fan series on 2026-09-19, in a
+            # deploy whose accounting had enumerated two collection paths where
+            # there are six (DMI-212): the comment here used to say "inert for
+            # it" and was read as "inert", which is the sentence that made a
+            # real published-value change look like a no-op. Without this
+            # branch, a fan any of those five reports correctly is dropped and
+            # read as "no fan series".
             fan_speeds[str(i)] = fan['speed']
 
     # Ordered weakest source first, so the better one overwrites it. pyasic's
