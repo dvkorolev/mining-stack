@@ -893,8 +893,25 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
         # one.
         chips_per_board = expected_chips_per_board(model, miner_config.get('algorithm'))
 
-        async with own_sem:
-            own = await _read_with_our_driver(miner_config, chips_per_board)
+        # Read ours only when something will use it (DMI-208). Under the shipped
+        # defaults -- COLLECTION_PRIMARY=pyasic, COLLECTION_COMPARE=off --
+        # nothing does: `_report_comparison` is the only consumer of `own` and
+        # it sits under `comparing`. The read used to be unconditional with its
+        # result discarded, which took this fleet's 4028 read volume from ~2
+        # requests/min/machine to ~11 (measured on the Pi 2026-09-19: 449
+        # connections per cycle across 20 machines, one request per connection)
+        # in a phase both this file and PROJECT_STATE.md described as inert.
+        #
+        # Inert is a claim about load as well as about values, and gating is
+        # what makes it true rather than a wording change. The soak the flip
+        # wants is the bounded COLLECTION_COMPARE window, which produces
+        # findings; an unconditional read nobody inspects produces load, and a
+        # driver returning an error dict under the default produced no signal at
+        # all, since only `_report_comparison` ever looked at `own`.
+        own = None
+        if comparing or COLLECTION_PRIMARY == 'cgminer':
+            async with own_sem:
+                own = await _read_with_our_driver(miner_config, chips_per_board)
 
         if COLLECTION_PRIMARY != 'cgminer':
             theirs = await collect_pyasic_one(miner_config)
