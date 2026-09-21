@@ -32,6 +32,7 @@ import v3_telemetry
 from config import (
     MINERS_CONFIG, COLLECTION_INTERVAL, MAX_CONCURRENT_REQUESTS,
     BACKEND_URL, PUSH_TO_BACKEND, INTERNAL_METRICS_TOKEN,
+    COLLECTION_PATHS, COLLECTION_PRIMARY,
     CONFIG_SOURCES, DEGRADED_CONFIG_SOURCES, TRUSTED_CONFIG_SOURCES,
     load_miners_config, invalidate_config_cache,
     get_miners_config, get_miners_config_source
@@ -43,6 +44,7 @@ from metrics import (
     collection_success, collection_timestamp,
     miner_fallback_trigger_total, miner_fallback_total,
     remove_miner_series, remove_miner_pool_series, publish_config_source,
+    publish_collection_path,
     remove_miner_board_series, remove_miner_fan_series, get_stale_value_metrics,
     remove_miner_expected_series, remove_miner_psu_series,
     remove_miner_psu_v3_series, expire_miner_error_last_happened,
@@ -664,6 +666,16 @@ async def lifespan(app_instance: FastAPI):
     # series exist from the first scrape rather than appearing only once a
     # collection has run (DMI-58).
     publish_config_source(get_miners_config_source(), len(get_miners_config()), CONFIG_SOURCES)
+
+    # DMI-211: same reason as the gauge above -- the collection-path series must
+    # exist from the first scrape, not from the first collection.
+    #
+    # `comparing=False` is the honest reading, not a placeholder: no cycle has
+    # run, so no comparison has run. Taken from COLLECTION_COMPARE instead it
+    # would report a configured intention as an observation, and "enabled but
+    # not yet started" would be indistinguishable from "running" -- the
+    # fabricated value DMI-211 is about, in the other direction.
+    publish_collection_path(COLLECTION_PRIMARY, COLLECTION_PATHS, False)
 
     # Initialize APScheduler
     scheduler = AsyncIOScheduler()
