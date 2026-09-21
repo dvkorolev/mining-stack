@@ -1,16 +1,68 @@
 """
-pyasic 0.60.0's field selection, reproduced exactly — with one deliberate
-exception, `fan_speeds()`, which reads the value the machine states rather than
-reproducing pyasic's fabricated zero (DMI-192, and its docstring says why).
+Our driver's field-selection layer: the values `asic/drivers/whatsminer.py`
+publishes, and the source field each is read from.
+
+**This module used to say it reproduced "pyasic 0.60.0's field selection,
+reproduced exactly". That was a stronger claim than its evidence supports, and
+closing that gap is DMI-201.** What is true: mirroring pyasic is a *design
+intent*, because phase 1's rule (DMI-136) is that no published value changes,
+and the only way "the primary path is ours" and "no published value changes"
+can both hold is for our path to choose the same *source field* pyasic chose —
+not the better field, the same one. What is not true is that the mirroring was
+verified everywhere: part of it was measured against live pyasic on this fleet
+and the rest was read out of pyasic's source, and **those two were
+indistinguishable**. Each function now carries an `Evidence:` line saying
+which one it is.
+
+The distinction is not academic — reading pyasic's source has produced a wrong
+model of it **three times** on this fleet: the two-shape finding,
+`uptime_seconds` (the source says Msg-shaped machines publish 0; they publish a
+real 172 450 s), and the fans (`fan_speeds()`). Every correction came from the
+fleet, never from the source.
+
+**What an `Evidence:` line means.** Both marks describe *this repository*,
+not a measurement taken when the line was written:
+
+  `Evidence: measured on the fleet` — a dated record of an observation of this
+      function's claim exists in the records listed below. It does **not** mean
+      the claim was re-checked then, and it does not make the record correct;
+      it makes the record *findable* where it previously was not, and findable
+      is all it claims. The weakest instance of it is marked `self-attested`,
+      where the only record is this file's own comment rather than an
+      independent one.
+  `Evidence: source-only — not observed on a machine` — the claim rests on
+      reading pyasic's or our own collector's source. That is not a defect in
+      itself; it is the part of the emulation nobody has checked, and therefore
+      the population any future correction will come from.
+
+Where the marks were derived from:
+
+  * `parsers/fixtures/whatsminer_*.json` — raw 4028 captures from the farm,
+    2026-09-18, sanitised (each file's `source` field says so): the SUMMARY
+    shape, the Msg shape, and `.74`'s parseable `devs`. They record what a
+    *machine* answered and say nothing about what pyasic does with it, so on
+    their own they are not evidence about pyasic.
+  * `PROJECT_STATE.md` — the DMI-136 status block and the DMI-192 entry, which
+    record the live window's per-machine findings.
+  * `CLAUDE.md`, section "Collection path (`COLLECTION_PRIMARY`, DMI-136)".
+  * This file's own "Measured …" comments, where nothing else records the
+    observation — the weakest of the four, and named as such in the mark.
+
+A mark belongs to the *function's* claim. Where one branch was measured and
+another only read, the function takes the mark of the measured part and the
+unmeasured part is named in the line. The marks are enforced by
+`test_parity_evidence.py`, which discovers the functions from this file's
+syntax rather than from a list: every public function must carry an `Evidence:`
+line, and a new function cannot be added without one. Module-private helpers
+(leading underscore) are exempt, because they carry no claim about pyasic's
+behaviour.
 
 **This module exists for phase 1 only (DMI-136) and is meant to be deleted or
-rewritten in DMI-138.** Phase 1's claim is "the primary path is ours and no
-published value changes", and the only way both halves of that can be true at
-once is for our path to choose the same *source field* pyasic chose — not the
-better field, the same one. That rule is knowingly broken in exactly one place,
-the fan reading named above, and a fan series is therefore the one published
-value this phase is allowed to change. Each function below names the pyasic
-method it mirrors so the difference is visible rather than folklore.
+rewritten in DMI-138.** The one place the phase-1 rule is knowingly broken is
+the fan reading, `fan_speeds()` — a decision (DMI-192), not drift, whose
+docstring says why: a fan series is the one published value this phase is
+allowed to change. Each function below names the pyasic method it mirrors so
+the difference is visible rather than folklore.
 
 Measured against the live fleet 2026-09-18 (raw 4028 captures, all 20 answering
 WhatsMiners). The fleet answers `summary` in two shapes and pyasic only reads
@@ -50,7 +102,15 @@ POWER_NOT_REPORTED = -1
 # ---------------------------------------------------------------------------
 
 def response_shape(response: Optional[Dict]) -> str:
-    """Which of the two shapes a `summary` response uses."""
+    """
+    Which of the two shapes a `summary` response uses.
+
+    Evidence: measured on the fleet — 13 SUMMARY / 7 Msg of 20 answering
+    WhatsMiners, 2026-09-18 (module header, `CLAUDE.md`, `PROJECT_STATE.md`);
+    the two shapes are the fixtures `whatsminer_summary_shape.json` /
+    `whatsminer_msg_shape.json`. This function's claim is about the machine's
+    answer, so a machine capture is sufficient evidence for it.
+    """
     if not isinstance(response, dict):
         return SHAPE_NONE
     if isinstance(response.get('SUMMARY'), list) and response['SUMMARY']:
@@ -61,7 +121,16 @@ def response_shape(response: Optional[Dict]) -> str:
 
 
 def summary_view(response: Optional[Dict]) -> Dict:
-    """`SUMMARY[0]` — the view pyasic's native path reads. {} when absent."""
+    """
+    `SUMMARY[0]` — the view pyasic's native path reads. {} when absent.
+
+    Evidence: measured on the fleet — 2026-09-18: on the 7 Msg-shaped machines
+    pyasic's *published* hashrate and wattage come from the collector's own
+    gap-filler (`PROJECT_STATE.md`). That is what "pyasic read `SUMMARY[0]` and
+    got nothing" predicts, and what a native read of the `Msg` view would
+    contradict, so the observation discriminates between the two. The view name
+    and the `[0]` are read from pyasic's source.
+    """
     if not isinstance(response, dict):
         return {}
     summary = response.get('SUMMARY')
@@ -77,6 +146,10 @@ def msg_view(response: Optional[Dict]) -> Dict:
     `Msg` is sometimes the string "Summary" (STATUS entries carry that, and
     `summary` on the SUMMARY shape has `Msg: "Summary"` at top level in some
     firmware), so a non-dict is treated as absent.
+
+    Evidence: source-only — not observed on a machine. The view name comes from
+    our own collector's gap-filler (`collectors/pyasic_collector.py`), and no
+    record dates the firmware case where `Msg` is the string "Summary".
     """
     if not isinstance(response, dict):
         return {}
@@ -111,6 +184,12 @@ def hashrate_ths(response: Optional[Dict]) -> Tuple[Optional[float], str]:
 
     Returns (value_or_None, provenance). None means "no reading", which the
     caller publishes as 0 -- the same thing `_safe_float(None)` does.
+
+    Evidence: measured on the fleet — 2026-09-18: on the 7 Msg-shaped machines
+    the published hashrate comes from this gap-filler (`Msg["MHS av"]`,
+    `PROJECT_STATE.md`), and `MHS av` was measured as MH/s on a machine rated
+    102.5 TH/s (DMI-188). The `SUMMARY[0]["MHS 1m"]` branch, and that field's
+    name, are read from pyasic's source.
     """
     native = _number(summary_view(response).get('MHS 1m'))
     if native:
@@ -129,6 +208,11 @@ def power_watts(response: Optional[Dict], profile_typical: Optional[float] = Non
     reported". The gap-filler then takes `Msg["Power"]`, and after that the
     collector falls back to the profile's `power_typical` -- which no
     WhatsMiner profile defines, so in this fleet the chain ends at 0.
+
+    Evidence: measured on the fleet — 2026-09-18: the same window records the
+    gap-filler supplying *wattage* on the 7 Msg-shaped machines
+    (`PROJECT_STATE.md`). The `SUMMARY[0]["Power"]` branch and pyasic's `-1`
+    convention are read from pyasic's source.
     """
     native = _number(summary_view(response).get('Power'))
     if native is not None and native != POWER_NOT_REPORTED and native != 0:
@@ -156,6 +240,12 @@ def uptime_seconds(response: Optional[Dict]) -> Tuple[int, str]:
 
     `.117`'s pre-flash firmware reports `Uptime` and no `Elapsed`, so 0 is
     correct there.
+
+    Evidence: measured on the fleet — 2026-09-18: the parallel run published
+    172 450 s on `.53` and 252 633 s on `.70` (172 533 s in the window record,
+    `PROJECT_STATE.md`) where reading pyasic's source predicts 0. The strongest
+    mark in this file, because the fleet *refuted* the source rather than
+    agreeing with it.
     """
     native = _number(summary_view(response).get('Elapsed'))
     if native is not None:
@@ -193,7 +283,15 @@ FAN_COUNT_DEFAULT = 2
 
 
 def expected_fans(model: str) -> int:
-    """pyasic's `expected_fans` for this model string."""
+    """
+    pyasic's `expected_fans` for this model string.
+
+    Evidence: measured on the fleet — self-attested: recorded 2026-09-18 in the
+    comment above, by resolving every machine in this fleet with `get_miner()`
+    against pyasic 0.60.0's own registry (all inherit the default of 2). No
+    independent record repeats it, hence `self-attested`. The fanless markers
+    are read from pyasic's source, and no such model is in this fleet.
+    """
     lowered = (model or '').lower()
     if any(marker in lowered for marker in _FANLESS_MODEL_MARKERS):
         return 0
@@ -226,7 +324,15 @@ EXPECTED_HASHBOARDS_DEFAULT = 3
 
 
 def expected_hashboards(model: str) -> int:
-    """pyasic's `expected_hashboards` for this model string."""
+    """
+    pyasic's `expected_hashboards` for this model string.
+
+    Evidence: measured on the fleet — self-attested: recorded 2026-09-19 in the
+    comment above, by executing pyasic 0.60.0's own class resolution for every
+    model in this fleet (all 21 resolve to 3). The same class-resolution work
+    is described independently in `PROJECT_STATE.md` (DMI-189, which is where
+    the `VH95 -> VH90` model-string forcing was found).
+    """
     return EXPECTED_HASHBOARDS_DEFAULT
 
 
@@ -261,10 +367,12 @@ def fan_speeds(response: Optional[Dict], model: str) -> Tuple[Dict[str, Any], st
     on `.53` — but carries no fan keys, so the default fires and pyasic publishes
     `fan:0 = 0` / `fan:1 = 0`. That is a fabricated zero of the DMI-62 family and
     it is not dropped downstream: `_flatten_published` skips only `None`, so a
-    `0` reaches the comparison as a number. Measured in the DMI-136 window
-    (`dmi136_fleet4.log`):
-    `compare 192.168.2.53 … fan:0(only_pyasic): theirs=0 ours=None …
-    published_by=pyasic`.
+    `0` reaches the comparison as a number, and the live window caught it
+    (`compare 192.168.2.53 … fan:0(only_pyasic): theirs=0 ours=None …
+    published_by=pyasic`); the window itself is recorded in
+    `PROJECT_STATE.md`, and the raw log it was reconstructed from,
+    `dmi136_fleet4.log`, is **not in this repository** — so the record is the
+    citation, not the log.
 
     The RPM is real and sits one nesting level down, in `Msg`: `.53` reports
     `Fan Speed In` 6070 / `Fan Speed Out` 6217. Every Msg-shaped machine in this
@@ -278,6 +386,13 @@ def fan_speeds(response: Optional[Dict], model: str) -> Tuple[Dict[str, Any], st
     Returns ({fan_id: rpm}, provenance). An empty dict means "publish no fan
     series" — no placeholder is invented to stand in for a reading nobody
     supplied.
+
+    Evidence: measured on the fleet — 2026-09-18/19: the live window published
+    `fan:0`/`fan:1` = 0 on the Msg-shaped machines while the same `MinerData`
+    carried a real uptime, and the per-machine before/after found 7 machines
+    differing and 13 identical (`PROJECT_STATE.md`). This is the one function
+    whose *behaviour* is deliberately not pyasic's, so the evidence is about
+    what pyasic publishes, not about what this returns.
     """
     if expected_fans(model) <= 0:
         return {}, 'pyasic.expected_fans=0'
@@ -311,6 +426,13 @@ def efficiency(power: float, hashrate_ths: Optional[float], shape: str) -> Tuple
     value is a rounded int and survives. Both are reproduced.
 
     Returns (value, provenance).
+
+    Evidence: source-only — not observed on a machine. Both branches are read
+    from source. This is a published, compared field (`miner_efficiency_j_th`;
+    `parsers/reading_compare.py`'s `CONTINUOUS_KEYS`), and no record in this
+    repository measures what pyasic publishes for it — the same shape as the
+    fan defect, one step weaker. Filed as its own defect rather than fixed
+    here; changing it would be a published-value change.
     """
     if shape == SHAPE_SUMMARY:
         native_hashrate = None
@@ -350,6 +472,11 @@ def hashboards_parsed_by_pyasic(devs: Optional[Dict]) -> bool:
     values reach published board series (its `expected_chips`, and one phantom
     slot per `expected_hashboards` beyond the reported boards) and our own
     `devs` parse cannot reproduce them — see the driver's routing rule.
+
+    Evidence: measured on the fleet — 2026-09-18: true on `.74` only, out of 20
+    machines (`CLAUDE.md`, `PROJECT_STATE.md`; the
+    `whatsminer_hashboards_parseable.json` fixture is that machine). The
+    six-key list is read from pyasic's source.
     """
     entries = (devs or {}).get('DEVS')
     if not isinstance(entries, list) or not entries:
@@ -372,6 +499,11 @@ def pyasic_board_readings(devs: Optional[Dict]) -> Dict[str, Dict]:
     that `parsers/board_readings.py` publishes as chip_temp. On `.74` this
     makes the headline `miner_temp_max_c` a chip average (90.0) rather than a
     board temperature (74.69).
+
+    Evidence: measured on the fleet — 2026-09-18: `.74`'s headline
+    `miner_temp_max_c` is pyasic's rounded chip average (90.0) rather than the
+    board temperature (`CLAUDE.md`, "the pyasic-registry-tainted machine"). The
+    rounding calls and the field names are read from pyasic's source.
     """
     if not hashboards_parsed_by_pyasic(devs):
         return {}
@@ -406,6 +538,11 @@ def pyasic_temperature_c(devs: Optional[Dict]) -> Tuple[float, str]:
 
     Returns (value, provenance). A 0.0 here means the caller must apply the
     gap-filler; it never means "0 degrees".
+
+    Evidence: source-only — not observed on a machine. `_get_max_temp`'s max
+    over pyasic's `hashboards` is read from pyasic's source, and the
+    0.0-otherwise branch has no record behind it; the parsed case belongs to
+    `pyasic_board_readings` above.
     """
     readings = pyasic_board_readings(devs)
     values: List[float] = []
@@ -436,6 +573,11 @@ def error_count(summary_response: Optional[Dict],
     its summary, so only the `get_error_code` half ever fires — but the second
     half is kept, because if a firmware ever starts reporting it, pyasic would
     double-count and our path has to double-count with it.
+
+    Evidence: measured on the fleet — self-attested: the 2026-09-18 observation
+    above is the only record, and it is this docstring's own. What it measures
+    is the *machine's* answer; the counting rule itself — both halves,
+    including the v2.0.4 list-to-dict rewrite — is read from pyasic's source.
     """
     count = 0
     entries = msg_view(error_code_response).get('error_code')
@@ -466,6 +608,11 @@ def fault_light(miner_info_response: Optional[Dict]) -> Tuple[bool, str]:
     pyasic `BTMiner._get_fault_light`: `not (get_miner_info()["Msg"]["ledstat"]
     == "auto")`, and False when the call fails. Measured 2026-09-18: `ledstat`
     is "auto" on every machine sampled, so this publishes 0 fleet-wide.
+
+    Evidence: measured on the fleet — self-attested: the 2026-09-18 observation
+    above is the only record, and it is this docstring's own; the sample is not
+    named, so how many machines "every machine sampled" covers is not
+    recoverable. The `!= "auto"` rule is read from pyasic's source.
     """
     ledstat = msg_view(miner_info_response).get('ledstat')
     if ledstat is None:
@@ -491,6 +638,11 @@ def is_mining(status_response: Optional[Dict]) -> Tuple[Optional[bool], str]:
     `is_mining = 0` today. Measured 2026-09-18: `.74` is exactly that machine.
 
     Returns (value, provenance).
+
+    Evidence: measured on the fleet — self-attested: the 2026-09-18 observation
+    above is the only record, and it is this docstring's own. What it measures
+    is the *machine's* `status` reply; the three-branch derivation, including
+    the `btmineroff` probe, is read from pyasic's source.
     """
     msg = msg_view(status_response)
     if not msg:
@@ -565,6 +717,13 @@ def canonical_source(token: str) -> str:
     came from" — the collector's hardcoded defaults and a field nobody read.
     They are normalised to '' so the source test stays quiet there: a path
     admitting it has no source is not a claim that differs from another one.
+
+    Evidence: source-only — the vocabulary is ours, and exactly one of its
+    entries was ever measured: `msg.elapsed` and `summary.elapsed` held the
+    same value, 172 450 s on both sides, 2026-09-18 (the comment on that entry,
+    and `PROJECT_STATE.md`). Marking the whole table `measured` would claim far
+    more than that — including the deliberate non-collapse of the two fan
+    tokens, which rests on DMI-192's argument rather than on a measurement.
     """
     if not token or token == 'none':
         return ''
@@ -581,6 +740,10 @@ def wants_cgminer_pools(model: str) -> bool:
     pyasic's (which, for a BTMiner, are empty — `BaseMiner._get_pools` returns
     None and no BTMiner backend overrides it). `.121` therefore publishes no
     pool series today, and must not start.
+
+    Evidence: source-only — not observed on a machine. The function reproduces
+    our own collector's substring test verbatim, and `.121`'s "no pool series"
+    outcome was never measured (no record names a pool series for `.121`).
     """
     lowered = (model or '').lower()
     return ('whatsminer' in lowered or 'm30' in lowered or 'm50' in lowered

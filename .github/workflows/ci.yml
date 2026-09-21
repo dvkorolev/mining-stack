@@ -78,6 +78,10 @@ jobs:
         working-directory: python-scheduler
       - run: python test_whatsminer_driver.py
         working-directory: python-scheduler
+      # DMI-201. Reads parity.py's syntax, not its behaviour, so it would run
+      # anywhere -- kept here for the same reason as the three above.
+      - run: python test_parity_evidence.py
+        working-directory: python-scheduler
       # DMI-211 and DMI-208. The first two reach a real collection cycle without
       # pyasic by stubbing its one import; the third reads the source rather
       # than importing anything from the scheduler.

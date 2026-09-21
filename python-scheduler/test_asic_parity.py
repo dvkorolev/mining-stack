@@ -1,5 +1,8 @@
 """
-Unit tests for asic/parity.py — pyasic 0.60.0's field selection, reproduced.
+Unit tests for asic/parity.py — our driver's field-selection layer, whose
+mirroring of pyasic is a design intent and not always a measurement (DMI-201;
+each function carries an `Evidence:` line, and that module's header says what
+one means). These tests pin the *source field* each published value comes from.
 
 DMI-136: our CGMiner path becomes primary, and the phase's rule is that no
 published value changes, so the tests pin the *source field* each published
