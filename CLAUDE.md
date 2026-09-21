@@ -245,7 +245,14 @@ publishes, so it is a measurement of the switch and not part of it. Bound it —
 `COLLECTION_COMPARE_EXPECTED=ip:reason,…` is the written record of machines allowed to differ; a
 difference with no reason is the finding, and `miner_compare_mismatch_total{field,result}` keeps the
 count. The active path is published as `scheduler_collection_path` — a mode that runs must not be
-invisible.
+invisible. It is written once per cycle from the batch publish block in
+`collect_pyasic_metrics()`, and once at startup so the series exist from the first scrape. Its
+`comparing` sibling `scheduler_collection_compare` is *counted, not configured*: it reads 1 only
+when the comparison actually ran for a machine in that cycle, so an expired
+`COLLECTION_COMPARE_CYCLES` reads 0 rather than the flag's 1. Until 2026-09-21
+`publish_collection_path()` had **no caller anywhere** (DMI-211) — the family was scraped as HELP
+and TYPE with no sample, so the mode was invisible by means of the metric that existed to make it
+visible. `python-scheduler/test_metric_wiring.py` fails on that class now.
 
 Two things to keep true:
 

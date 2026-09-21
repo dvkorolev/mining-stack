@@ -190,7 +190,21 @@ miner_collection_routing_total = Counter('miner_collection_routing_total', 'Mach
 
 
 def publish_collection_path(path: str, known_paths, comparing: bool) -> None:
-    """Publish the active collection path and whether the comparison is running."""
+    """
+    Publish the active collection path and whether the comparison is running.
+
+    Called once per cycle from the batch publish block at the end of
+    `collectors/pyasic_collector.collect_pyasic_metrics()`, and once at startup
+    beside `publish_config_source()` in main.py so the series exist from the
+    first scrape.
+
+    `comparing` is what the comparison *did*, never what `COLLECTION_COMPARE`
+    says: the caller counts the machines the comparison actually ran for this
+    cycle. It was defined here for a week with no caller at all, so the family
+    was published as HELP and TYPE with no sample -- the metric written to make
+    a running mode visible was itself invisible (DMI-211). Its caller is part of
+    its contract now: `test_metric_wiring.py` fails if these families lose one.
+    """
     for known in known_paths:
         scheduler_collection_path.labels(path=known).set(1 if known == path else 0)
     scheduler_collection_compare.set(1 if comparing else 0)

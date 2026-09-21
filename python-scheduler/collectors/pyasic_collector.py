@@ -14,7 +14,8 @@ from asic import parity
 from asic.drivers.whatsminer import read_miner as read_whatsminer
 from asic.transport.json_tcp import cgminer_command
 from config import (COLLECTION_COMPARE, COLLECTION_COMPARE_EXPECTED,
-                    COLLECTION_PRIMARY, MAX_CONCURRENT_REQUESTS,
+                    COLLECTION_PATHS, COLLECTION_PRIMARY,
+                    MAX_CONCURRENT_REQUESTS,
                     compare_enabled_for, keeps_pyasic_source)
 from parsers.cgminer_parser import parse_cgminer_response
 from parsers.reading_compare import compare, split_results, summarise
@@ -31,7 +32,8 @@ from metrics import (
     set_miner_pools, set_miner_boards, set_miner_fans, set_miner_psu,
     publish_expected_hashrate_source, set_miner_expected_boards,
     publish_board_chips_source, BOARD_CHIPS_SOURCES,
-    miner_compare_mismatch_total, miner_collection_routing_total
+    miner_compare_mismatch_total, miner_collection_routing_total,
+    publish_collection_path
 )
 from parsers.pool_status import extract_pool_status
 from parsers.board_readings import boards_from_devs
@@ -827,7 +829,11 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
 
     if COLLECTION_COMPARE:
         _compare_cycles_run[0] += 1
-        _reset_compare_stats()
+    # Unconditional on purpose: _compare_stats['machines'] is what the path
+    # gauge is published from (DMI-211), so it has to count the cycle just run
+    # and not the last cycle the comparison happened to be switched on for.
+    # Nothing else reads these stats except the summary line, already gated.
+    _reset_compare_stats()
 
     sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     # Our path gets its own slot budget rather than sharing the pyasic one:
@@ -1242,6 +1248,22 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
     collection_duration.labels(collector='hybrid').set(duration)
     collection_success.labels(collector='hybrid').set(1 if success_count > 0 else 0)
     collection_timestamp.labels(collector='hybrid').set(time.time())
+
+    # DMI-211: the metric written to make the collection mode visible was itself
+    # invisible. `publish_collection_path()` had no caller anywhere in the
+    # repository, so this family went out as HELP and TYPE with no sample line.
+    # Published here, beside the batch's other gauges.
+    #
+    # `comparing` is *counted, not configured*: _compare_stats['machines'] is
+    # incremented once per machine _report_comparison() actually ran for in this
+    # cycle (all three of its call sites sit under `if comparing:`), so an
+    # expired COLLECTION_COMPARE_CYCLES, a COLLECTION_COMPARE_IPS list that
+    # selects no machine we read, or a fresh process all read 0. Reading
+    # COLLECTION_COMPARE here would be the fabricated value this ticket is
+    # about, pointing the other way. This reports the configured primary; the
+    # per-machine routing is miner_collection_routing_total.
+    publish_collection_path(COLLECTION_PRIMARY, COLLECTION_PATHS,
+                            _compare_stats['machines'] > 0)
     
     logger.info(f"✓ Batch collection: {success_count}/{len(miners)} miners in {duration:.1f}s")
     
