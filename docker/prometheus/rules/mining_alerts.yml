@@ -104,6 +104,28 @@ groups:
             {{ with query (printf "miner_power_watts{name='%s'}" $labels.name) }}{{ . | first | value | printf "%.0f" }}{{ end }}W.
 
       # Critical: Hashrate dropped significantly (50% below expected) - SHA-256
+      #
+      # `for: 25m` here is a WARMUP DWELL, not detection latency. Every start of a
+      # WhatsMiner spends its first minutes at a fraction of nameplate while the
+      # upfreq ladder runs. Measured on `.122` (DMI-221): full power (2900-3000 W)
+      # and full frequency at 15-20% of rated hashrate until the ladder completes.
+      # So "hashrate below half" is TRUE for the whole of every healthy start, and
+      # `for: 10m` sat *inside* that window — the rule fired on restarts.
+      #
+      # Sized on 14 complete start cycles, all timed the same way, from btminer
+      # start to the step onto nameplate: 13.3 to 19.1 minutes (795-1149 s). 25m
+      # clears the observed maximum by 351 s. That range is a measurement, not a
+      # physical bound — all 14 ran at ~45 C ambient and a hot day may stretch it.
+      #
+      # Two costs, both real. First, this rule is LATE on a genuine latch, not
+      # early: after the PSU latches, `hash-average` decays over ~14 minutes, so the
+      # condition only turns true long after the event and the alert lands at up to
+      # ~39 minutes. Second, it is a fitted duration where a discriminator exists.
+      #
+      # That discriminator is a typed flag: `Upfreq Complete` reads 0 for exactly
+      # the plateau and 1 at the step, and the machine already reports it per board
+      # in `devs`. It is in our test fixtures but NOT in our parsers, so it is not
+      # published yet. Publish it, gate this rule on it, and bring `for` back down.
       - alert: MinerHashrateCriticalSHA256
         expr: |
           (
@@ -111,7 +133,7 @@ groups:
             and miner_is_mining{algorithm="sha256"} == 1
             and miner_expected_hashrate_ths > 0
           )
-        for: 10m
+        for: 25m
         labels:
           severity: critical
           component: miner
@@ -170,6 +192,12 @@ groups:
           description: "Board (PCB) temp, warning band 75-85°C. Chips run 20-30°C hotter."
           
       # Warning: Hashrate below expected (20% below expected) - SHA-256
+      #
+      # Deliberately left at `for: 10m` while its critical sibling carries the 25m
+      # warmup dwell (DMI-221) — this is a measurement, not an oversight. The
+      # warmup plateau sits at 15-20% of rated hashrate, far below this rule's 50%
+      # floor, so a healthy start cannot reach this band at all. If a machine is
+      # ever measured warming INTO 50-80%, it needs the same dwell.
       - alert: MinerHashrateWarningSHA256
         expr: |
           (
