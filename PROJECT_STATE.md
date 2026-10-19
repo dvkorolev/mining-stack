@@ -8,8 +8,8 @@ Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
 
 > **Status at a glance (the Pi runs the scheduler image built from `main` `d29d0e6` and the
-> backend/frontend images built from `main` `d3e00ca`, deployed 2026-10-20. `main` is `d3e00ca`,
-> pushed, so there is nothing to redeploy. ✅ The switch has now been
+> backend/frontend images built from `main` `d3e00ca`, deployed 2026-10-20. `main` has moved only
+> by documentation since, so there is nothing to redeploy. ✅ The switch has now been
 > *measured against the live fleet* instead of argued about: a bounded `COLLECTION_COMPARE` window
 > reported `published_by[pyasic=20]` on every cycle with `unreadable=0`. ⚠️ And that window killed
 > the phase's central claim — **the flip is not value-inert.** It moves fans on ~5 machines,
