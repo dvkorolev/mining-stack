@@ -1,5 +1,11 @@
 # Alert Rules Architecture
 
+> **Superseded (2026-10-20).** This document describes an earlier design. The
+> source of truth for Prometheus rules is now the hand-written files in
+> `docker/prometheus/rules/`. The database no longer writes them: the YAML
+> generator and its endpoint were removed (DMI-177) after they overwrote the
+> hand-written rules and their rationale.
+
 ## How Alert Rules Work
 
 ### Source of Truth: **SQLite Database** ✅

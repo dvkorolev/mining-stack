@@ -2,12 +2,8 @@
 import fs from 'fs';
 import yaml from 'js-yaml';
 import path from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { logger } from '../utils/logger';
 import { getDatabase, MinerRecord } from '../services/database.service';
-
-const execAsync = promisify(exec);
 
 export interface MinerThresholds {
   temperature?: {
@@ -228,44 +224,6 @@ export const updateMinerStatus = (minerId: string, status: 'online' | 'offline' 
 };
 
 /**
- * Regenerate Prometheus rules after config change
- */
-const regeneratePrometheusRules = async (): Promise<void> => {
-  try {
-    const pythonPath = process.env.NODE_ENV === 'production'
-      ? '/opt/mining-stack/venv/bin/python3'
-      : path.join(process.cwd(), 'venv', 'bin', 'python3');
-    
-    const scriptPath = process.env.NODE_ENV === 'production'
-      ? '/opt/mining-stack/bin/generate_prometheus_rules.py'
-      : path.join(process.cwd(), 'bin', 'generate_prometheus_rules.py');
-    
-    if (!fs.existsSync(pythonPath) || !fs.existsSync(scriptPath)) {
-      logger.warn('Prometheus rule generation skipped: Python or script not found');
-      return;
-    }
-    
-    logger.info('Regenerating Prometheus rules...');
-    await execAsync(`${pythonPath} ${scriptPath}`);
-    
-    // Reload Prometheus (only in production)
-    if (process.env.NODE_ENV === 'production') {
-      try {
-        await execAsync('docker exec mining-stack-prometheus-1 kill -HUP 1');
-        logger.info('Prometheus rules regenerated and reloaded');
-      } catch (error) {
-        logger.warn('Failed to reload Prometheus (container might not be running)');
-      }
-    } else {
-      logger.info('Prometheus rules regenerated (reload skipped in development)');
-    }
-  } catch (error) {
-    logger.error('Failed to regenerate Prometheus rules:', error);
-    // Don't throw - config was saved successfully
-  }
-};
-
-/**
  * Save miners configuration to database (deprecated - use addMiner/updateMiner instead)
  * Kept for backward compatibility
  */
@@ -343,12 +301,7 @@ export const addMiner = (minerData: Omit<MinerConfig, 'status' | 'lastSeen'>, ow
     
     // Update cache
     minersCache.push(newMiner);
-    
-    // Regenerate Prometheus rules after add (async, don't wait)
-    regeneratePrometheusRules().catch(err => {
-      logger.warn('Failed to auto-regenerate Prometheus rules:', err);
-    });
-    
+
     logger.info(`Added new miner: ${newMiner.name} (${newMiner.ip}) for owner ${owner.substring(0, 4)}***`);
     return newMiner;
   } catch (error) {
@@ -428,12 +381,7 @@ export const updateMiner = (minerId: string, updates: Partial<MinerConfig>): Min
         lastSeen: new Date(),
       };
     }
-    
-    // Regenerate Prometheus rules after update (async, don't wait)
-    regeneratePrometheusRules().catch(err => {
-      logger.warn('Failed to auto-regenerate Prometheus rules:', err);
-    });
-    
+
     logger.info(`Updated miner: ${updatedRecord.name} (${updatedRecord.ip})`);
     return dbRecordToConfig(updatedRecord);
   } catch (error) {
@@ -463,12 +411,7 @@ export const deleteMiner = (minerId: string): boolean => {
       if (cacheIndex !== -1) {
         minersCache.splice(cacheIndex, 1);
       }
-      
-      // Regenerate Prometheus rules after delete (async, don't wait)
-      regeneratePrometheusRules().catch(err => {
-        logger.warn('Failed to auto-regenerate Prometheus rules:', err);
-      });
-      
+
       logger.info(`Deleted miner: ${existing.name} (${existing.ip})`);
     }
     

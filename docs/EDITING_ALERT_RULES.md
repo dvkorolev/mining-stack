@@ -160,14 +160,13 @@ miners:
         critical: 2500   # Override: 2500 RPM instead of default 2000 RPM
 ```
 
-### Step 3: Regenerate Prometheus Rules
+### Step 3: Update the rule by hand
 
-The system will automatically regenerate rules when you update `miners.yaml` via the backend API. But you can also do it manually:
-
-```bash
-cd /opt/mining-stack
-/opt/mining-stack/venv/bin/python3 bin/generate_prometheus_rules.py
-```
+Per-miner thresholds in `miners.yaml` no longer generate Prometheus rules.
+`bin/generate_prometheus_rules.py` was removed on 2026-10-19 (DMI-177,
+DMI-83): it knew none of the hand-written rules and would have overwritten
+them. Prometheus rules are hand-written files under
+`docker/prometheus/rules/`; edit the rule that needs the change directly.
 
 ### Step 4: Reload Prometheus
 
@@ -467,9 +466,6 @@ nano /opt/mining-stack/docker/prometheus/rules/mining_alerts.yml
 # Edit per-miner thresholds
 nano /opt/mining-stack/etc/miners.yaml
 
-# Regenerate rules from miners.yaml
-/opt/mining-stack/venv/bin/python3 /opt/mining-stack/bin/generate_prometheus_rules.py
-
 # Reload Prometheus
 docker exec mining-stack-prometheus-1 kill -HUP 1
 
@@ -490,7 +486,7 @@ curl 'http://192.168.1.66:9090/api/v1/query?query=miner_temp_max_c'
 | `/opt/mining-stack/docker/prometheus/rules/mining_alerts.yml` | Mining alert rules |
 | `/opt/mining-stack/docker/prometheus/rules/pool_network_alerts.yml` | Pool/network alert rules |
 | `/opt/mining-stack/etc/miners.yaml` | Per-miner configuration and thresholds |
-| `/opt/mining-stack/bin/generate_prometheus_rules.py` | Script to generate rules from miners.yaml |
+| `/opt/mining-stack/docker/prometheus/rules/` | All alert rule files (hand-written) |
 | `/opt/mining-stack/docker/prometheus/prometheus.yml` | Prometheus main config |
 | `/opt/mining-stack/docker/alertmanager/alertmanager.yml` | Alertmanager routing config |
 

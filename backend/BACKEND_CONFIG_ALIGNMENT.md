@@ -1,5 +1,9 @@
 # Backend Configuration Alignment
 
+> **Historical analysis (2026-06).** The code below is a proposal, not the live
+> implementation. In particular, `regeneratePrometheusRules` no longer exists:
+> the rules generator was removed on 2026-10-19 (DMI-177).
+
 ## Issue Found
 
 The backend's `miners.config.ts` uses a **nested credentials structure** that is incompatible with the new Python collectors.

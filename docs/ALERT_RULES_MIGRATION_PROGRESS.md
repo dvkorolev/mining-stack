@@ -1,5 +1,12 @@
 # Alert Rules Migration to SQLite - Implementation Progress
 
+> **Superseded (2026-10-20).** Prometheus alert rules are hand-written files in
+> `docker/prometheus/rules/`. The database no longer writes them: the YAML
+> generator and its endpoint were removed (DMI-177), because they overwrote the
+> hand-written rules and their rationale. The database still stores alert-rule
+> records for management and history, but it is not the source of truth for what
+> Prometheus loads.
+
 ## Status: Phase 1 & 2 Complete ✅
 
 **Last Updated**: 2025-11-12

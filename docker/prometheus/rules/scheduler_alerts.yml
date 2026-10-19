@@ -1,8 +1,8 @@
 # Alerts on the collector itself, rather than on the miners it polls.
 #
-# Kept out of mining_alerts.yml on purpose: that file is regenerated from
-# etc/miners.yaml by bin/generate_prometheus_rules.py, which would drop
-# anything hand-added to it.
+# Kept out of mining_alerts.yml on purpose: these are alerts about the
+# collector, not about the miners it polls. Both files are hand-written; the
+# generator that used to rewrite mining_alerts.yml was removed (DMI-177).
 #
 # DMI-58: the scheduler takes its miner list from the backend API and silently
 # fell back to the example miners in etc/miners.yaml when the backend was not

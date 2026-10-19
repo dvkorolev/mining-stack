@@ -13,7 +13,6 @@ The `bin/` directory contains old scripts from the previous architecture that ar
 | File | Purpose | Status |
 |------|---------|--------|
 | `farm_init.py` | Auto-discovery (NEW version) | ✅ Keep |
-| `generate_prometheus_rules.py` | Prometheus rules generation | ✅ Keep |
 | `FARM_INIT_IMPROVEMENTS.md` | Documentation | ✅ Keep |
 | `README_FARM_INIT.md` | Documentation | ✅ Keep |
 | `README.md` | Documentation | ✅ Keep |
@@ -69,7 +68,6 @@ mv requirements-collector.txt backup/old_architecture_*/
 ls -lh bin/
 # Should only show:
 # - farm_init.py
-# - generate_prometheus_rules.py
 # - Documentation files
 # - backup/
 ```
@@ -211,12 +209,12 @@ ls -lh bin/
 
 ---
 
-### 2. generate_prometheus_rules.py (10KB) ✅
-**Purpose**: Generate Prometheus alerting rules
+### 2. generate_prometheus_rules.py ❌ REMOVED 2026-10-19
+**Purpose (historical)**: Generate Prometheus alerting rules
 
-**Status**: ACTIVE - Used by backend
-
-**Why Keep**: Backend calls this to regenerate rules after config changes
+**Status**: REMOVED (DMI-177, DMI-83). It regenerated `mining_alerts.yml`
+from `etc/miners.yaml`, which holds only the example miners, and knew none of
+the hand-written rules. The backend no longer calls it.
 
 ---
 
@@ -236,7 +234,6 @@ ls -lh bin/
 ```
 bin/
 ├── farm_init.py                    ✅ ACTIVE
-├── generate_prometheus_rules.py   ✅ ACTIVE
 ├── FARM_INIT_IMPROVEMENTS.md       ✅ ACTIVE
 ├── README_FARM_INIT.md             ✅ ACTIVE
 ├── README.md                       ✅ ACTIVE
