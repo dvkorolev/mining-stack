@@ -50,7 +50,6 @@ import {
   deleteAlertRule,
   toggleAlertRule,
   getAlertRuleHistory,
-  regeneratePrometheusYAML,
   AlertRule,
   CreateAlertRuleParams,
   UpdateAlertRuleParams,
@@ -284,17 +283,6 @@ const AlertRulesManagement: React.FC = () => {
     }
   };
 
-  const handleRegenerateYAML = async () => {
-    try {
-      const response = await regeneratePrometheusYAML();
-      if (response.success) {
-        showSnackbar('Prometheus YAML regenerated successfully', 'success');
-      }
-    } catch (error: any) {
-      showSnackbar(error.response?.data?.error || 'Failed to regenerate YAML', 'error');
-    }
-  };
-
   const showSnackbar = (message: string, severity: 'success' | 'error' | 'info') => {
     setSnackbar({ open: true, message, severity });
   };
@@ -331,14 +319,6 @@ const AlertRulesManagement: React.FC = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Alert Rules Management</Typography>
         <Box>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={handleRegenerateYAML}
-            sx={{ mr: 1 }}
-          >
-            Regenerate YAML
-          </Button>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}

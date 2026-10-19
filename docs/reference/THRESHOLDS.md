@@ -201,52 +201,17 @@ fanSpeed:
 
 ## Prometheus Integration
 
-### **Automatic Rule Generation**
+### **Hand-written rules**
 
-Thresholds are automatically synced with Prometheus:
+Per-miner thresholds in `miners.yaml` no longer generate Prometheus rules.
+`bin/generate_prometheus_rules.py` was removed on 2026-10-19 (DMI-177,
+DMI-83): it knew none of the hand-written rules and would have overwritten
+them. Rules live in `docker/prometheus/rules/` and are edited directly, then
+Prometheus is reloaded:
 
 ```bash
-# Generate Prometheus rules from miners.yaml
-./venv/bin/python3 bin/generate_prometheus_rules.py
-
 # Reload Prometheus (no restart!)
 docker exec mining-stack-prometheus-1 kill -HUP 1
-```
-
-### **Generated Rules Example**
-
-```yaml
-# Per-miner temperature alert
-- alert: MinerHighTemperature
-  expr: miner_temp_max_c{name="EN-M30SppVH90-040"} > 90
-  for: 2m
-  annotations:
-    summary: "Miner EN-M30SppVH90-040 temperature critical"
-    description: "Temperature is {{ $value }}°C (threshold: 90°C)"
-
-# Per-miner hashrate alert
-- alert: MinerHashrateCritical
-  expr: miner_hashrate_ths{name="EN-M30SppVH90-040"} < 53.1
-  for: 10m
-  annotations:
-    summary: "Miner EN-M30SppVH90-040 hashrate critically low"
-    description: "Hashrate is {{ $value }} TH/s (expected: 106.2, threshold: 53.1)"
-```
-
-### **Workflow**
-
-```
-1. Edit threshold in UI
-   ↓
-2. Backend saves to miners.yaml
-   ↓
-3. generate_prometheus_rules.py runs
-   ↓
-4. mining_alerts.yml updated
-   ↓
-5. Prometheus reloaded (2 seconds)
-   ↓
-6. Alertmanager uses new thresholds
 ```
 
 ---

@@ -1052,22 +1052,4 @@ router.get('/mining/alert-rules/:id/history', async (req, res, next) => {
   }
 });
 
-/**
- * POST /api/mining/alert-rules/regenerate
- * Regenerate Prometheus YAML from database and reload
- */
-router.post('/mining/alert-rules/regenerate', async (req, res, next) => {
-  try {
-    const result = await alertRulesService.regeneratePrometheusYAML();
-    
-    if (!result.success) {
-      return res.status(500).json(result);
-    }
-
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
-
 export default router;

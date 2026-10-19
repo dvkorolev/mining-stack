@@ -162,24 +162,19 @@ Success! Inventory file created: /opt/mining-stack/etc/miners.yaml
 
 ## 🛠️ Utility Scripts
 
-### `generate_prometheus_rules.py`
-**Purpose:** Generate Prometheus alerting rules from miners.yaml  
-**Usage:** `./venv/bin/python3 bin/generate_prometheus_rules.py`  
-**What it does:**
-- Reads `/opt/mining-stack/etc/miners.yaml`
-- Generates per-miner alert rules
-- Creates `/opt/mining-stack/docker/prometheus/rules/mining_alerts.yml`
-- Uses per-miner thresholds or global defaults
+### Prometheus rules are hand-written
 
-**Example:**
+`generate_prometheus_rules.py` was removed on 2026-10-19 (DMI-177, DMI-83). It
+regenerated `docker/prometheus/rules/mining_alerts.yml` from `etc/miners.yaml`,
+which holds only the example miners, and it knew none of the 29 hand-written
+rules or the comments recording why each threshold is what it is. The backend
+no longer runs it on miner changes.
+
+Edit the files in `docker/prometheus/rules/` directly, then reload Prometheus:
+
 ```bash
-./venv/bin/python3 bin/generate_prometheus_rules.py
+docker exec mining-stack-prometheus-1 kill -HUP 1
 ```
-
-**Auto-runs after:**
-- Miner discovery
-- Threshold updates
-- Miner configuration changes
 
 ---
 
@@ -235,8 +230,7 @@ cd /opt/mining-stack
 # 2. Discover miners
 ./venv/bin/python3 bin/farm_init.py
 
-# 3. Generate Prometheus rules
-./venv/bin/python3 bin/generate_prometheus_rules.py
+# 3. Prometheus rules are hand-written -- see docker/prometheus/rules/
 
 # 4. Setup automatic collection
 ./bin/setup-metrics-cron.sh
@@ -334,7 +328,6 @@ bin/
 │   └── farm_init.py                  # Auto-discover miners
 │
 ├── Utility Scripts
-│   ├── generate_prometheus_rules.py   # Generate alert rules
 │   └── test_single_miner.py          # Test single miner
 │
 └── Configuration
@@ -348,25 +341,24 @@ bin/
 ### Initial Setup:
 1. `setup-pyasic-venv.sh` → Create Python environment
 2. `farm_init.py` → Discover miners
-3. `generate_prometheus_rules.py` → Create alert rules
+3. Review `docker/prometheus/rules/` → Alert rules are hand-written
 4. `setup-metrics-cron.sh` → Enable automatic collection
 
 ### Daily Operations:
 - Cron runs `pyasic_textfile.py` every 2 minutes
 - Prometheus scrapes `/opt/mining-stack/textfile/*.prom`
-- Alerts fire based on generated rules
+- Alerts fire based on the hand-written rules in `docker/prometheus/rules/`
 - Grafana displays metrics
 
 ### When Adding/Removing Miners:
 1. `farm_init.py` → Re-discover miners
-2. `generate_prometheus_rules.py` → Update rules
+2. If the change needs a new alert, edit `docker/prometheus/rules/` by hand
 3. Reload Prometheus: `docker exec mining-stack-prometheus-1 kill -HUP 1`
 
 ### When Updating Thresholds:
-1. Edit miner in UI (Miners Management page)
-2. Backend auto-runs `generate_prometheus_rules.py`
-3. Backend auto-reloads Prometheus
-4. New thresholds active in ~30 seconds
+1. Edit miner in UI (Miners Management page) → stored in the database
+2. For a Prometheus alert threshold, edit the rule in `docker/prometheus/rules/` by hand
+3. Reload Prometheus: `docker exec mining-stack-prometheus-1 kill -HUP 1`
 
 ---
 

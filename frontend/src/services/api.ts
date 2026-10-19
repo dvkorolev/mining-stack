@@ -457,17 +457,6 @@ export const getAlertRuleHistory = async (id: number, limit?: number) => {
   }
 };
 
-// Regenerate Prometheus YAML
-export const regeneratePrometheusYAML = async () => {
-  try {
-    const response = await api.post('/mining/alert-rules/regenerate');
-    return response.data;
-  } catch (error) {
-    console.error('Error regenerating Prometheus YAML:', error);
-    throw error;
-  }
-};
-
 // ==================== POOL API MONITORING ====================
 
 export interface PoolApi {

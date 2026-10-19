@@ -1,20 +1,19 @@
 /**
  * Alert Rules Service
- * 
- * Manages Prometheus alert rules stored in SQLite database
+ *
+ * Manages alert rules stored in SQLite database
  * Features:
  * - CRUD operations for alert rules
- * - Generate Prometheus YAML from database
  * - Validate PromQL expressions
  * - Handle rule scopes (global/per-miner/per-owner)
- * - Automatic Prometheus reload after changes
+ *
+ * Prometheus rules are hand-written files under `docker/prometheus/rules/`.
+ * This service does not write them: the generator that did was removed
+ * (DMI-177), because it overwrote the hand-written rules and their rationale
+ * with rows from this database.
  */
 
-import fs from 'fs';
-import path from 'path';
-import yaml from 'js-yaml';
 import { getDatabase, AlertRuleRecord } from './database.service';
-import { reloadPrometheusConfig } from './prometheus.service';
 import { logger } from '../utils/logger';
 
 export interface AlertRuleFilters {
@@ -133,11 +132,6 @@ export function createAlertRule(params: CreateAlertRuleParams): { success: boole
 
     const ruleId = db.insertAlertRule(rule);
 
-    // Regenerate Prometheus YAML and reload (async, don't wait)
-    regeneratePrometheusYAML().catch(err => {
-      logger.warn('Failed to auto-regenerate Prometheus YAML:', err);
-    });
-
     return { success: true, ruleId };
   } catch (error: any) {
     logger.error('Error creating alert rule:', error);
@@ -180,11 +174,6 @@ export function updateAlertRule(
       return { success: false, error: 'Alert rule not found' };
     }
 
-    // Regenerate Prometheus YAML and reload (async, don't wait)
-    regeneratePrometheusYAML().catch(err => {
-      logger.warn('Failed to auto-regenerate Prometheus YAML:', err);
-    });
-
     return { success: true };
   } catch (error: any) {
     logger.error('Error updating alert rule:', error);
@@ -203,11 +192,6 @@ export function deleteAlertRule(id: number, changedBy?: string): { success: bool
     if (!success) {
       return { success: false, error: 'Alert rule not found' };
     }
-
-    // Regenerate Prometheus YAML and reload (async, don't wait)
-    regeneratePrometheusYAML().catch(err => {
-      logger.warn('Failed to auto-regenerate Prometheus YAML:', err);
-    });
 
     return { success: true };
   } catch (error: any) {
@@ -232,11 +216,6 @@ export function toggleAlertRule(
       return { success: false, error: 'Alert rule not found' };
     }
 
-    // Regenerate Prometheus YAML and reload (async, don't wait)
-    regeneratePrometheusYAML().catch(err => {
-      logger.warn('Failed to auto-regenerate Prometheus YAML:', err);
-    });
-
     return { success: true };
   } catch (error: any) {
     logger.error('Error toggling alert rule:', error);
@@ -250,87 +229,6 @@ export function toggleAlertRule(
 export function getAlertRuleHistory(ruleId?: number, limit: number = 100) {
   const db = getDatabase();
   return db.getAlertRuleHistory(ruleId, limit);
-}
-
-/**
- * Generate Prometheus YAML files from database rules
- */
-export async function regeneratePrometheusYAML(): Promise<{ success: boolean; message: string }> {
-  try {
-    logger.info('Regenerating Prometheus YAML from database...');
-
-    const db = getDatabase();
-    const rules = db.getAllAlertRules({ enabled: true });
-
-    if (rules.length === 0) {
-      logger.warn('No enabled alert rules found in database');
-      return { success: false, message: 'No enabled alert rules found' };
-    }
-
-    // Group rules by rule_group
-    const groupedRules = rules.reduce((acc, rule) => {
-      if (!acc[rule.rule_group]) {
-        acc[rule.rule_group] = [];
-      }
-      acc[rule.rule_group].push(rule);
-      return acc;
-    }, {} as Record<string, AlertRuleRecord[]>);
-
-    // Generate YAML structure
-    const groups = Object.entries(groupedRules).map(([groupName, groupRules]) => ({
-      name: groupName,
-      interval: '30s',
-      rules: groupRules.map(rule => ({
-        alert: rule.name,
-        expr: rule.expr,
-        for: rule.for_duration,
-        labels: {
-          severity: rule.severity,
-          component: rule.component,
-        },
-        annotations: {
-          summary: rule.summary_template,
-          ...(rule.description_template && { description: rule.description_template }),
-        },
-      })),
-    }));
-
-    const yamlContent = yaml.dump({ groups }, { indent: 2, lineWidth: -1 });
-
-    // Determine output path - write to mounted Prometheus rules directory
-    const rulesDir = process.env.NODE_ENV === 'production'
-      ? '/app/prometheus-rules'
-      : path.join(__dirname, '../../../docker/prometheus/rules');
-
-    // Ensure directory exists
-    if (!fs.existsSync(rulesDir)) {
-      fs.mkdirSync(rulesDir, { recursive: true });
-    }
-
-    // Write to file (overwrite mining_alerts.yml with all rules)
-    const outputPath = path.join(rulesDir, 'mining_alerts.yml');
-    fs.writeFileSync(outputPath, yamlContent, 'utf8');
-
-    logger.info(`Prometheus YAML generated: ${outputPath} (${rules.length} rules in ${groups.length} groups)`);
-
-    // Reload Prometheus (only in production)
-    if (process.env.NODE_ENV === 'production') {
-      const reloadResult = await reloadPrometheusConfig();
-      if (reloadResult.success) {
-        logger.info('Prometheus configuration reloaded successfully');
-        return { success: true, message: `Generated ${rules.length} rules and reloaded Prometheus` };
-      } else {
-        logger.warn('Prometheus reload failed:', reloadResult.message);
-        return { success: true, message: `Generated ${rules.length} rules but Prometheus reload failed` };
-      }
-    } else {
-      logger.info('Prometheus reload skipped (development mode)');
-      return { success: true, message: `Generated ${rules.length} rules (reload skipped in dev mode)` };
-    }
-  } catch (error: any) {
-    logger.error('Error regenerating Prometheus YAML:', error);
-    return { success: false, message: error.message || 'Failed to regenerate Prometheus YAML' };
-  }
 }
 
 /**
