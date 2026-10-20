@@ -48,6 +48,7 @@ from metrics import (
     remove_miner_board_series, remove_miner_fan_series, get_stale_value_metrics,
     remove_miner_expected_series, remove_miner_psu_series,
     remove_miner_psu_v3_series, expire_miner_error_last_happened,
+    remove_miner_upfreq_series,
     forget_unconfigured_miners
 )
 from collectors.pyasic_collector import collect_pyasic_metrics, _update_metrics, _safe_float
@@ -564,6 +565,10 @@ async def collect_all_metrics():
                         # has gone quiet.
                         remove_miner_psu_v3_series(miner['ip'])
                         expire_miner_error_last_happened(miner['ip'])
+                        # The Upfreq probe is a reading, not inventory
+                        # metadata: an old 0/1 says nothing about a machine
+                        # that has not answered in hours (DMI-224).
+                        remove_miner_upfreq_series(miner['ip'])
                         # A miner this far past the failure threshold is telling
                         # us nothing about its pools either; leaving the last
                         # `alive` reading behind would report a live pool from a

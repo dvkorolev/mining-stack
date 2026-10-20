@@ -66,6 +66,20 @@ class BoardsFromDevsTest(unittest.TestCase):
         # Absent is not zero: no chip_temp key at all, rather than a cold 0.
         self.assertNotIn('chip_temp', boards['0'])
 
+    def test_upfreq_complete_is_parsed_and_absence_is_not_zero(self):
+        # DMI-224: the field is a process-global scalar replicated per board.
+        # The parser keeps it (the collector takes one value per machine), but
+        # it is not published as a per-board metric.
+        boards = boards_from_devs({'DEVS': [
+            {'ASC': 0, 'Upfreq Complete': 0},
+            {'ASC': 1, 'Upfreq Complete': 1},
+            {'ASC': 2, 'Temperature': 70.0},
+        ]})
+
+        self.assertEqual(boards['0']['upfreq_complete'], 0.0)
+        self.assertEqual(boards['1']['upfreq_complete'], 1.0)
+        self.assertNotIn('upfreq_complete', boards['2'])
+
     def test_a_board_that_reports_nothing_usable_produces_no_record(self):
         self.assertEqual(boards_from_devs({'DEVS': [{'ASC': 0}]}), {})
         self.assertEqual(boards_from_devs({'DEVS': [{'Temperature': None}]}), {})
