@@ -41,9 +41,11 @@ groups:
       # At this fleet's hashrate a healthy miner lands several shares per minute.
       - alert: MinerNoSharesAccepted
         expr: |
-          rate(miner_pool_accepted_total[15m]) == 0
-          and miner_scrape_status == 2
-          and miner_is_mining == 1
+          (
+            rate(miner_pool_accepted_total[15m]) == 0
+            and miner_scrape_status == 2
+            and miner_is_mining == 1
+          ) unless on(ip,name) miner_role{role="stand"}
         for: 15m
         labels:
           severity: warning
