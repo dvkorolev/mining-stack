@@ -1,0 +1,378 @@
+# DMI-243 — the channel discriminator, and the two mistakes it must not make.
+#
+# ParkNoLivePool counts machines whose EVERY pool is dead; ParkDarkWithLivePools
+# is its inverse. The cases below are the ones that cost the calibration run:
+#
+#   * a dead BACKUP must not count. Pools are read per machine (max by (ip)),
+#     not per series; counted per series the same query produced 41 episodes in
+#     30 days, all of them normal backups.
+#   * a STAND machine must not count. The last case of each family is the
+#     positive control: the same series as the firing case, differing only in
+#     `role`, so removing the `unless` turns "no alert" into an alert.
+#
+# Run from the rules directory:
+#   promtool test rules tests/park_no_live_pool.test.yml
+rule_files:
+  - ../park_alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # --- ParkNoLivePool -------------------------------------------------------
+
+  # Positive: three production machines have every pool dead -> channel event.
+  - interval: 1m
+    input_series:
+      - series: 'miner_pool_alive{ip="192.0.2.10",name="m1",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.10",name="m1",url="kz.emcd.network:3333",pool_index="1"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.11",name="m2",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.12",name="m3",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_role{ip="192.0.2.10",name="m1",role="production"}'
+        values: '1x16'
+      - series: 'miner_role{ip="192.0.2.11",name="m2",role="production"}'
+        values: '1x16'
+      - series: 'miner_role{ip="192.0.2.12",name="m3",role="production"}'
+        values: '1x16'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ParkNoLivePool
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: farm
+              class: uplink
+            exp_annotations:
+              summary: "3 miners have no live pool left"
+              description: "Channel, not power: the miners cannot resolve or reach their pools, and ~300s of that makes btminer assert and drop the whole park. Mains voltage stays normal (10-11: 214-227 V, no code 251)."
+
+  # Negative: backups dead, primaries alive. The fleet's normal state, and the
+  # reason the count is per machine.
+  - interval: 1m
+    input_series:
+      - series: 'miner_pool_alive{ip="192.0.2.20",name="b1",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '1x16'
+      - series: 'miner_pool_alive{ip="192.0.2.20",name="b1",url="ru.hash.care:3333",pool_index="1"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.21",name="b2",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '1x16'
+      - series: 'miner_pool_alive{ip="192.0.2.21",name="b2",url="ru.hash.care:3333",pool_index="1"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.22",name="b3",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '1x16'
+      - series: 'miner_pool_alive{ip="192.0.2.22",name="b3",url="ru.hash.care:3333",pool_index="1"}'
+        values: '0x16'
+      - series: 'miner_role{ip="192.0.2.20",name="b1",role="production"}'
+        values: '1x16'
+      - series: 'miner_role{ip="192.0.2.21",name="b2",role="production"}'
+        values: '1x16'
+      - series: 'miner_role{ip="192.0.2.22",name="b3",role="production"}'
+        values: '1x16'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ParkNoLivePool
+        exp_alerts: []
+
+  # Negative: three parked machines with no live pool. Stand is excluded, and
+  # one production machine alone is below the threshold.
+  - interval: 1m
+    input_series:
+      - series: 'miner_pool_alive{ip="192.0.2.30",name="s1",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.31",name="s2",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.32",name="s3",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.33",name="p1",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_role{ip="192.0.2.30",name="s1",role="stand"}'
+        values: '1x16'
+      - series: 'miner_role{ip="192.0.2.31",name="s2",role="stand"}'
+        values: '1x16'
+      - series: 'miner_role{ip="192.0.2.32",name="s3",role="stand"}'
+        values: '1x16'
+      - series: 'miner_role{ip="192.0.2.33",name="p1",role="production"}'
+        values: '1x16'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ParkNoLivePool
+        exp_alerts: []
+
+  # Positive control for the exclusion: the same three dead series as the case
+  # above, labelled production. Without `unless ... miner_role` this is what the
+  # stand case would look like.
+  - interval: 1m
+    input_series:
+      - series: 'miner_pool_alive{ip="192.0.2.40",name="c1",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.41",name="c2",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_pool_alive{ip="192.0.2.42",name="c3",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x16'
+      - series: 'miner_role{ip="192.0.2.40",name="c1",role="production"}'
+        values: '1x16'
+      - series: 'miner_role{ip="192.0.2.41",name="c2",role="production"}'
+        values: '1x16'
+      - series: 'miner_role{ip="192.0.2.42",name="c3",role="production"}'
+        values: '1x16'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ParkNoLivePool
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: farm
+              class: uplink
+            exp_annotations:
+              summary: "3 miners have no live pool left"
+              description: "Channel, not power: the miners cannot resolve or reach their pools, and ~300s of that makes btminer assert and drop the whole park. Mains voltage stays normal (10-11: 214-227 V, no code 251)."
+
+  # --- The recording rule ---------------------------------------------------
+
+  # In the healthy case the series must EXIST and read 0: `count` over an empty
+  # vector returns no sample, so without `or vector(0)` every annotation that
+  # queries it renders an error instead of "0".
+  - interval: 1m
+    input_series:
+      - series: 'miner_pool_alive{ip="192.0.2.50",name="h1",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '1x10'
+      - series: 'miner_role{ip="192.0.2.50",name="h1",role="production"}'
+        values: '1x10'
+    promql_expr_test:
+      - expr: farm:no_live_pool:count
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="farm:no_live_pool:count"}'
+            value: 0
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_pool_alive{ip="192.0.2.60",name="d1",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x10'
+      - series: 'miner_pool_alive{ip="192.0.2.61",name="d2",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x10'
+      - series: 'miner_pool_alive{ip="192.0.2.62",name="ds",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x10'
+      - series: 'miner_role{ip="192.0.2.60",name="d1",role="production"}'
+        values: '1x10'
+      - series: 'miner_role{ip="192.0.2.61",name="d2",role="production"}'
+        values: '1x10'
+      - series: 'miner_role{ip="192.0.2.62",name="ds",role="stand"}'
+        values: '1x10'
+    promql_expr_test:
+      - expr: farm:no_live_pool:count
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="farm:no_live_pool:count"}'
+            value: 2
+
+  # --- ParkDarkWithLivePools ------------------------------------------------
+
+  # Positive: the park is dark and the pools are alive -> not the channel.
+  # 18 machines publish power (the liveness guard is satisfied); three run at
+  # 100 W for the whole time. Evaluated at 16m on purpose: the alert must be
+  # firing the moment the 15-minute window fills, not after a second dwell.
+  - interval: 1m
+    input_series:
+      - series: 'miner_power_watts{ip="192.0.2.70",name="d1"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.71",name="d2"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.72",name="d3"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.80",name="a1"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.81",name="a2"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.82",name="a3"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.83",name="a4"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.84",name="a5"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.85",name="a6"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.86",name="a7"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.87",name="a8"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.88",name="a9"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.89",name="a10"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.90",name="a11"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.91",name="a12"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.92",name="a13"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.93",name="a14"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.94",name="a15"}'
+        values: '3000x45'
+      - series: 'miner_pool_alive{ip="192.0.2.70",name="d1",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '1x45'
+      - series: 'miner_pool_alive{ip="192.0.2.71",name="d2",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '1x45'
+      - series: 'miner_pool_alive{ip="192.0.2.72",name="d3",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '1x45'
+      - series: 'miner_role{ip="192.0.2.70",name="d1",role="production"}'
+        values: '1x45'
+      - series: 'miner_role{ip="192.0.2.71",name="d2",role="production"}'
+        values: '1x45'
+      - series: 'miner_role{ip="192.0.2.72",name="d3",role="production"}'
+        values: '1x45'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ParkDarkWithLivePools
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              component: farm
+              class: electric
+            exp_annotations:
+              summary: "3 miners dark for 15m, but their pools are alive"
+              description: "Not the channel -- the path to the pools is working. Points at the mains, a manual walk-through or a mass reboot."
+
+  # Negative: dark AND their pools are dead -> that is the channel's signature,
+  # and ParkNoLivePool owns it.
+  - interval: 1m
+    input_series:
+      - series: 'miner_power_watts{ip="192.0.2.100",name="e1"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.101",name="e2"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.102",name="e3"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.110",name="k1"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.111",name="k2"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.112",name="k3"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.113",name="k4"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.114",name="k5"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.115",name="k6"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.116",name="k7"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.117",name="k8"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.118",name="k9"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.119",name="k10"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.120",name="k11"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.121",name="k12"}'
+        values: '3000x45'
+      - series: 'miner_pool_alive{ip="192.0.2.100",name="e1",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x45'
+      - series: 'miner_pool_alive{ip="192.0.2.101",name="e2",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x45'
+      - series: 'miner_pool_alive{ip="192.0.2.102",name="e3",url="gate.emcd.network:3333",pool_index="0"}'
+        values: '0x45'
+      - series: 'miner_role{ip="192.0.2.100",name="e1",role="production"}'
+        values: '1x45'
+      - series: 'miner_role{ip="192.0.2.101",name="e2",role="production"}'
+        values: '1x45'
+      - series: 'miner_role{ip="192.0.2.102",name="e3",role="production"}'
+        values: '1x45'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: ParkDarkWithLivePools
+        exp_alerts: []
+
+  # Negative: two STAND machines are dark and one production machine is too.
+  # Only the production machine may count, so this stays below the threshold --
+  # in the field the two parked machines are 107 W and 168 W permanently.
+  - interval: 1m
+    input_series:
+      - series: 'miner_power_watts{ip="192.0.2.130",name="s1"}'
+        values: '110x45'
+      - series: 'miner_power_watts{ip="192.0.2.131",name="s2"}'
+        values: '160x45'
+      - series: 'miner_power_watts{ip="192.0.2.132",name="p1"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.140",name="a1"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.141",name="a2"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.142",name="a3"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.143",name="a4"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.144",name="a5"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.145",name="a6"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.146",name="a7"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.147",name="a8"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.148",name="a9"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.149",name="a10"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.150",name="a11"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.151",name="a12"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.152",name="a13"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.153",name="a14"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.154",name="a15"}'
+        values: '3000x45'
+      - series: 'miner_role{ip="192.0.2.130",name="s1",role="stand"}'
+        values: '1x45'
+      - series: 'miner_role{ip="192.0.2.131",name="s2",role="stand"}'
+        values: '1x45'
+      - series: 'miner_role{ip="192.0.2.132",name="p1",role="production"}'
+        values: '1x45'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: ParkDarkWithLivePools
+        exp_alerts: []
+
+  # Negative: three production machines are dark, but the fleet has stopped
+  # publishing power altogether -- a total site cut removes the series instead
+  # of setting them low. The `count(miner_power_watts) >= 15` guard is what
+  # keeps a vanished fleet from reading as "dark with live pools".
+  - interval: 1m
+    input_series:
+      - series: 'miner_power_watts{ip="192.0.2.160",name="g1"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.161",name="g2"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.162",name="g3"}'
+        values: '100x45'
+      - series: 'miner_power_watts{ip="192.0.2.170",name="g4"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.171",name="g5"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.172",name="g6"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.173",name="g7"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.174",name="g8"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.175",name="g9"}'
+        values: '3000x45'
+      - series: 'miner_power_watts{ip="192.0.2.176",name="g10"}'
+        values: '3000x45'
+      - series: 'miner_role{ip="192.0.2.160",name="g1",role="production"}'
+        values: '1x45'
+      - series: 'miner_role{ip="192.0.2.161",name="g2",role="production"}'
+        values: '1x45'
+      - series: 'miner_role{ip="192.0.2.162",name="g3",role="production"}'
+        values: '1x45'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: ParkDarkWithLivePools
+        exp_alerts: []

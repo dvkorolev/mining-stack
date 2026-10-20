@@ -10,8 +10,8 @@
 # `component: farm` on every rule is load-bearing, not decoration: this site
 # sets ALERT_NOTIFY_EXCLUDE_COMPONENTS=miner (per-machine heat and error codes
 # are recorded and dashboarded, never pushed -- DMI-79), and a rule labelled
-# component: miner would be silently born suppressed. These five exist to wake
-# someone, so they are farm-level by label and by nature.
+# component: miner would be silently born suppressed. Every rule here exists to
+# wake someone, so they are farm-level by label and by nature.
 #
 # Staleness is deliberately not one of them. The old ParkMinerStale asked
 # `time() - timestamp(miner_power_watts) > 900`, which cannot fire: Prometheus
@@ -115,3 +115,90 @@ groups:
         annotations:
           summary: "{{ $value }} miners under 190V PSU input"
           description: "Cluster sag on the mains side; single-machine dips stay ParkVinLow's business."
+
+      # --- Channel discriminator (DMI-243) -------------------------------------
+      #
+      # 2026-10-11 was an uplink cut, not a power sag, and until this rule the
+      # stack could not tell the two apart: both arrive as "the park went dark",
+      # and ParkPowerEvent's 15-minute window reported the cut ~10 minutes after
+      # the machines started dropping. Power was never involved -- PSU input
+      # read 214 -> 227 V through the event and no machine carried code 251.
+      #
+      # `miner_pool_alive` is the discriminator, read PER MACHINE. A machine
+      # whose every pool is dead is a machine that answered us, has pools
+      # configured, and can reach none of them: the LAN is fine, the path out is
+      # not. Two properties make the count mean exactly that:
+      #   * a machine that reports no identifiable pool publishes NO series
+      #     (`set_miner_pools`), and an unreachable machine has its series
+      #     removed (`main.py`), so silence is never counted as a dead pool;
+      #   * backup pools are dead as a matter of course (`.52`/`.145` all week),
+      #     which is why the max is taken by (ip): the question is "every pool
+      #     dead", not "a pool series reads 0". Counted per series, the same
+      #     query produced 41 episodes in 30 days, all noise.
+      # Calibration (miner-ops, 30 days at 5 m steps, this stack's Prometheus):
+      # the count is non-zero in 10 of 8603 points -- 2026-10-11 15:42-16:02
+      # with 18 machines, plus four single-machine blips elsewhere. `>= 3`
+      # therefore yields exactly one episode in 30 days, and it is the uplink
+      # outage. It reached 18 four minutes BEFORE the park went dark (15:42 vs
+      # 15:46), which no power-based rule can do by construction: their windows
+      # are 15 minutes long.
+      #
+      # The stand join is on (ip) alone because `max by (ip)` has dropped `name`;
+      # `on (ip, name)` here would match nothing and silently exclude no one.
+      #
+      # Blind spot, deliberate: if the scheduler itself stops, there are no
+      # series to count and this reads 0. SchedulerDown / SchedulerCollectionStale
+      # (scheduler_alerts.yml) own that question.
+      #
+      # The recording rule lives in this group rather than a separate file so
+      # that it cannot drift from the rules that read it; `or vector(0)` keeps
+      # the series present in the healthy case, since `count` over an empty
+      # vector returns no sample at all and every annotation that queries it
+      # would then render an error instead of "0".
+      - record: farm:no_live_pool:count
+        expr: |
+          count(((max by (ip) (miner_pool_alive)) == 0)
+                unless on (ip) miner_role{role="stand"})
+          or vector(0)
+
+      # Critical, short `for`: the historical false positives were single
+      # points, and one scrape-length blip must not wake anyone. The lead over
+      # the machines going dark is ~4 minutes, so a 2-minute dwell keeps most
+      # of it.
+      - alert: ParkNoLivePool
+        expr: farm:no_live_pool:count >= 3
+        for: 2m
+        labels:
+          severity: critical
+          component: farm
+          class: uplink
+        annotations:
+          summary: "{{ $value }} miners have no live pool left"
+          description: "Channel, not power: the miners cannot resolve or reach their pools, and ~300s of that makes btminer assert and drop the whole park. Mains voltage stays normal (10-11: 214-227 V, no code 251)."
+
+      # The inverse, and the reason the pair is honest: a park that is dark
+      # while the pools are alive is NOT a channel event. Stand machines are
+      # excluded like everywhere else, otherwise the two parked machines would
+      # be a permanent 2 of the 3 required -- measured live 2026-10-20 by
+      # miner-ops: 2 without the exclusion, 0 with it. `count(miner_power_watts)
+      # >= 15` is a collection-liveness guard: a total site power cut removes
+      # the series instead of setting them low, and this rule would otherwise
+      # read that as "dark with live pools". `and on ()` is explicit because
+      # both sides are unlabelled after the aggregations.
+      #
+      # No `for`: the 15-minute window already means "dark for fifteen
+      # minutes", so a second 15-minute dwell would make the diagnosis 30
+      # minutes old while the description promises 15.
+      - alert: ParkDarkWithLivePools
+        expr: |
+          (count((max_over_time(miner_power_watts[15m]) < 500) unless on(ip,name) miner_role{role="stand"}) >= 3)
+          and on () (farm:no_live_pool:count < 3)
+          and on () (count(miner_power_watts) >= 15)
+        for: 0m
+        labels:
+          severity: info
+          component: farm
+          class: electric
+        annotations:
+          summary: "{{ $value }} miners dark for 15m, but their pools are alive"
+          description: "Not the channel -- the path to the pools is working. Points at the mains, a manual walk-through or a mass reboot."
