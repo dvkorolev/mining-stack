@@ -92,6 +92,19 @@ jobs:
       - run: python test_metric_wiring.py
         working-directory: python-scheduler
 
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned to the version the Pi runs, so the test exercises the PromQL
+      # engine that actually evaluates these files. DMI-96: the fan rules
+      # joined label sets that cannot match and evaluated an empty vector for
+      # months; only a rule-level test catches that class.
+      - name: promtool check
+        run: docker run --rm -v "$PWD/docker/prometheus/rules:/rules:ro" --entrypoint sh prom/prometheus:v3.14.0 -c 'promtool check rules /rules/*.yml'
+      - name: promtool test
+        run: docker run --rm -v "$PWD/docker/prometheus/rules:/rules:ro" -w /rules --entrypoint promtool prom/prometheus:v3.14.0 test rules tests/fan_speed_join.test.yml
+
   router-exporter:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,72 @@
+# DMI-96 regression: the fan rules joined `miner_fan_speed_rpm` (labels
+# ip, name, model, fan_id) to `miner_is_mining` (labels ip, name, model,
+# algorithm) with a bare `and`. PromQL matches the entire label set, so the
+# join yielded the empty vector on every evaluation and neither rule could
+# ever fire.
+#
+# The negative controls are as important as the positives: a machine that is
+# not mining must not alert on a low fan, which is why the join exists at all.
+#
+# Run from this directory:
+#   promtool test rules tests/fan_speed_join.test.yml
+#
+# `rule_files` resolve relative to this test file.
+rule_files:
+  - ../mining_alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      # Mining machine with a fan in the 2000-3000 warning band.
+      - series: 'miner_fan_speed_rpm{ip="192.0.2.10",name="rig1",model="M30S++",fan_id="0"}'
+        values: '2500x12'
+      - series: 'miner_is_mining{ip="192.0.2.10",name="rig1",model="M30S++",algorithm="sha256"}'
+        values: '1x12'
+      # Same fan speed, but not mining: no alert. This is the join's purpose.
+      - series: 'miner_fan_speed_rpm{ip="192.0.2.11",name="rig2",model="M30S++",fan_id="0"}'
+        values: '2500x12'
+      - series: 'miner_is_mining{ip="192.0.2.11",name="rig2",model="M30S++",algorithm="sha256"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MinerFanSpeedWarning
+        exp_alerts:
+          - exp_labels:
+              ip: 192.0.2.10
+              name: rig1
+              model: M30S++
+              fan_id: "0"
+              severity: warning
+              component: miner
+            exp_annotations:
+              summary: "Miner rig1 fan 0 at 2500 RPM"
+              description: "Warning band 2000-3000 RPM."
+
+  - interval: 1m
+    input_series:
+      # Mining machine with a critically low fan.
+      - series: 'miner_fan_speed_rpm{ip="192.0.2.12",name="rig3",model="M30S++",fan_id="1"}'
+        values: '1500x6'
+      - series: 'miner_is_mining{ip="192.0.2.12",name="rig3",model="M30S++",algorithm="sha256"}'
+        values: '1x6'
+      # Same fan speed, not mining: no critical alert.
+      - series: 'miner_fan_speed_rpm{ip="192.0.2.13",name="rig4",model="M30S++",fan_id="1"}'
+        values: '1500x6'
+      - series: 'miner_is_mining{ip="192.0.2.13",name="rig4",model="M30S++",algorithm="sha256"}'
+        values: '0x6'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MinerFanSpeedCritical
+        exp_alerts:
+          - exp_labels:
+              ip: 192.0.2.12
+              name: rig3
+              model: M30S++
+              fan_id: "1"
+              severity: critical
+              component: miner
+            exp_annotations:
+              summary: "Miner rig3 fan 1 at 1500 RPM — critical"
+              description: "Below the 2000 RPM critical threshold."
