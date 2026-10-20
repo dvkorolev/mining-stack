@@ -39,6 +39,11 @@ _FIELDS = (
     ('Temperature', 'temp'),
     ('Chip Temp Max', 'chip_temp'),
     ('Effective Chips', 'chips'),
+    # DMI-224: the typed upfreq-ladder flag. `0` while the ladder is running,
+    # `1` once it has stepped onto nameplate. Published raw so the rule layer
+    # can gate on it instead of a fitted `for`; the field is absent on firmware
+    # that does not report it, and absent publishes nothing.
+    ('Upfreq Complete', 'upfreq_complete'),
 )
 
 # Sane band for (reported hashrate / this board's rated hashrate). Wide on
