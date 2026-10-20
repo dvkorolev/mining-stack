@@ -54,6 +54,58 @@ groups:
           summary: "Miner {{ $labels.name }} is mining but landing no shares"
           description: "No accepted share in 30m from {{ $labels.ip }} — pool or credentials on that machine."
 
+      # The channel itself (DMI-243). This is the only rule here that reads a router
+      # metric, and it reads the two fields that mean different things:
+      #
+      #   * `router_uplink_connected` is the interface's own "established connection"
+      #     flag (`router-exporter/router_exporter.py`, `parse_uplink`). This is the
+      #     half DMI-243 (a) found missing: the site-local `FarmChannelReset` on the
+      #     Pi watches `router_uplink_uptime_seconds < 900` only, so a link that was
+      #     down with an uptime that never reset was covered by nothing.
+      #   * a reset of `router_uplink_uptime_seconds` is the interface starting its
+      #     uptime again, i.e. a re-established connection. On this site's history it
+      #     was the 2/2 mark of the channel events (2026-09-26 04:06 and 2026-10-11
+      #     15:41); the second is the reset that preceded the whole park going dark
+      #     at 15:46.
+      #     ⚠️ `changes(...) > 0` -- the form DMI-243 proposed -- is WRONG here and
+      #     the unit test refused it: uptime goes up every scrape, and `changes()`
+      #     counts any change, so that arm is true on a healthy link in every
+      #     window. `resets()` counts decreases, which is what a reconnect is.
+      #
+      # `router_uplink_up` is deliberately NOT read here: it is the USB link to the
+      # dongle and it stayed up through a 2h29m outage (the rejected-signals table in
+      # PROJECT_STATE.md). It says the wire is attached, not that the wire carries
+      # anything.
+      #
+      # ⚠️ Evidence status: the uptime-reset arm is measured (2/2 channel events).
+      # The `connected == 0` arm has NOT yet been observed at 0 on this site -- it is
+      # the gap DMI-243 names, and the first deploy must read the series back and
+      # check the 2026-10-11 window before the rule is called verified (PROJECT_STATE
+      # rule 5). Until then this is a rule that loads, not a rule that is known to
+      # fire; saying otherwise is the mistake DMI-178 catalogues.
+      #
+      # Severity is critical because of the deadline: btminer asserts after ~300 s
+      # with no pool and the park goes dark on its own. The 2-minute `for` keeps most
+      # of that lead over the machines.
+      #
+      # Failure direction: if the exporter cannot reach the router, these series
+      # disappear and the rule cannot fire -- one alert too few, never a fabricated
+      # one. `router_up == 0` is the metric that would report the exporter's own
+      # failure and nothing watches it yet; that gap is recorded on DMI-243 rather
+      # than guessed at here.
+      - alert: FarmChannelDown
+        expr: |
+          max by (interface) (router_uplink_connected == 0)
+          or
+          max by (interface) (resets(router_uplink_uptime_seconds[5m]) > 0)
+        for: 2m
+        labels:
+          severity: critical
+          component: uplink
+        annotations:
+          summary: "Farm uplink down or just reset on {{ $labels.interface }}"
+          description: "The router reports no established connection (or its uptime reset). The park starts dropping ~300s later, when btminer sees no pool. Check the 4G session on the dongle and the data allowance; the August outages recovered by themselves."
+
   # The uplink is metered 4G, so its capacity is a shared resource the fleet competes for.
   # Volume is attributed per LAN host by the router (router_host_* from `show/ip/hotspot`).
   - name: uplink_consumers

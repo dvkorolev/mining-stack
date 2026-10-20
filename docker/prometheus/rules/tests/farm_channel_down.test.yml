@@ -1,0 +1,124 @@
+# DMI-243 (a) — the channel rule, and the three mistakes it must not make.
+#
+# FarmChannelDown fires on either half of the uplink's own state:
+#   * `router_uplink_connected == 0` — an established connection is gone;
+#   * `resets(router_uplink_uptime_seconds[5m]) > 0` — the interface restarted
+#     its uptime, i.e. the connection was re-established.
+#
+# The second case is what caught the error in DMI-243's proposed expression:
+# `changes(...) > 0` is true on a HEALTHY link, because uptime increases at
+# every scrape and `changes()` counts every change. `resets()` counts the
+# decreases, which is the reconnect being asked about.
+#
+# The cases below pin the properties that were paid for:
+#
+#   * `router_uplink_up` must NOT trigger the rule. It is the USB link to the
+#     dongle and stayed up through a 2h29m total outage (PROJECT_STATE.md,
+#     rejected signals). The fourth case is that control.
+#   * a single-sample blip must not fire. The `for: 2m` is what separates a
+#     modem reconnect from a channel event, so the fifth case holds `connected`
+#     at 0 for one minute only.
+#   * both halves firing together must produce ONE alert, not two. `max by
+#     (interface)` on both sides is what makes them the same label set; without
+#     it the alert could duplicate. The first case has both true at once.
+#
+# ⚠️ `connected == 0` has not been observed on this site yet (the gap recorded
+# on DMI-243). These tests verify the expressions; they are not evidence that
+# the signal moves in the field.
+#
+# Run from the rules directory:
+#   promtool test rules tests/farm_channel_down.test.yml
+rule_files:
+  - ../uplink_alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Positive: connected is gone AND the uptime has reset. Both arms true at the
+  # same evaluation -- the expected result is exactly one alert.
+  - interval: 1m
+    input_series:
+      - series: 'router_uplink_connected{interface="CdcEthernet2"}'
+        values: '0x16'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '1000x3 5x13'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: FarmChannelDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: uplink
+              interface: CdcEthernet2
+            exp_annotations:
+              summary: "Farm uplink down or just reset on CdcEthernet2"
+              description: "The router reports no established connection (or its uptime reset). The park starts dropping ~300s later, when btminer sees no pool. Check the 4G session on the dongle and the data allowance; the August outages recovered by themselves."
+
+  # Negative: the healthy state. Connected, and the uptime keeps counting.
+  - interval: 1m
+    input_series:
+      - series: 'router_uplink_connected{interface="CdcEthernet2"}'
+        values: '1x16'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '1000+60x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FarmChannelDown
+        exp_alerts: []
+
+  # Positive: connected still reads 1, but the interface re-established -- the
+  # uptime-reset arm alone must fire. This is the arm with live evidence (2/2
+  # channel events), and it must not depend on the unverified other half.
+  - interval: 1m
+    input_series:
+      - series: 'router_uplink_connected{interface="CdcEthernet2"}'
+        values: '1x16'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '1000x3 5x13'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: FarmChannelDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: uplink
+              interface: CdcEthernet2
+            exp_annotations:
+              summary: "Farm uplink down or just reset on CdcEthernet2"
+              description: "The router reports no established connection (or its uptime reset). The park starts dropping ~300s later, when btminer sees no pool. Check the 4G session on the dongle and the data allowance; the August outages recovered by themselves."
+
+  # Negative control for the rejected signal: the USB link is down, but the
+  # connection is established and the uptime is not resetting. `router_uplink_up`
+  # is not part of the expression, and this case fails if someone adds it.
+  - interval: 1m
+    input_series:
+      - series: 'router_uplink_up{interface="CdcEthernet2"}'
+        values: '0x16'
+      - series: 'router_uplink_connected{interface="CdcEthernet2"}'
+        values: '1x16'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '1000+60x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FarmChannelDown
+        exp_alerts: []
+
+  # Negative: connected drops for a single sample. That is a modem reconnect,
+  # not a channel event, and `for: 2m` must swallow it.
+  - interval: 1m
+    input_series:
+      - series: 'router_uplink_connected{interface="CdcEthernet2"}'
+        values: '1x2 0x1 1x13'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '1000+60x15'
+    alert_rule_test:
+      # `1x2 0x1 1x13` places the 0 at t=3m (`xN` is N repeats AFTER the first
+      # sample, so `1x2` is three minutes). At the blip the alert is pending,
+      # not firing: `for: 2m` is what makes that true, and removing it makes
+      # this case fail.
+      - eval_time: 3m
+        alertname: FarmChannelDown
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: FarmChannelDown
+        exp_alerts: []
