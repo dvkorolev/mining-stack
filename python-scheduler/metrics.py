@@ -40,12 +40,6 @@ miner_board_chip_temp = Gauge('miner_board_chip_temp_c', 'Hottest chip temperatu
 miner_board_chips_count = Gauge('miner_board_chips_count', 'Number of chips detected', ['ip', 'name', 'model', 'slot'])
 miner_board_chips_expected = Gauge('miner_board_chips_expected', 'Expected number of chips', ['ip', 'name', 'model', 'slot'])
 
-# DMI-224: the machine's own upfreq-ladder flag, per board -- 0 while the
-# ladder runs, 1 once it has stepped onto nameplate. Published raw; absent
-# when the firmware does not report it, so a consumer must not read absence as
-# "still warming up".
-miner_board_upfreq_complete = Gauge('miner_board_upfreq_complete', 'Upfreq ladder complete, per board (0=running, 1=complete)', ['ip', 'name', 'model', 'slot'])
-
 # Miner Fan Metrics
 miner_fan_speed = Gauge('miner_fan_speed_rpm', 'Fan speed in RPM', ['ip', 'name', 'model', 'fan_id'])
 
@@ -288,8 +282,7 @@ _miner_role_label_cache = {}    # {ip: {(name, role), ...}}
 
 # The board gauges all carry the same label set, so one cache serves them all.
 _BOARD_METRICS = (miner_board_hashrate, miner_board_temp, miner_board_chip_temp,
-                  miner_board_chips_count, miner_board_chips_expected,
-                  miner_board_upfreq_complete)
+                  miner_board_chips_count, miner_board_chips_expected)
 
 # Which board reading feeds which gauge. A key absent from a board's record --
 # or present as None -- publishes nothing.
@@ -297,8 +290,7 @@ _BOARD_FIELDS = (('hashrate', miner_board_hashrate),
                  ('temp', miner_board_temp),
                  ('chip_temp', miner_board_chip_temp),
                  ('chips', miner_board_chips_count),
-                 ('expected_chips', miner_board_chips_expected),
-                 ('upfreq_complete', miner_board_upfreq_complete))
+                 ('expected_chips', miner_board_chips_expected))
 
 # Which PSU reading feeds which gauge, same contract as _BOARD_FIELDS. The PSU
 # fan is absent on purpose: it goes to miner_fan_speed_rpm{fan_id="psu"}.
