@@ -103,7 +103,7 @@ jobs:
       - name: promtool check
         run: docker run --rm -v "$PWD/docker/prometheus/rules:/rules:ro" --entrypoint sh prom/prometheus:v3.14.0 -c 'promtool check rules /rules/*.yml'
       - name: promtool test
-        run: docker run --rm -v "$PWD/docker/prometheus/rules:/rules:ro" -w /rules --entrypoint promtool prom/prometheus:v3.14.0 test rules tests/fan_speed_join.test.yml
+        run: docker run --rm -v "$PWD/docker/prometheus/rules:/rules:ro" -w /rules --entrypoint sh prom/prometheus:v3.14.0 -c 'promtool test rules tests/*.test.yml'
 
   router-exporter:
     runs-on: ubuntu-latest

@@ -10,8 +10,14 @@
 # `component: farm` on every rule is load-bearing, not decoration: this site
 # sets ALERT_NOTIFY_EXCLUDE_COMPONENTS=miner (per-machine heat and error codes
 # are recorded and dashboarded, never pushed -- DMI-79), and a rule labelled
-# component: miner would be silently born suppressed. These five exist to wake
+# component: miner would be silently born suppressed. These four exist to wake
 # someone, so they are farm-level by label and by nature.
+#
+# Staleness is deliberately not one of them. The old ParkMinerStale asked
+# `time() - timestamp(miner_power_watts) > 900`, which cannot fire: Prometheus
+# drops a series after its 5-minute lookback, long before its age reaches
+# 900 s. The scheduler-level equivalent lives in scheduler_alerts.yml
+# (`SchedulerCollectionStale` / `SchedulerDown`, DMI-178).
 #
 # Machines with role=stand are excluded everywhere power is counted, through
 # the inventory-published `miner_role` series rather than a literal IP list
@@ -48,20 +54,6 @@ groups:
         annotations:
           summary: "Miner {{ $labels.name }} at or below {{ $value | printf \"%.0f\" }}W for the whole last 15m"
           description: "Every reading in the last 15m was under 500W; a machine that keeps mining sits at 2.9-3.6kW. Reboot ramps (1-2min) do not fire this."
-
-      # 900 s is the window in seconds: the scheduler publishes every 2 min,
-      # so a healthy series is never older than ~2 min. This fires on the data
-      # flow stopping while the series still exists (scheduler wedged, scrape
-      # gaps); a machine that stops answering entirely loses its power series
-      # to the DMI-55 cull and is MinerOffline's business, not this rule's.
-      - alert: ParkMinerStale
-        expr: (time() - timestamp(miner_power_watts) > 900) unless on(ip,name) miner_role{role="stand"}
-        labels:
-          severity: warning
-          component: farm
-        annotations:
-          summary: "Miner {{ $labels.name }} power reading {{ $value | printf \"%.0f\" }}s old"
-          description: "No fresh miner_power_watts for over 15m -- scrape or scheduler gap, not just a dead miner."
 
       # The main signal (plan 3a: 85% of the month's losses). Three or more
       # machines with a sub-500 W reading inside 15 m is a site event -- a

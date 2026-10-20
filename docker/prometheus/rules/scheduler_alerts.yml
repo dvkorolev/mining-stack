@@ -59,3 +59,38 @@ groups:
         annotations:
           summary: "Configured miner count dropped to {{ $value }}"
           description: "Under 80% of the 24h maximum. Either the fleet shrank in the DB, or the collector is on the wrong config."
+
+  - name: scheduler_liveness
+    interval: 30s
+    rules:
+      # The process is not being scraped at all. This was covered by nothing
+      # before: the per-miner rules go quiet one at a time and
+      # FarmMultipleMinersOffline needs most of the fleet to have been down
+      # for its `for` first.
+      - alert: SchedulerDown
+        expr: up{job="python-scheduler"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "python-scheduler is down"
+          description: "Prometheus cannot scrape the scheduler. Nothing is being collected while this is true."
+
+      # The process is up but the collection loop is not completing: a wedged
+      # loop, a hung 4028 read, a deadlock. DMI-178 moved this here from
+      # ParkMinerStale, which asked the same question per miner as
+      # `time() - timestamp(miner_power_watts) > 900` — unreachable, because
+      # PromQL's 5-minute lookback drops the series long before its age can
+      # reach 900 s. The scheduler keeps exposing this gauge while it is alive,
+      # so the age is observable; when the process dies, SchedulerDown is the
+      # rule that fires.
+      - alert: SchedulerCollectionStale
+        expr: time() - max(mining_collection_timestamp_seconds) > 900
+        for: 2m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "Scheduler collection is stale"
+          description: "No collection recorded for over 15m while the process is up. The collection loop is not completing; the fleet is unmonitored."

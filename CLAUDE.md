@@ -214,10 +214,16 @@ at any cadence slower than the sampling. It publishes:
   looking healthy. Where a value can legitimately be absent, `or` the default; do not rely on `.get()`.
 
 ### Park rules — a standing machine, and a site power sag (DMI-109)
-`docker/prometheus/rules/park_alerts.yml` holds five rules: `ParkMinerDark`, `ParkMinerStale`,
-`ParkPowerEvent`, `ParkVinLow`, `ParkVinCluster`. They exist to **wake someone** when the farm stops
-producing — the failure mode behind ~85% of the month's measured losses, and the one that previously
-went unnoticed until a human looked.
+`docker/prometheus/rules/park_alerts.yml` holds four rules: `ParkMinerDark`, `ParkPowerEvent`,
+`ParkVinLow`, `ParkVinCluster`. They exist to **wake someone** when the farm stops producing — the
+failure mode behind ~85% of the month's measured losses, and the one that previously went unnoticed
+until a human looked.
+
+**Staleness is not a park rule (DMI-178).** The old `ParkMinerStale` asked
+`time() - timestamp(miner_power_watts) > 900`, which can never fire: Prometheus drops a series after
+its 5-minute lookback, long before its age reaches 900 s. The question belongs at the scheduler
+level and now lives in `scheduler_alerts.yml` as `SchedulerCollectionStale` (the heartbeat age while
+the process is up) and `SchedulerDown` (`up == 0`).
 
 - **`component: farm` on every one is load-bearing.** This site sets
   `ALERT_NOTIFY_EXCLUDE_COMPONENTS=miner`, so a park rule labelled `miner` would be born suppressed

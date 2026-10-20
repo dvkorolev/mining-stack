@@ -1,0 +1,69 @@
+# DMI-178 item 2: a per-miner staleness rule cannot work. PromQL's 5-minute
+# lookback drops `miner_power_watts` long before its age could reach the old
+# rule's 900 s threshold, so `ParkMinerStale` evaluated the empty vector
+# forever (live maximum age measured 2026-10-20: 20.6 s).
+#
+# The replacement asks the question at the level where it is observable: the
+# scheduler keeps exposing `mining_collection_timestamp_seconds` while its
+# process is alive, so a collection loop that stops completing leaves a visible
+# age. If the process itself dies, `up{job="python-scheduler"}` is the signal.
+#
+# Run from the rules directory:
+#   promtool test rules tests/scheduler_staleness.test.yml
+rule_files:
+  - ../scheduler_alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      # Healthy: the heartbeat advances every minute, so its age stays 0.
+      - series: 'mining_collection_timestamp_seconds{collector="hybrid"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: SchedulerCollectionStale
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      # Wedged: the scheduler is up and still serving the old timestamp.
+      - series: 'mining_collection_timestamp_seconds{collector="hybrid"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: SchedulerCollectionStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: scheduler
+            exp_annotations:
+              summary: "Scheduler collection is stale"
+              description: "No collection recorded for over 15m while the process is up. The collection loop is not completing; the fleet is unmonitored."
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="python-scheduler",instance="python-scheduler:8000"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SchedulerDown
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="python-scheduler",instance="python-scheduler:8000"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SchedulerDown
+        exp_alerts:
+          - exp_labels:
+              job: python-scheduler
+              instance: python-scheduler:8000
+              severity: critical
+              component: scheduler
+            exp_annotations:
+              summary: "python-scheduler is down"
+              description: "Prometheus cannot scrape the scheduler. Nothing is being collected while this is true."
