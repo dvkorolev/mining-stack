@@ -349,8 +349,18 @@ groups:
           description: "Expected {{ with query (printf \"miner_board_chips_expected{name='%s',slot='%s'}\" $labels.name $labels.slot) }}{{ . | first | value | printf \"%.0f\" }}{{ end }} on this board."
           
       # Warning: Fan speed low (below 3000 RPM)
+      #
+      # DMI-96: `miner_fan_speed_rpm` carries `fan_id` and `miner_is_mining`
+      # carries `algorithm`, so a bare `and` matches on the entire label set and
+      # can never pair the two — measured 2026-09-12: 36 fan series, 21 mining
+      # machines, **0** survivors. Match explicitly on the labels they share.
+      # `fan_id` stays in the label set; dropping it would collapse intake,
+      # exhaust and PSU fans into one reading.
+      #
+      # Covered by `tests/fan_speed_join.test.yml` — the regression is a silent
+      # empty vector, so only a rule-level test can catch it.
       - alert: MinerFanSpeedWarning
-        expr: miner_fan_speed_rpm < 3000 and miner_fan_speed_rpm >= 2000 and miner_is_mining == 1
+        expr: miner_fan_speed_rpm < 3000 and miner_fan_speed_rpm >= 2000 and on(ip, name, model) miner_is_mining == 1
         for: 5m
         labels:
           severity: warning
@@ -360,8 +370,15 @@ groups:
           description: "Warning band 2000-3000 RPM."
           
       # Critical: Fan speed critically low (below 2000 RPM)
+      #
+      # Same matcher as MinerFanSpeedWarning (DMI-96). Note that a published `0`
+      # is a real reading here, not an absent one: on the five `Msg`-shaped
+      # machines pyasic still fabricates `0` for both fans until DMI-136's flip
+      # (DMI-192). Repairing this rule makes those zeros visible as active
+      # alerts on `component: miner`, which this site suppresses for
+      # notification; the values become real when the flip lands.
       - alert: MinerFanSpeedCritical
-        expr: miner_fan_speed_rpm < 2000 and miner_is_mining == 1
+        expr: miner_fan_speed_rpm < 2000 and on(ip, name, model) miner_is_mining == 1
         for: 2m
         labels:
           severity: critical
