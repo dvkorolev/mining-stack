@@ -37,6 +37,8 @@ from metrics import (
     set_miner_fans,
     set_miner_pools,
     set_miner_psu,
+    set_miner_role,
+    remove_miner_role_series,
     publish_board_chips_source,
     remove_miner_expected_series,
     BOARD_CHIPS_SOURCES,
@@ -44,6 +46,82 @@ from metrics import (
 )
 
 ALGO = 'sha256'
+
+
+def role_sample(ip, name, role):
+    """Current value of a miner_role series, or None when it does not exist."""
+    return REGISTRY.get_sample_value(
+        'miner_role',
+        {'ip': ip, 'name': name, 'role': role},
+    )
+
+
+class MinerRoleTest(unittest.TestCase):
+    """
+    DMI-179: `role` is inventory metadata, not a reading.
+
+    It must survive a failed scrape (which is when the rules need it), follow a
+    role change without leaving the old series behind, and disappear only when
+    the machine leaves the inventory.
+    """
+
+    IP = '10.0.5.1'
+    NAME = 'worker'
+
+    def setUp(self):
+        self.addCleanup(remove_miner_role_series, self.IP)
+
+    def test_publishes_the_given_role(self):
+        set_miner_role(self.IP, self.NAME, 'stand')
+
+        self.assertEqual(role_sample(self.IP, self.NAME, 'stand'), 1.0)
+        self.assertIsNone(role_sample(self.IP, self.NAME, 'production'))
+
+    def test_role_change_removes_the_old_series(self):
+        set_miner_role(self.IP, self.NAME, 'production')
+        set_miner_role(self.IP, self.NAME, 'stand')
+
+        self.assertEqual(role_sample(self.IP, self.NAME, 'stand'), 1.0)
+        self.assertIsNone(role_sample(self.IP, self.NAME, 'production'))
+
+    def test_absent_or_unknown_role_becomes_production(self):
+        # The safe direction: the rules exclude role="stand" with `unless`, so
+        # an unrecognised value must leave the machine inside the alerting
+        # population rather than silently exclude it.
+        for value in (None, '', 'bogus', 7):
+            set_miner_role(self.IP, self.NAME, value)
+
+            self.assertEqual(role_sample(self.IP, self.NAME, 'production'), 1.0,
+                             repr(value))
+            self.assertIsNone(role_sample(self.IP, self.NAME, 'bogus'))
+
+    def test_value_and_case_are_normalised(self):
+        set_miner_role(self.IP, self.NAME, ' STAND ')
+
+        self.assertEqual(role_sample(self.IP, self.NAME, 'stand'), 1.0)
+        self.assertIsNone(role_sample(self.IP, self.NAME, ' STAND '))
+
+    def test_failure_cull_does_not_remove_the_role(self):
+        # A parked machine that has gone quiet is exactly when the farm rules
+        # need to keep excluding it, so the cull in main.py must not touch it.
+        set_miner_role(self.IP, self.NAME, 'stand')
+
+        remove_miner_series(self.IP)
+        remove_miner_board_series(self.IP)
+        remove_miner_fan_series(self.IP)
+        remove_miner_psu_series(self.IP)
+        remove_miner_pool_series(self.IP)
+
+        self.assertEqual(role_sample(self.IP, self.NAME, 'stand'), 1.0)
+
+    def test_forget_miner_removes_the_role(self):
+        set_miner_role(self.IP, self.NAME, 'stand')
+        self.assertIn(self.IP, known_miner_ips())
+
+        self.assertTrue(forget_miner(self.IP))
+
+        self.assertIsNone(role_sample(self.IP, self.NAME, 'stand'))
+        self.assertNotIn(self.IP, known_miner_ips())
 
 
 def sample(metric_name, ip, name, model, algorithm=ALGO):

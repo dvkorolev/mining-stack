@@ -13,7 +13,9 @@ function freshRepo() {
     CREATE TABLE miners (
       ip TEXT PRIMARY KEY,
       name TEXT, model TEXT, alias TEXT, owner TEXT,
-      owner_user_id INTEGER, status TEXT, credentials TEXT, thresholds TEXT,
+      owner_user_id INTEGER, status TEXT,
+      role TEXT NOT NULL DEFAULT 'production' CHECK (role IN ('production', 'stand')),
+      credentials TEXT, thresholds TEXT,
       use_https INTEGER, static_power REAL, api_port INTEGER, updated_at INTEGER
     );
     CREATE TABLE miner_pools (
@@ -45,6 +47,25 @@ test('upsertMiner updates an existing row on ip conflict', () => {
   const m = repo.getMinerByIp('10.0.0.1');
   assert.strictEqual(m.name, 'rig1-renamed');
   assert.strictEqual(m.status, 'disabled');
+  db.close();
+});
+
+test('role defaults to production and round-trips stand', () => {
+  const { db, repo } = freshRepo();
+  repo.upsertMiner(miner('10.0.0.1', 'rig1'));
+  assert.strictEqual(repo.getMinerByIp('10.0.0.1').role, 'production');
+
+  repo.upsertMiner({ ...miner('10.0.0.1', 'rig1'), role: 'stand' });
+  assert.strictEqual(repo.getMinerByIp('10.0.0.1').role, 'stand');
+  db.close();
+});
+
+test('role rejects a value outside the schema set', () => {
+  const { db, repo } = freshRepo();
+  assert.throws(
+    () => repo.upsertMiner({ ...miner('10.0.0.1', 'rig1'), role: 'maintenance' }),
+    /CHECK constraint failed/
+  );
   db.close();
 });
 

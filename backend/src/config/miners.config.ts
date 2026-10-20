@@ -36,12 +36,37 @@ export interface PoolConfig {
   password?: string;
 }
 
+export type MinerRole = 'production' | 'stand';
+
+const MINER_ROLES: MinerRole[] = ['production', 'stand'];
+
+/**
+ * Validate a role coming from an API body. `undefined` means "not supplied".
+ *
+ * An unknown value is rejected rather than defaulted: a typo in `role` must
+ * not silently become `production` and start alerting on a parked machine.
+ */
+const validateMinerRole = (value: unknown): MinerRole | undefined => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string' || !MINER_ROLES.includes(value as MinerRole)) {
+    throw new Error(`Invalid miner role "${String(value)}"; expected production or stand`);
+  }
+  return value as MinerRole;
+};
+
 export interface MinerConfig {
   ip: string;
   name: string;  // Required - will be auto-generated from IP if not provided
   model: string;
   alias?: string;
   owner?: string;  // Owner's Telegram chat ID
+  /**
+   * Role in the farm, distinct from `status` (reachability of the machine and
+   * lifecycle of the record). `stand` machines are parked deliberately: their
+   * readings are still collected and recorded, but the farm-level rules do not
+   * wake anyone about them (DMI-179).
+   */
+  role?: MinerRole;
   // Flat authentication fields (aligned with Python collectors)
   username?: string;  // For CGI fallback (default: 'root')
   password?: string;  // For CGI fallback (default: 'root')
@@ -122,6 +147,7 @@ const dbRecordToConfig = (record: MinerRecord): MinerConfig => {
     model: record.model,
     alias: record.alias,
     owner: record.owner,
+    role: record.role === 'stand' ? 'stand' : 'production',
     username: credentials?.username,
     password: credentials?.password,
     api_port: record.api_port,
@@ -286,15 +312,17 @@ export const addMiner = (minerData: Omit<MinerConfig, 'status' | 'lastSeen'>, ow
       alias: minerData.alias,
       owner,
       status: 'active',
+      role: validateMinerRole(minerData.role) || 'production',
       credentials,
       api_port: minerData.api_port,
     };
-    
+
     db.upsertMiner(minerRecord);
-    
+
     const newMiner: MinerConfig = {
       ...minerData,
       name,
+      role: minerRecord.role,
       status: 'offline',
       lastSeen: new Date(),
     };
@@ -365,6 +393,7 @@ export const updateMiner = (minerId: string, updates: Partial<MinerConfig>): Min
       alias: updates.alias ?? existing.alias,
       owner: existing.owner, // Owner cannot be changed
       status: existing.status,
+      role: validateMinerRole(updates.role) ?? existing.role ?? 'production',
       credentials,
       api_port: updates.api_port ?? existing.api_port,
       pool_account_id: (updates as any).pool_account_id !== undefined ? (updates as any).pool_account_id : (existing as any).pool_account_id,

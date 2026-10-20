@@ -13,11 +13,18 @@
 # component: miner would be silently born suppressed. These five exist to wake
 # someone, so they are farm-level by label and by nature.
 #
-# The two idle machines are excluded everywhere power is counted:
-# ip!~"192.168.2.(58|117)" (.58 and .117 are stopped deliberately -- 107 W and
-# 168 W against 2.9-3.6 kW on the nineteen live machines -- and would fire
-# every park rule forever). The dots in the pattern are unanchored-regex loose
-# on purpose, matching the plan's spec; nothing at 192x168y2zNN exists.
+# Machines with role=stand are excluded everywhere power is counted, through
+# the inventory-published `miner_role` series rather than a literal IP list
+# (DMI-179): a PromQL rule cannot read SQLite, so the scheduler exports
+# `miner_role{ip,name,role}` and the rules join on (ip,name). `.58` and `.117`
+# are the current stand machines -- stopped deliberately, 107 W and 168 W
+# against 2.9-3.6 kW on the production fleet -- and would otherwise fire every
+# park rule forever.
+#
+# The join direction is deliberate: `unless on(ip,name) miner_role{role="stand"}`
+# fails toward alerting. If the series is missing (a scheduler older than these
+# rules, or a fallback config with no roles), nothing is excluded and the
+# machine still alerts -- one notification too many, never a silent exclusion.
 groups:
   - name: park
     interval: 30s
@@ -34,7 +41,7 @@ groups:
       # swallowed on purpose: they are ParkPowerEvent's and the error-code
       # counter's business, not a per-machine warning's.
       - alert: ParkMinerDark
-        expr: max_over_time(miner_power_watts{ip!~"192.168.2.(58|117)"}[15m]) < 500
+        expr: (max_over_time(miner_power_watts[15m]) < 500) unless on(ip,name) miner_role{role="stand"}
         labels:
           severity: warning
           component: farm
@@ -48,7 +55,7 @@ groups:
       # gaps); a machine that stops answering entirely loses its power series
       # to the DMI-55 cull and is MinerOffline's business, not this rule's.
       - alert: ParkMinerStale
-        expr: time() - timestamp(miner_power_watts{ip!~"192.168.2.(58|117)"}) > 900
+        expr: (time() - timestamp(miner_power_watts) > 900) unless on(ip,name) miner_role{role="stand"}
         labels:
           severity: warning
           component: farm
@@ -66,7 +73,7 @@ groups:
       # three site-scale shapes -- a sag, an owner-driven mass reboot, and a
       # mass recovery ramp -- and all three are worth a look.
       - alert: ParkPowerEvent
-        expr: count(min_over_time(miner_power_watts{ip!~"192.168.2.(58|117)"}[15m]) < 500) >= 3
+        expr: count((min_over_time(miner_power_watts[15m]) < 500) unless on(ip,name) miner_role{role="stand"}) >= 3
         labels:
           severity: critical
           component: farm

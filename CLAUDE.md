@@ -226,8 +226,15 @@ went unnoticed until a human looked.
   uses `min_over_time` ("any low reading"). Both chosen by measurement: a reboot ramp stays under
   500 W for 1–2 minutes, so the min-variant pages on machines that are *recovering*, while the early
   cluster signal wants exactly that sensitivity.
-- `.58` and `.117` are excluded with `ip!~"192.168.2.(58|117)"` wherever power is counted — both are
-  stopped deliberately and would otherwise fire every park rule forever.
+- **Parked machines are excluded by role, not by IP (DMI-179).** `miners.role` is a typed column
+  (`production` | `stand`), published every cycle as `miner_role{ip,name,role} 1`, and the rules
+  exclude it with `unless on(ip,name) miner_role{role="stand"}`. `.58` and `.117` are the current
+  `stand` machines; both are stopped deliberately and would otherwise fire every park rule forever.
+  The same exclusion is applied to `MinerFaulty`, which used to fire on them because it carries no
+  IP literal. **The join direction is load-bearing:** a missing `miner_role` makes `unless` a no-op,
+  so the rule still fires — one notification too many, never a silent exclusion. Do not invert it
+  to `and on(...) miner_role{role="production"}`, which would silence every alert when the series is
+  absent.
 
 ### Simulation (`SIMULATION_MODE`)
 Simulated/fake data is served **only** when `SIMULATION_MODE=true` (default false). It is never a silent fallback: on a Prometheus read error the backend keeps last-known real stats and logs the error; boot does not seed fake data. Do not reintroduce a `simulateMiningStats()` fallback into the real path.
@@ -304,6 +311,13 @@ storms are what desynchronised the database, so when the two disagree the machin
 reconciled to it — not the other way round. `miners.name` should equal the worker name; after the
 2026-08-28 reconciliation it does for every reachable machine. `miners.name` is UNIQUE, so freeing a
 name (removing a decommissioned record) must precede assigning it.
+
+**`miners.role` is the machine's role in the farm (DMI-179), distinct from `status`** — which is the
+lifecycle of the record, not the machine (`status` is already `active`/`suspended`). The column is
+typed `production` | `stand` by a CHECK constraint, defaults to `production`, and is settable through
+`PUT /api/mining/miners/:id`. A `stand` machine is parked deliberately: its readings are collected
+and recorded, but the farm-level rules and `MinerFaulty` exclude it through the `miner_role` series.
+There is no UI field for it yet; set it through the API or the database.
 
 Boot behavior:
 - `server.ts` calls `initializeMinersFromYAML()`

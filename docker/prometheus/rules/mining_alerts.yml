@@ -91,8 +91,13 @@ groups:
       # over an hour with a healthy scrape and nothing firing. Do not rewrite this as
       # a hashrate comparison — MinerHashrateCritical* already covers that and needs
       # miner_expected_hashrate_ths, which whatsminer_generic models do not publish.
+      #
+      # Machines parked deliberately (role=stand) are excluded: `.58` reports state 0
+      # by design, and the same inventory property that keeps the park rules quiet
+      # keeps this one quiet too (DMI-179). The join is `unless`, so a missing
+      # `miner_role` leaves the rule firing as before — the safe direction.
       - alert: MinerFaulty
-        expr: miner_state == 0 and miner_scrape_status == 2
+        expr: (miner_state == 0 and miner_scrape_status == 2) unless on(ip,name) miner_role{role="stand"}
         for: 10m
         labels:
           severity: critical

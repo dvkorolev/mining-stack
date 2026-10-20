@@ -19,6 +19,13 @@ miner_fault_light = Gauge('miner_fault_light_on', 'Fault light status (1=on, 0=o
 miner_errors_count = Gauge('miner_errors_count', 'Number of errors', ['ip', 'name', 'model', 'algorithm'])
 miner_scrape_status = Gauge('miner_scrape_status', 'Scrape status (2=success, 1=partial, 0=timeout, -1=refused, -2=error)', ['ip', 'name', 'model', 'algorithm'])
 
+# Farm role of a machine, from the inventory (DMI-179). `production` machines
+# are the fleet the rules are written for; `stand` machines are parked
+# deliberately and their readings are recorded without waking anyone. The
+# series exists so rules can say `unless on(ip,name) miner_role{role="stand"}`
+# instead of carrying a literal IP list — a PromQL rule cannot read SQLite.
+miner_role = Gauge('miner_role', 'Machine role from the inventory; value is 1, role is in the label', ['ip', 'name', 'role'])
+
 # Miner Board Metrics
 #
 # `miner_board_temp_c` and `miner_board_chip_temp_c` are deliberately separate
@@ -267,6 +274,12 @@ _miner_psu_v3_label_cache = {}  # {ip: {(name, model, psu_model), ...}}
 # like every family that is not reachable through get_all_miner_metrics().
 _miner_error_label_cache = {}   # {ip: {(name, code), ...}}
 
+# Role series (DMI-179). Own label set (`role`), so its own removal path. It is
+# inventory metadata rather than a reading: the failure-streak cull does not
+# touch it, because a parked machine that has gone quiet is exactly when the
+# rules need to keep excluding it. Only forget_miner() removes it.
+_miner_role_label_cache = {}    # {ip: {(name, role), ...}}
+
 # The board gauges all carry the same label set, so one cache serves them all.
 _BOARD_METRICS = (miner_board_hashrate, miner_board_temp, miner_board_chip_temp,
                   miner_board_chips_count, miner_board_chips_expected)
@@ -294,6 +307,51 @@ PSU_MODEL_UNKNOWN = 'unknown'
 # Which v3-sourced reading feeds which gauge, same contract as _PSU_FIELDS.
 _PSU_V3_FIELDS = (('vout', miner_psu_vout_raw),
                   ('apiswitch', miner_apiswitch))
+
+# The two roles the inventory can state (DMI-179).
+MINER_ROLES = ('production', 'stand')
+DEFAULT_MINER_ROLE = 'production'
+
+
+def set_miner_role(ip: str, name: str, role) -> None:
+    """
+    Publish `miner_role{ip,name,role} 1` for a configured miner.
+
+    Called every cycle for every machine in the configuration, independently
+    of whether the collection succeeded: the rules need the role precisely
+    when a machine is dark. `miner_role` is inventory metadata, so the
+    failure-streak cull in main.py deliberately does not remove it — only
+    forget_miner() does, when the machine leaves the inventory.
+
+    An absent or unrecognised role becomes `production`. That is the safe
+    direction: the rules exclude `role="stand"` with `unless`, so an unknown
+    value leaves the machine inside the alerting population (one notification
+    too many) rather than silently excluded (DMI-179).
+    """
+    value = role.strip().lower() if isinstance(role, str) else DEFAULT_MINER_ROLE
+    if value not in MINER_ROLES:
+        value = DEFAULT_MINER_ROLE
+
+    published = {(name, value)}
+    for stale in _miner_role_label_cache.get(ip, set()) - published:
+        _remove_role_series(ip, stale)
+    miner_role.labels(ip=ip, name=name, role=value).set(1)
+    _miner_role_label_cache[ip] = published
+
+
+def _remove_role_series(ip: str, labels) -> None:
+    """Remove one role series; a missing combination is not an error."""
+    name, role = labels
+    try:
+        miner_role.remove(ip, name, role)
+    except (KeyError, ValueError):
+        pass
+
+
+def remove_miner_role_series(ip: str) -> None:
+    """Drop the role series of a machine that has left the inventory."""
+    for labels in _miner_role_label_cache.pop(ip, set()):
+        _remove_role_series(ip, labels)
 
 
 def set_miner_pools(ip: str, name: str, pools) -> None:
@@ -877,7 +935,8 @@ def known_miner_ips() -> set:
             | set(_miner_fan_label_cache)
             | set(_miner_psu_label_cache)
             | set(_miner_psu_v3_label_cache)
-            | set(_miner_error_label_cache))
+            | set(_miner_error_label_cache)
+            | set(_miner_role_label_cache))
 
 
 def forget_miner(ip: str) -> bool:
@@ -911,6 +970,7 @@ def forget_miner(ip: str) -> bool:
     remove_miner_psu_series(ip)
     remove_miner_psu_v3_series(ip)
     remove_miner_error_series(ip)
+    remove_miner_role_series(ip)
     _miner_label_cache.pop(ip, None)
     return known
 
