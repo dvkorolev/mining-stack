@@ -214,10 +214,15 @@ at any cadence slower than the sampling. It publishes:
   looking healthy. Where a value can legitimately be absent, `or` the default; do not rely on `.get()`.
 
 ### Park rules — a standing machine, and a site power sag (DMI-109)
-`docker/prometheus/rules/park_alerts.yml` holds four rules: `ParkMinerDark`, `ParkPowerEvent`,
-`ParkVinLow`, `ParkVinCluster`. They exist to **wake someone** when the farm stops producing — the
-failure mode behind ~85% of the month's measured losses, and the one that previously went unnoticed
-until a human looked.
+`docker/prometheus/rules/park_alerts.yml` holds five rules: `ParkMinerDark`, `ParkScryptIdle`,
+`ParkPowerEvent`, `ParkVinLow`, `ParkVinCluster`. They exist to **wake someone** when the farm stops
+producing — the failure mode behind ~85% of the month's measured losses, and the one that previously
+went unnoticed until a human looked.
+
+**The DG1+ needs its own standing-still signal.** It publishes a constant 3400 W
+(`stddev_over_time[6h]` = 0), so the power-based rules cannot see it stop; `ParkScryptIdle` watches
+`miner_hashrate_mhs{algorithm="scrypt"}` instead (DMI-178 item 4). Discriminate on `algorithm`, not
+`model`: the model label is spelled inconsistently across the park.
 
 **Staleness is not a park rule (DMI-178).** The old `ParkMinerStale` asked
 `time() - timestamp(miner_power_watts) > 900`, which can never fire: Prometheus drops a series after

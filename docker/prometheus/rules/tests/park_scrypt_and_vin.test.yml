@@ -1,0 +1,138 @@
+# DMI-178 items 3-4, park side.
+#
+# ParkScryptIdle exists because the DG1+ publishes a constant 3400 W
+# (`stddev_over_time[6h]` = 0): the power-based park rules cannot see it stop,
+# and its real hashrate is the fleet's only scrypt series. The rule
+# discriminates on `algorithm`, not `model`, because the model label is spelled
+# inconsistently across the park.
+#
+# ParkVinLow/ParkVinCluster now exclude `role=stand` (DMI-179). The rest of the
+# file is the negative control that matters: a parked machine at a low voltage
+# must not wake anyone.
+#
+# Run from the rules directory:
+#   promtool test rules tests/park_scrypt_and_vin.test.yml
+rule_files:
+  - ../park_alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'miner_hashrate_mhs{ip="192.0.2.20",name="dg1",model="DG1+_(Stock)",algorithm="scrypt"}'
+        values: '0x20'
+      - series: 'miner_role{ip="192.0.2.20",name="dg1",role="production"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ParkScryptIdle
+        exp_alerts:
+          - exp_labels:
+              ip: 192.0.2.20
+              name: dg1
+              model: DG1+_(Stock)
+              algorithm: scrypt
+              severity: warning
+              component: farm
+            exp_annotations:
+              summary: "Scrypt miner dg1 at 0 MH/s for the whole last 15m"
+              description: "Every reading in the last 15m was 0. The DG1+ reports a constant power figure, so hashrate is the signal that can see it standing still."
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_hashrate_mhs{ip="192.0.2.21",name="dg1-ok",model="DG1+_(Stock)",algorithm="scrypt"}'
+        values: '14000x20'
+      - series: 'miner_role{ip="192.0.2.21",name="dg1-ok",role="production"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ParkScryptIdle
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_hashrate_mhs{ip="192.0.2.22",name="dg1-stand",model="DG1+_(Stock)",algorithm="scrypt"}'
+        values: '0x20'
+      - series: 'miner_role{ip="192.0.2.22",name="dg1-stand",role="stand"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ParkScryptIdle
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_psu_input_volts{ip="192.0.2.30",name="p1",model="M30S++_(Stock)",psu_model="P222B"}'
+        values: '180x5'
+      - series: 'miner_role{ip="192.0.2.30",name="p1",role="production"}'
+        values: '1x5'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ParkVinLow
+        exp_alerts:
+          - exp_labels:
+              ip: 192.0.2.30
+              name: p1
+              model: M30S++_(Stock)
+              psu_model: P222B
+              severity: warning
+              component: farm
+            exp_annotations:
+              summary: "Miner p1 PSU input 180.0V"
+              description: "Below 190V (fleet norm 219-226V) -- mains sag visible in the open, no window wait."
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_psu_input_volts{ip="192.0.2.31",name="p1-stand",model="M30S++_(Stock)",psu_model="P222B"}'
+        values: '180x5'
+      - series: 'miner_role{ip="192.0.2.31",name="p1-stand",role="stand"}'
+        values: '1x5'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ParkVinLow
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_psu_input_volts{ip="192.0.2.40",name="c1",model="M30S++_(Stock)",psu_model="P222B"}'
+        values: '180x5'
+      - series: 'miner_psu_input_volts{ip="192.0.2.41",name="c2",model="M30S++_(Stock)",psu_model="P222B"}'
+        values: '180x5'
+      - series: 'miner_psu_input_volts{ip="192.0.2.42",name="c3",model="M30S++_(Stock)",psu_model="P222B"}'
+        values: '180x5'
+      - series: 'miner_role{ip="192.0.2.40",name="c1",role="production"}'
+        values: '1x5'
+      - series: 'miner_role{ip="192.0.2.41",name="c2",role="production"}'
+        values: '1x5'
+      - series: 'miner_role{ip="192.0.2.42",name="c3",role="production"}'
+        values: '1x5'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ParkVinCluster
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: farm
+            exp_annotations:
+              summary: "3 miners under 190V PSU input"
+              description: "Cluster sag on the mains side; single-machine dips stay ParkVinLow's business."
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_psu_input_volts{ip="192.0.2.50",name="s1",model="M30S++_(Stock)",psu_model="P222B"}'
+        values: '180x5'
+      - series: 'miner_psu_input_volts{ip="192.0.2.51",name="s2",model="M30S++_(Stock)",psu_model="P222B"}'
+        values: '180x5'
+      - series: 'miner_psu_input_volts{ip="192.0.2.52",name="s3",model="M30S++_(Stock)",psu_model="P222B"}'
+        values: '180x5'
+      - series: 'miner_role{ip="192.0.2.50",name="s1",role="stand"}'
+        values: '1x5'
+      - series: 'miner_role{ip="192.0.2.51",name="s2",role="stand"}'
+        values: '1x5'
+      - series: 'miner_role{ip="192.0.2.52",name="s3",role="stand"}'
+        values: '1x5'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ParkVinCluster
+        exp_alerts: []
