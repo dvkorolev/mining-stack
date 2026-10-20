@@ -1,0 +1,55 @@
+# Farm-level electrical step detection, moved into the stack from the site-local
+# farm_electric.yml on 2026-10-20 (DMI-245).
+#
+# Why it had to move: `deploy-to-pi-registry.sh` rsyncs `docker/` with --delete,
+# and the Pi's rules directory lives inside that tree. A site-local file there is
+# one full deploy away from silent deletion, and nothing would record it -- the
+# DMI-221 class. The source of truth was notes/prom-rules-farm-electric.yml in
+# the miner-ops repo; the content below is that proposal, translated to the repo
+# conventions, plus the two changes agreed in the handover:
+#
+#   * the `ip!~"192.168.2.(58|117)"` literals became the published role join
+#     (DMI-179), applied to BOTH operands so a stand machine cannot re-enter
+#     through the quantile side;
+#   * `FarmChannelReset` (`router_uplink_uptime_seconds < 900`, info) is NOT
+#     carried over. `FarmChannelDown` in uplink_alerts.yml fires on the same
+#     reset with more information (`resets()` and `connected == 0`), and keeping
+#     both sent two notifications for one event.
+#
+# `severity: high` in the site-local original is `warning` here: the repo and the
+# backend accept only critical/warning/info, and only `critical` has its own
+# Alertmanager route, so this preserves the original routing.
+#
+# FarmVinStep reads a STEP, not a level: each supply against its own one-hour
+# median, so a machine that runs high or low by nature does not accumulate. The
+# absolute thresholds in ParkVinLow/ParkVinCluster (<190 V) never fired in 24
+# days -- the minimum was 199.5 V -- and are a separate rule change, not this one.
+#
+# The channel term is what makes it an electrical diagnosis: the same 3-machine
+# step during an uplink reset is the park shedding load, not the mains sagging.
+# Calibration over 24 days at 5-minute steps (miner-ops): 6/6 electrical episodes
+# with the term; without it, exactly one false positive -- 2026-10-11 15:46,
+# which was the channel event.
+groups:
+  - name: farm_electric
+    interval: 30s
+    rules:
+      - alert: FarmVinStep
+        expr: |
+          (
+            count(
+              (miner_psu_input_volts unless on(ip,name) miner_role{role="stand"})
+              - (quantile_over_time(0.5, miner_psu_input_volts[1h])
+                 unless on(ip,name) miner_role{role="stand"})
+              > 10
+            ) >= 3
+          )
+          and on () (router_uplink_uptime_seconds >= 900)
+        for: 5m
+        labels:
+          severity: warning
+          component: farm
+          class: electric
+        annotations:
+          summary: "{{ $value }} PSU inputs stepped >10V above their own hour"
+          description: "Three or more supplies jumped together while the uplink was stable -- a mains step at the site, not a channel event. The absolute ParkVinLow/ParkVinCluster thresholds stay where they are; this rule fires on the change, not the level."

@@ -59,9 +59,10 @@ groups:
       #
       #   * `router_uplink_connected` is the interface's own "established connection"
       #     flag (`router-exporter/router_exporter.py`, `parse_uplink`). This is the
-      #     half DMI-243 (a) found missing: the site-local `FarmChannelReset` on the
-      #     Pi watches `router_uplink_uptime_seconds < 900` only, so a link that was
-      #     down with an uptime that never reset was covered by nothing.
+      #     half DMI-243 (a) found missing: the site-local `FarmChannelReset` (since
+      #     retired in favour of this rule) watched `router_uplink_uptime_seconds
+      #     < 900` only, so a link that was down with an uptime that never reset
+      #     was covered by nothing.
       #   * a reset of `router_uplink_uptime_seconds` is the interface starting its
       #     uptime again, i.e. a re-established connection. On this site's history it
       #     was the 2/2 mark of the channel events (2026-09-26 04:06 and 2026-10-11

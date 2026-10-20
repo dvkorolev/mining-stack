@@ -1,0 +1,150 @@
+# FarmVinStep — the electrical step, and the three ways it must not fire.
+#
+# Moved from the site-local farm_electric.yml on 2026-10-20 (DMI-245). The cases
+# pin the properties the handover calibration paid for:
+#
+#   * a step needs three machines: two stepping together is not a site event;
+#   * a step during an uplink reset is NOT electrical -- that is the 10-11 15:46
+#     false positive the channel term removes;
+#   * a stand machine must not count. The last case is the positive control: the
+#     same series labelled production, so removing the role join turns "no
+#     alert" into an alert.
+#
+# The step is measured against each machine's own one-hour median, so the values
+# are chosen to make the median unambiguous: 31 minutes at 230 V then 250 V, and
+# the evaluation at 40m sees a median of 230 against a current 250.
+#
+# Run from the rules directory:
+#   promtool test rules tests/farm_vin_step.test.yml
+rule_files:
+  - ../farm_electric.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Positive: three production machines step +20 V together while the uplink is
+  # stable. `for: 5m` is satisfied from 36m; evaluated at 40m.
+  - interval: 1m
+    input_series:
+      - series: 'miner_psu_input_volts{ip="192.0.2.10",name="a1",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.11",name="a2",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.12",name="a3",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_role{ip="192.0.2.10",name="a1",role="production"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.11",name="a2",role="production"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.12",name="a3",role="production"}'
+        values: '1x61'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '5000+60x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FarmVinStep
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: farm
+              class: electric
+            exp_annotations:
+              summary: "3 PSU inputs stepped >10V above their own hour"
+              description: "Three or more supplies jumped together while the uplink was stable -- a mains step at the site, not a channel event. The absolute ParkVinLow/ParkVinCluster thresholds stay where they are; this rule fires on the change, not the level."
+
+  # Negative: only two machines step. Below the three-machine floor.
+  - interval: 1m
+    input_series:
+      - series: 'miner_psu_input_volts{ip="192.0.2.20",name="b1",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.21",name="b2",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.22",name="b3",model="M30S++"}'
+        values: '230x61'
+      - series: 'miner_role{ip="192.0.2.20",name="b1",role="production"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.21",name="b2",role="production"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.22",name="b3",role="production"}'
+        values: '1x61'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '5000+60x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FarmVinStep
+        exp_alerts: []
+
+  # Negative: three machines step, but the uplink just reset. That is the park
+  # shedding load or a channel event, not a mains step -- the 10-11 shape.
+  - interval: 1m
+    input_series:
+      - series: 'miner_psu_input_volts{ip="192.0.2.30",name="c1",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.31",name="c2",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.32",name="c3",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_role{ip="192.0.2.30",name="c1",role="production"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.31",name="c2",role="production"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.32",name="c3",role="production"}'
+        values: '1x61'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '500x61'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FarmVinStep
+        exp_alerts: []
+
+  # Negative: three STAND machines step. Excluded by the role join.
+  - interval: 1m
+    input_series:
+      - series: 'miner_psu_input_volts{ip="192.0.2.40",name="s1",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.41",name="s2",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.42",name="s3",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_role{ip="192.0.2.40",name="s1",role="stand"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.41",name="s2",role="stand"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.42",name="s3",role="stand"}'
+        values: '1x61'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '5000+60x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FarmVinStep
+        exp_alerts: []
+
+  # Positive control for the exclusion: the same three dead-step series as the
+  # case above, labelled production. Without the join this is what fires.
+  - interval: 1m
+    input_series:
+      - series: 'miner_psu_input_volts{ip="192.0.2.50",name="d1",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.51",name="d2",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_psu_input_volts{ip="192.0.2.52",name="d3",model="M30S++"}'
+        values: '230x31 250x30'
+      - series: 'miner_role{ip="192.0.2.50",name="d1",role="production"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.51",name="d2",role="production"}'
+        values: '1x61'
+      - series: 'miner_role{ip="192.0.2.52",name="d3",role="production"}'
+        values: '1x61'
+      - series: 'router_uplink_uptime_seconds{interface="CdcEthernet2"}'
+        values: '5000+60x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FarmVinStep
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: farm
+              class: electric
+            exp_annotations:
+              summary: "3 PSU inputs stepped >10V above their own hour"
+              description: "Three or more supplies jumped together while the uplink was stable -- a mains step at the site, not a channel event. The absolute ParkVinLow/ParkVinCluster thresholds stay where they are; this rule fires on the change, not the level."
