@@ -10,7 +10,7 @@
 # `component: farm` on every rule is load-bearing, not decoration: this site
 # sets ALERT_NOTIFY_EXCLUDE_COMPONENTS=miner (per-machine heat and error codes
 # are recorded and dashboarded, never pushed -- DMI-79), and a rule labelled
-# component: miner would be silently born suppressed. These four exist to wake
+# component: miner would be silently born suppressed. These five exist to wake
 # someone, so they are farm-level by label and by nature.
 #
 # Staleness is deliberately not one of them. The old ParkMinerStale asked
@@ -55,6 +55,21 @@ groups:
           summary: "Miner {{ $labels.name }} at or below {{ $value | printf \"%.0f\" }}W for the whole last 15m"
           description: "Every reading in the last 15m was under 500W; a machine that keeps mining sits at 2.9-3.6kW. Reboot ramps (1-2min) do not fire this."
 
+      # The DG1+ publishes a constant 3400 W -- `stddev_over_time[6h]` = 0 --
+      # so the power-based rules above cannot see it stop. Its hashrate is a
+      # real reading and it is the fleet's only scrypt series; 15m of zeros is
+      # the same "standing still" semantics as ParkMinerDark, on the quantity
+      # that actually moves. DMI-178 item 4; model labels are inconsistent
+      # across the park, so this discriminates on `algorithm` instead.
+      - alert: ParkScryptIdle
+        expr: (max_over_time(miner_hashrate_mhs{algorithm="scrypt"}[15m]) == 0) unless on(ip,name) miner_role{role="stand"}
+        labels:
+          severity: warning
+          component: farm
+        annotations:
+          summary: "Scrypt miner {{ $labels.name }} at 0 MH/s for the whole last 15m"
+          description: "Every reading in the last 15m was 0. The DG1+ reports a constant power figure, so hashrate is the signal that can see it standing still."
+
       # The main signal (plan 3a: 85% of the month's losses). Three or more
       # machines with a sub-500 W reading inside 15 m is a site event -- a
       # mains sag or a manual walk-through -- not any single machine's own
@@ -76,11 +91,13 @@ groups:
       # 190 V is below everything healthy and above the sag: fleet PSU input
       # measured 218.5-225.75 V (DMI-94), and the 2026-09-16 sag reached
       # 172 V before the trace vanished. Deliberately no window and no `for`:
-      # the plan asks for the sag in the open, not after a wait. No ip
-      # exclusion here -- .78 publishes nothing (different protocol) and .74
-      # answers, so there is nobody to exclude for a live voltage.
+      # the plan asks for the sag in the open, not after a wait. Stand machines
+      # are excluded like everywhere else (DMI-179): a parked machine's supply
+      # is not a farm signal, and it would otherwise be the one machine whose
+      # PSU trip fires a single-machine alert. `.78` publishes nothing here
+      # (different protocol), so it cannot appear either way.
       - alert: ParkVinLow
-        expr: miner_psu_input_volts < 190
+        expr: (miner_psu_input_volts < 190) unless on(ip,name) miner_role{role="stand"}
         labels:
           severity: warning
           component: farm
@@ -91,7 +108,7 @@ groups:
       # The cluster form of ParkVinLow: three or more supplies seeing the
       # same low mains at once is the site's input, not any one PSU.
       - alert: ParkVinCluster
-        expr: count(miner_psu_input_volts < 190) >= 3
+        expr: count((miner_psu_input_volts < 190) unless on(ip,name) miner_role{role="stand"}) >= 3
         labels:
           severity: critical
           component: farm
