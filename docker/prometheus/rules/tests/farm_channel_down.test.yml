@@ -22,9 +22,11 @@
 #     (interface)` on both sides is what makes them the same label set; without
 #     it the alert could duplicate. The first case has both true at once.
 #
-# ⚠️ `connected == 0` has not been observed on this site yet (the gap recorded
-# on DMI-243). These tests verify the expressions; they are not evidence that
-# the signal moves in the field.
+# Evidence note: after the first deploy both arms were read back against 30 days
+# of history. The expression is non-empty only in the 2026-10-11 outage
+# (12:40-13:05 UTC), where `connected` read 0 and the uptime reset nine times.
+# These tests verify the expressions, not the field; that measurement is on
+# DMI-243 and in the rule's comment.
 #
 # Run from the rules directory:
 #   promtool test rules tests/farm_channel_down.test.yml

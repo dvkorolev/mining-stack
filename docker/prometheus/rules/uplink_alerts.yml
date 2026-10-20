@@ -77,12 +77,17 @@ groups:
       # PROJECT_STATE.md). It says the wire is attached, not that the wire carries
       # anything.
       #
-      # ⚠️ Evidence status: the uptime-reset arm is measured (2/2 channel events).
-      # The `connected == 0` arm has NOT yet been observed at 0 on this site -- it is
-      # the gap DMI-243 names, and the first deploy must read the series back and
-      # check the 2026-10-11 window before the rule is called verified (PROJECT_STATE
-      # rule 5). Until then this is a rule that loads, not a rule that is known to
-      # fire; saying otherwise is the mistake DMI-178 catalogues.
+      # Evidence, read back from the Pi after the first deploy (2026-10-20). The
+      # whole expression is non-empty in EXACTLY ONE episode in 30 days:
+      # 2026-10-11 12:40-13:05 UTC (15:40-16:05 MSK), the uplink outage. Through
+      # that window `connected` read 0 repeatedly (12:39-13:03) and the uptime
+      # reset nine times (1337621 -> 0, then 25 -> 1, 17 -> 1, ...), so both arms
+      # are observed rather than assumed. The 2026-09-26 04:06 MSK event shows in
+      # the reset arm alone when history is re-evaluated at 5-minute steps; the
+      # live rule evaluates every 30 s and holds a reset visible for its whole
+      # 5-minute window. No other episode in 30 days -- no false positive observed.
+      # That is the check PROJECT_STATE rule 5 asks for; keep it true when the
+      # expression changes.
       #
       # Severity is critical because of the deadline: btminer asserts after ~300 s
       # with no pool and the park goes dark on its own. The 2-minute `for` keeps most
