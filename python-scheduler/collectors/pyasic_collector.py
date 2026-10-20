@@ -30,6 +30,7 @@ from metrics import (
     miner_pool_rejected, collection_duration, collection_success,
     collection_timestamp, miner_gaps_filled_total, update_miner_label_cache,
     set_miner_pools, set_miner_boards, set_miner_fans, set_miner_psu,
+    set_miner_role,
     publish_expected_hashrate_source, set_miner_expected_boards,
     publish_board_chips_source, BOARD_CHIPS_SOURCES,
     miner_compare_mismatch_total, miner_collection_routing_total,
@@ -1172,7 +1173,13 @@ async def collect_pyasic_metrics(miners: List[Dict]) -> Dict[str, Any]:
         miner_ip = miner.get('ip') or 'unknown'
         miner_name = miner.get('name') or f'miner-{miner_ip}'
         miner_model = miner.get('model') or 'Unknown'
-        
+
+        # Inventory metadata, published whether or not this machine answered
+        # (DMI-179): the rules need the role precisely when it is dark, and a
+        # role series that vanished with a failed scrape would make a parked
+        # machine start alerting again.
+        set_miner_role(miner_ip, miner_name, miner.get('role'))
+
         if isinstance(result, BaseException):
             # `gather(return_exceptions=True)` exists so one machine cannot take
             # the cycle with it, but the result then has to be handled as an

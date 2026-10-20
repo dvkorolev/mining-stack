@@ -58,6 +58,12 @@ export interface MinerRecord {
   owner: string;
   owner_user_id?: number | null;
   status?: string;
+  /**
+   * Role of the machine in the farm, distinct from `status` (the lifecycle of
+   * the record): `stand` machines are parked deliberately and must not wake
+   * anyone (DMI-179). Exported to Prometheus as `miner_role`.
+   */
+  role?: 'production' | 'stand';
   credentials?: string; // JSON string: {username, password}
   thresholds?: string; // JSON string: {hashrate: {expected}, power: {expected}}
   use_https?: number; // 0 or 1 (SQLite boolean)
@@ -279,6 +285,7 @@ class DatabaseService {
         owner TEXT NOT NULL,
         owner_user_id INTEGER,
         status TEXT DEFAULT 'active',
+        role TEXT NOT NULL DEFAULT 'production' CHECK (role IN ('production', 'stand')),
         credentials TEXT,
         thresholds TEXT,
         use_https INTEGER DEFAULT 0,

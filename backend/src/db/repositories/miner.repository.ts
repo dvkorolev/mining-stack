@@ -20,9 +20,9 @@ export class MinerRepository {
   upsertMiner(miner: MinerRecord): void {
     const stmt = this.db.prepare(`
       INSERT INTO miners (
-        ip, name, model, alias, owner, owner_user_id, status, credentials, thresholds,
+        ip, name, model, alias, owner, owner_user_id, status, role, credentials, thresholds,
         use_https, static_power, api_port, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
       ON CONFLICT(ip) DO UPDATE SET
         name = excluded.name,
         model = excluded.model,
@@ -30,6 +30,7 @@ export class MinerRepository {
         owner = excluded.owner,
         owner_user_id = excluded.owner_user_id,
         status = excluded.status,
+        role = excluded.role,
         credentials = excluded.credentials,
         thresholds = excluded.thresholds,
         use_https = excluded.use_https,
@@ -47,6 +48,7 @@ export class MinerRepository {
         miner.owner,
         miner.owner_user_id || null,
         miner.status || 'active',
+        miner.role || 'production',
         miner.credentials || null,
         miner.thresholds || null,
         miner.use_https || 0,
