@@ -178,7 +178,15 @@ DMI-56 path above; do not reintroduce either.
 `python-scheduler/v3_telemetry.py` asks every configured miner `get.device.info` on port 4433
 **once per collection cycle** — the request DMI-81 already uses, but hourly there and every cycle
 here: a nameplate changes only when someone swaps a hashboard, while a code timestamp means nothing
-at any cadence slower than the sampling. It publishes:
+at any cadence slower than the sampling.
+
+A firmware-side catalogue of the codes — 161 values, the `233…296` bit rule, the 12 restart causes
+and the `remove_code` group — is in `docs/reference/firmware-codes.md` + `.yaml`. It was reversed
+from the `.58`/`.117` line; do not transfer it to another firmware line without that line's
+binaries. `miner_psu_vout_raw` comes from `power.vout` in the v3 reply; its source field and unit
+are unconfirmed (DMI-249) — do not rename or divide it.
+
+It publishes:
 
 | metric | what |
 |---|---|
