@@ -582,6 +582,23 @@ class BoardAndFanPublishingTest(unittest.TestCase):
         self.assertEqual(
             board_sample('miner_board_chips_expected', ip, self.NAME, self.MODEL, '0'), 78)
 
+    def test_upfreq_complete_is_published_and_removed(self):
+        # DMI-224: 0 is a real reading (the ladder is still running) and must
+        # survive; an unreported slot publishes nothing.
+        ip = '10.0.2.9'
+        self.publish(ip, {'0': {'upfreq_complete': 0}, '1': {'upfreq_complete': 1}})
+
+        self.assertEqual(
+            board_sample('miner_board_upfreq_complete', ip, self.NAME, self.MODEL, '0'), 0.0)
+        self.assertEqual(
+            board_sample('miner_board_upfreq_complete', ip, self.NAME, self.MODEL, '1'), 1.0)
+        self.assertIsNone(
+            board_sample('miner_board_upfreq_complete', ip, self.NAME, self.MODEL, '2'))
+
+        remove_miner_board_series(ip)
+        self.assertIsNone(
+            board_sample('miner_board_upfreq_complete', ip, self.NAME, self.MODEL, '0'))
+
     def test_fields_are_judged_one_by_one(self):
         # A miner that reports temperature but not chips publishes the
         # temperature and stays silent about the chips.
