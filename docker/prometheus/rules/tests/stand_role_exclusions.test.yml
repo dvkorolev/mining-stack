@@ -1,0 +1,249 @@
+# DMI-247: production-status and farm alerts must not fire on role=stand.
+#
+# Raised by miner-ops after the park work: `MinerHashrateCriticalSHA256` was
+# firing on `.58` and `.117` because the role exclusion had been applied to the
+# park rules and MinerFaulty only. The same class covered offline / not-mining /
+# no-shares and the farm aggregates.
+#
+# Hardware-condition rules (temperature, fans, errors, chips, fault light) are
+# deliberately NOT excluded — a parked machine is still powered hardware.
+#
+# Run from the rules directory:
+#   promtool test rules tests/stand_role_exclusions.test.yml
+rule_files:
+  - ../mining_alerts.yml
+  - ../uplink_alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'miner_scrape_status{ip="192.0.2.60",name="p1",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_role{ip="192.0.2.60",name="p1",role="production"}'
+        values: '1x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MinerOffline
+        exp_alerts:
+          - exp_labels:
+              ip: 192.0.2.60
+              name: p1
+              model: M30S++_(Stock)
+              algorithm: sha256
+              severity: critical
+              component: miner
+            exp_annotations:
+              summary: "Miner p1 offline"
+              description: "Unreachable for 5m."
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_scrape_status{ip="192.0.2.61",name="p1-stand",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_role{ip="192.0.2.61",name="p1-stand",role="stand"}'
+        values: '1x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MinerOffline
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_is_mining{ip="192.0.2.62",name="p2",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_scrape_status{ip="192.0.2.62",name="p2",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '2x8'
+      - series: 'miner_role{ip="192.0.2.62",name="p2",role="production"}'
+        values: '1x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MinerNotMining
+        exp_alerts:
+          - exp_labels:
+              ip: 192.0.2.62
+              name: p2
+              model: M30S++_(Stock)
+              algorithm: sha256
+              severity: critical
+              component: miner
+            exp_annotations:
+              summary: "Miner p2 stopped mining"
+              description: "Online but not mining for 5m."
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_is_mining{ip="192.0.2.63",name="p2-stand",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_scrape_status{ip="192.0.2.63",name="p2-stand",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '2x8'
+      - series: 'miner_role{ip="192.0.2.63",name="p2-stand",role="stand"}'
+        values: '1x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MinerNotMining
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_hashrate_ths{ip="192.0.2.64",name="p3",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x30'
+      - series: 'miner_expected_hashrate_ths{ip="192.0.2.64",name="p3",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '100x30'
+      - series: 'miner_is_mining{ip="192.0.2.64",name="p3",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '1x30'
+      - series: 'miner_role{ip="192.0.2.64",name="p3",role="production"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 26m
+        alertname: MinerHashrateCriticalSHA256
+        exp_alerts:
+          - exp_labels:
+              ip: 192.0.2.64
+              name: p3
+              model: M30S++_(Stock)
+              algorithm: sha256
+              severity: critical
+              component: miner
+            exp_annotations:
+              summary: "Miner p3 SHA-256 0.0 TH/s — critical"
+              description: "M30S++_(Stock), below 50% of its rated hashrate."
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_hashrate_ths{ip="192.0.2.65",name="p3-stand",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x30'
+      - series: 'miner_expected_hashrate_ths{ip="192.0.2.65",name="p3-stand",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '100x30'
+      - series: 'miner_is_mining{ip="192.0.2.65",name="p3-stand",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '1x30'
+      - series: 'miner_role{ip="192.0.2.65",name="p3-stand",role="stand"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 26m
+        alertname: MinerHashrateCriticalSHA256
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      # Two hot production machines and two parked zeros. Without the
+      # exclusion the average would be 45 and the rule would stay silent.
+      - series: 'miner_temp_max_c{ip="192.0.2.70",name="f1",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '90x15'
+      - series: 'miner_temp_max_c{ip="192.0.2.71",name="f2",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '90x15'
+      - series: 'miner_temp_max_c{ip="192.0.2.72",name="s1",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x15'
+      - series: 'miner_temp_max_c{ip="192.0.2.73",name="s2",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x15'
+      - series: 'miner_role{ip="192.0.2.70",name="f1",role="production"}'
+        values: '1x15'
+      - series: 'miner_role{ip="192.0.2.71",name="f2",role="production"}'
+        values: '1x15'
+      - series: 'miner_role{ip="192.0.2.72",name="s1",role="stand"}'
+        values: '1x15'
+      - series: 'miner_role{ip="192.0.2.73",name="s2",role="stand"}'
+        values: '1x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: FarmHighTemperature
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: farm
+            exp_annotations:
+              summary: "Farm average board temp 90.0°C"
+              description: "Board (PCB) temp averaged over the fleet; threshold 80°C."
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_scrape_status{ip="192.0.2.80",name="o1",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_scrape_status{ip="192.0.2.81",name="o2",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_scrape_status{ip="192.0.2.82",name="o3",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_scrape_status{ip="192.0.2.83",name="o4",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_role{ip="192.0.2.80",name="o1",role="production"}'
+        values: '1x8'
+      - series: 'miner_role{ip="192.0.2.81",name="o2",role="production"}'
+        values: '1x8'
+      - series: 'miner_role{ip="192.0.2.82",name="o3",role="production"}'
+        values: '1x8'
+      - series: 'miner_role{ip="192.0.2.83",name="o4",role="production"}'
+        values: '1x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: FarmMultipleMinersOffline
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: farm
+            exp_annotations:
+              summary: "4 miners offline"
+              description: "More than 3 unreachable for 5m."
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_scrape_status{ip="192.0.2.90",name="so1",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_scrape_status{ip="192.0.2.91",name="so2",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_scrape_status{ip="192.0.2.92",name="so3",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_scrape_status{ip="192.0.2.93",name="so4",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x8'
+      - series: 'miner_role{ip="192.0.2.90",name="so1",role="stand"}'
+        values: '1x8'
+      - series: 'miner_role{ip="192.0.2.91",name="so2",role="stand"}'
+        values: '1x8'
+      - series: 'miner_role{ip="192.0.2.92",name="so3",role="stand"}'
+        values: '1x8'
+      - series: 'miner_role{ip="192.0.2.93",name="so4",role="stand"}'
+        values: '1x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: FarmMultipleMinersOffline
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_pool_accepted_total{ip="192.0.2.100",name="n1",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x20'
+      - series: 'miner_scrape_status{ip="192.0.2.100",name="n1",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '2x20'
+      - series: 'miner_is_mining{ip="192.0.2.100",name="n1",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '1x20'
+      - series: 'miner_role{ip="192.0.2.100",name="n1",role="production"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 17m
+        alertname: MinerNoSharesAccepted
+        exp_alerts:
+          - exp_labels:
+              ip: 192.0.2.100
+              name: n1
+              model: M30S++_(Stock)
+              algorithm: sha256
+              severity: warning
+              component: miner
+            exp_annotations:
+              summary: "Miner n1 is mining but landing no shares"
+              description: "No accepted share in 30m from 192.0.2.100 — pool or credentials on that machine."
+
+  - interval: 1m
+    input_series:
+      - series: 'miner_pool_accepted_total{ip="192.0.2.101",name="n1-stand",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '0x20'
+      - series: 'miner_scrape_status{ip="192.0.2.101",name="n1-stand",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '2x20'
+      - series: 'miner_is_mining{ip="192.0.2.101",name="n1-stand",model="M30S++_(Stock)",algorithm="sha256"}'
+        values: '1x20'
+      - series: 'miner_role{ip="192.0.2.101",name="n1-stand",role="stand"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 17m
+        alertname: MinerNoSharesAccepted
+        exp_alerts: []

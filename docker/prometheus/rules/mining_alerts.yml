@@ -1,10 +1,21 @@
+# Per-machine alerts split into two classes (DMI-247):
+#
+#   * production-status rules — offline, not mining, hashrate, shares —
+#     exclude `role=stand` with `unless on(ip,name) miner_role{role="stand"}`.
+#     A parked machine's job is not to produce, so these are permanent noise.
+#   * hardware-condition rules — temperature, fans, errors, chips, fault
+#     light — deliberately do NOT exclude it. A parked machine is still
+#     powered hardware, and an overheating or failing board is worth recording.
+#
+# Farm aggregates exclude stand because they describe the production fleet:
+# two 0 °C readings among 21 drag the average down by ~7.6 °C.
 groups:
   - name: mining_critical
     interval: 30s
     rules:
       # Critical: Miner is offline
       - alert: MinerOffline
-        expr: miner_scrape_status <= 0
+        expr: (miner_scrape_status <= 0) unless on(ip,name) miner_role{role="stand"}
         for: 5m
         labels:
           severity: critical
@@ -63,7 +74,7 @@ groups:
           
       # Critical: Miner stopped mining
       - alert: MinerNotMining
-        expr: miner_is_mining == 0 and miner_scrape_status == 2
+        expr: (miner_is_mining == 0 and miner_scrape_status == 2) unless on(ip,name) miner_role{role="stand"}
         for: 5m
         labels:
           severity: critical
@@ -137,7 +148,7 @@ groups:
             miner_hashrate_ths{algorithm="sha256"} < (miner_expected_hashrate_ths * 0.5)
             and miner_is_mining{algorithm="sha256"} == 1
             and miner_expected_hashrate_ths > 0
-          )
+          ) unless on(ip,name) miner_role{role="stand"}
         for: 25m
         labels:
           severity: critical
@@ -158,7 +169,7 @@ groups:
           (
             miner_hashrate_mhs{algorithm="scrypt"} < 7000
             and miner_is_mining{algorithm="scrypt"} == 1
-          )
+          ) unless on(ip,name) miner_role{role="stand"}
         for: 10m
         labels:
           severity: critical
@@ -210,7 +221,7 @@ groups:
             and miner_hashrate_ths{algorithm="sha256"} >= (miner_expected_hashrate_ths * 0.5)
             and miner_is_mining{algorithm="sha256"} == 1
             and miner_expected_hashrate_ths > 0
-          )
+          ) unless on(ip,name) miner_role{role="stand"}
         for: 10m
         labels:
           severity: warning
@@ -228,7 +239,7 @@ groups:
             miner_hashrate_mhs{algorithm="scrypt"} < 12000
             and miner_hashrate_mhs{algorithm="scrypt"} >= 7000
             and miner_is_mining{algorithm="scrypt"} == 1
-          )
+          ) unless on(ip,name) miner_role{role="stand"}
         for: 10m
         labels:
           severity: warning
@@ -439,7 +450,7 @@ groups:
     rules:
       # Farm-wide: Multiple miners offline
       - alert: FarmMultipleMinersOffline
-        expr: count(miner_scrape_status <= 0) > 3
+        expr: count((miner_scrape_status <= 0) unless on(ip,name) miner_role{role="stand"}) > 3
         for: 5m
         labels:
           severity: critical
@@ -452,8 +463,8 @@ groups:
       - alert: FarmHashrateDropSHA256
         expr: |
           (
-            sum(miner_hashrate_ths{algorithm="sha256"}) < 1500
-            and count(miner_is_mining{algorithm="sha256"} == 1) > 10
+            sum((miner_hashrate_ths{algorithm="sha256"}) unless on(ip,name) miner_role{role="stand"}) < 1500
+            and count((miner_is_mining{algorithm="sha256"} == 1) unless on(ip,name) miner_role{role="stand"}) > 10
           )
         for: 10m
         labels:
@@ -468,8 +479,8 @@ groups:
       - alert: FarmHashrateDropSCRYPT
         expr: |
           (
-            sum(miner_hashrate_mhs{algorithm="scrypt"}) < 7000
-            and count(miner_is_mining{algorithm="scrypt"} == 1) > 0
+            sum((miner_hashrate_mhs{algorithm="scrypt"}) unless on(ip,name) miner_role{role="stand"}) < 7000
+            and count((miner_is_mining{algorithm="scrypt"} == 1) unless on(ip,name) miner_role{role="stand"}) > 0
           )
         for: 10m
         labels:
@@ -482,7 +493,7 @@ groups:
           
       # Farm-wide: High average temperature
       - alert: FarmHighTemperature
-        expr: avg(miner_temp_max_c) > 80
+        expr: avg((miner_temp_max_c) unless on(ip,name) miner_role{role="stand"}) > 80
         for: 10m
         labels:
           severity: warning
@@ -493,7 +504,7 @@ groups:
           
       # Farm-wide: High power consumption
       - alert: FarmHighPowerConsumption
-        expr: sum(miner_power_watts) > 70000
+        expr: sum((miner_power_watts) unless on(ip,name) miner_role{role="stand"}) > 70000
         for: 5m
         labels:
           severity: warning
