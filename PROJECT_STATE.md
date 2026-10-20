@@ -7,9 +7,9 @@ Date: 2026-06-17 (original review) · **Last refreshed: 2026-10-20**
 Reviewer: Claude Code
 Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docker/monitoring, deploy scripts).
 
-> **Status at a glance (the Pi runs the scheduler image built from `main` `d29d0e6` and the
-> backend/frontend images built from `main` `d3e00ca`, deployed 2026-10-20. `main` has moved only
-> by documentation since, so there is nothing to redeploy. ✅ The switch has now been
+> **Status at a glance (the Pi runs backend and scheduler images built from `main` `69a877b` and
+> the frontend image from `d3e00ca`, deployed 2026-10-20. `main` has moved only by documentation
+> since, so there is nothing to redeploy. ✅ The switch has now been
 > *measured against the live fleet* instead of argued about: a bounded `COLLECTION_COMPARE` window
 > reported `published_by[pyasic=20]` on every cycle with `unreadable=0`. ⚠️ And that window killed
 > the phase's central claim — **the flip is not value-inert.** It moves fans on ~5 machines,
@@ -17,6 +17,11 @@ Scope: full repository read (`backend/`, `frontend/`, `python-scheduler/`, Docke
 > refuted in consequence (DMI-227 — the flip keeps `.74` on pyasic). The full delta is measured and
 > written into DMI-136; the deploys themselves changed no published value, which is the half of the
 > claim that survives.)**
+> - ✅ **2026-10-20, second slice — parked machines are excluded by a typed role, not an IP literal (DMI-179).** `MinerFaulty` carried no literal and fired on `.58`/`.117`; the three power-counted park rules carried `ip!~"192.168.2.(58|117)"`. A PromQL rule cannot read SQLite, so the fact had to become a property first.
+>   - **`miners.role`** is typed `production` | `stand` by a CHECK constraint, defaults to `production`, and arrived as migration v2 with a one-time backfill of the two parked machines. `status` was the wrong home for it: that column is the lifecycle of the record, not the role of the machine. The role is settable through `PUT /api/mining/miners/:id`; there is no UI field yet.
+>   - **The scheduler publishes `miner_role{ip,name,role} 1` every cycle for every configured machine**, whether or not it answered — the rules need the role precisely when a machine is dark. A role change removes the old series. The failure-streak cull deliberately leaves it alone; only `forget_miner()` removes it when the machine leaves the inventory.
+>   - **Four rules exclude with `unless on(ip,name) miner_role{role="stand"}`:** `MinerFaulty`, `ParkMinerDark`, `ParkMinerStale`, `ParkPowerEvent`. `ParkVinLow`/`ParkVinCluster` are unchanged — mains voltage is a site property and parked machines still answer `get_psu`. **The join direction is load-bearing:** a missing series makes `unless` a no-op, so the rule still fires (one notification too many); inverting it to `and on(…) miner_role{role="production"}` would silence every alert whenever the series is absent.
+>   - **Deployed backend (`0a07d7ca…`) → scheduler (`77ff7d29…`) → two rule files**, each copied after a verified backup and the rules read back from the API. Live proof: the raw vectors for `miner_state == 0 and miner_scrape_status == 2` and for `max_over_time(miner_power_watts[15m]) < 500` contain exactly `[m601761, rebuildm303]`, and both are **empty** with the exclusion. DB after the migration: **19 production + 2 stand**; 54 rules loaded, 0 unhealthy.
 > - ✅ **2026-10-20 — both writers of `mining_alerts.yml` are gone, and the fix is deployed.** DMI-177 named one generator; there were two.
 >   - **`bin/generate_prometheus_rules.py`** regenerated the file from `etc/miners.yaml`, which holds only the DMI-58 example miners, and knew **none** of the 29 hand-written rules. The backend called it from `addMiner`/`updateMiner`/`deleteMiner`; `./bin` and `./venv` are bind-mounted into the backend container, so the path was reachable in production. The script and all three call sites are removed.
 >   - **`alert-rules.service.ts:regeneratePrometheusYAML()` was the second writer and the more dangerous one.** It regenerated the same file **from SQLite** on every DB-rule create/update/delete/toggle, and behind `POST /api/mining/alert-rules/regenerate`, which the UI exposed as a **«Regenerate YAML» button**. `docker-compose.prod.yml` mounts the host rules directory at `/app/prometheus-rules`, so one click overwrote the hand-written rules and their rationale. The function, four auto-calls, endpoint, client function and button are removed; DB CRUD/history remain, but the database no longer writes what Prometheus loads. **DMI-83 is the duplicate of DMI-177.**
