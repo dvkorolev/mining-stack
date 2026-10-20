@@ -39,6 +39,8 @@ from metrics import (
     set_miner_psu,
     set_miner_role,
     remove_miner_role_series,
+    set_miner_upfreq,
+    remove_miner_upfreq_series,
     publish_board_chips_source,
     remove_miner_expected_series,
     BOARD_CHIPS_SOURCES,
@@ -581,6 +583,26 @@ class BoardAndFanPublishingTest(unittest.TestCase):
             board_sample('miner_board_chips_count', ip, self.NAME, self.MODEL, '0'), 0)
         self.assertEqual(
             board_sample('miner_board_chips_expected', ip, self.NAME, self.MODEL, '0'), 78)
+
+    def test_upfreq_probe_is_one_scalar_per_machine_and_removed(self):
+        # DMI-224: one process-global scalar, no slot label. A missing value
+        # removes the series rather than holding an old cycle's answer over.
+        ip = '10.0.2.10'
+        self.addCleanup(remove_miner_upfreq_series, ip)
+        labels = {'ip': ip, 'name': self.NAME}
+
+        set_miner_upfreq(ip, self.NAME, 0)
+        self.assertEqual(
+            REGISTRY.get_sample_value('miner_upfreq_complete_raw', labels), 0.0)
+        self.assertIn(ip, known_miner_ips())
+
+        set_miner_upfreq(ip, self.NAME, 1)
+        self.assertEqual(
+            REGISTRY.get_sample_value('miner_upfreq_complete_raw', labels), 1.0)
+
+        set_miner_upfreq(ip, self.NAME, None)
+        self.assertIsNone(
+            REGISTRY.get_sample_value('miner_upfreq_complete_raw', labels))
 
     def test_fields_are_judged_one_by_one(self):
         # A miner that reports temperature but not chips publishes the

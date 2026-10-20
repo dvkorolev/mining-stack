@@ -39,6 +39,11 @@ _FIELDS = (
     ('Temperature', 'temp'),
     ('Chip Temp Max', 'chip_temp'),
     ('Effective Chips', 'chips'),
+    # DMI-224: `Upfreq Complete` is one process-global scalar replicated into
+    # every DEVS entry (firmware reverse, 2026-10-20), not a per-board reading.
+    # It is parsed here so the collector can take one value per machine; it is
+    # deliberately not published as a per-board metric.
+    ('Upfreq Complete', 'upfreq_complete'),
 )
 
 # Sane band for (reported hashrate / this board's rated hashrate). Wide on

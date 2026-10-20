@@ -30,7 +30,7 @@ from metrics import (
     miner_pool_rejected, collection_duration, collection_success,
     collection_timestamp, miner_gaps_filled_total, update_miner_label_cache,
     set_miner_pools, set_miner_boards, set_miner_fans, set_miner_psu,
-    set_miner_role,
+    set_miner_role, set_miner_upfreq,
     publish_expected_hashrate_source, set_miner_expected_boards,
     publish_board_chips_source, BOARD_CHIPS_SOURCES,
     miner_compare_mismatch_total, miner_collection_routing_total,
@@ -430,6 +430,16 @@ def _derive_published(data: Dict, ip: str, name: str, model: str,
                 if readings:
                     boards.setdefault(str(board.slot), {}).update(readings)
 
+    # DMI-224: `Upfreq Complete` is one process-global scalar replicated into
+    # every DEVS entry, not a per-board reading. Take the first board that
+    # reports it and publish it once per machine; it is a probe, not a rule
+    # gate — the object behind the scalar is not identified.
+    upfreq_complete = None
+    for record in boards.values():
+        if record.get('upfreq_complete') is not None:
+            upfreq_complete = record['upfreq_complete']
+            break
+
     return {
         'model': model,
         'algorithm': algo,
@@ -450,6 +460,7 @@ def _derive_published(data: Dict, ip: str, name: str, model: str,
         'pool_accepted': total_accepted,
         'pool_rejected': total_rejected,
         'boards': boards,
+        'upfreq_complete': upfreq_complete,
         'board_chips_source': _board_chips_source(data, boards),
         'expected_hashrate_ths': expected_hashrate,
         'expected_hashrate_source': expected_source,
@@ -535,6 +546,7 @@ def _publish_published(published: Dict[str, Any], ip: str, name: str) -> None:
 
     set_miner_pools(ip, name, published['pool_status'])
     set_miner_boards(ip, name, model, published['boards'])
+    set_miner_upfreq(ip, name, published['upfreq_complete'])
     publish_board_chips_source(ip, name, published['board_chips_source'],
                                BOARD_CHIPS_SOURCES)
 

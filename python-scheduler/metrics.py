@@ -26,6 +26,13 @@ miner_scrape_status = Gauge('miner_scrape_status', 'Scrape status (2=success, 1=
 # instead of carrying a literal IP list — a PromQL rule cannot read SQLite.
 miner_role = Gauge('miner_role', 'Machine role from the inventory; value is 1, role is in the label', ['ip', 'name', 'role'])
 
+# DMI-224 probe: the raw `Upfreq Complete` field from `devs`. It is one
+# process-global scalar replicated into every board entry, computed as
+# `(field > 19) ? 1 : 0` in the firmware reverse. The object behind it is not
+# identified and the field is not a typed ladder stage — do not gate rules on
+# it; it exists so the 0→1 transition can be measured across the fleet.
+miner_upfreq_complete_raw = Gauge('miner_upfreq_complete_raw', 'Raw Upfreq Complete field from devs (process-global scalar; semantics unconfirmed)', ['ip', 'name'])
+
 # Miner Board Metrics
 #
 # `miner_board_temp_c` and `miner_board_chip_temp_c` are deliberately separate
@@ -280,6 +287,11 @@ _miner_error_label_cache = {}   # {ip: {(name, code), ...}}
 # rules need to keep excluding it. Only forget_miner() removes it.
 _miner_role_label_cache = {}    # {ip: {(name, role), ...}}
 
+# Upfreq probe (DMI-224). Own label set (`ip`, `name` only), so its own removal
+# path; it is a reading, not inventory metadata, so the failure cull removes it
+# together with the other value families.
+_miner_upfreq_label_cache = {}  # {ip: name}
+
 # The board gauges all carry the same label set, so one cache serves them all.
 _BOARD_METRICS = (miner_board_hashrate, miner_board_temp, miner_board_chip_temp,
                   miner_board_chips_count, miner_board_chips_expected)
@@ -352,6 +364,40 @@ def remove_miner_role_series(ip: str) -> None:
     """Drop the role series of a machine that has left the inventory."""
     for labels in _miner_role_label_cache.pop(ip, set()):
         _remove_role_series(ip, labels)
+
+
+def set_miner_upfreq(ip: str, name: str, value) -> None:
+    """
+    Publish the raw `Upfreq Complete` scalar for a miner, or remove it.
+
+    DMI-224: one process-global scalar per machine, not per board. `None`
+    means the firmware did not report it, and the series is removed rather
+    than held over — an old 0 or 1 is a claim about a cycle that has passed.
+    This is a probe: no rule reads it yet, and the object behind the scalar is
+    not identified (see `docs/reference/firmware-codes.md`).
+    """
+    if value is None:
+        remove_miner_upfreq_series(ip)
+        return
+
+    previous = _miner_upfreq_label_cache.get(ip)
+    if previous is not None and previous != name:
+        try:
+            miner_upfreq_complete_raw.remove(ip, previous)
+        except (KeyError, ValueError):
+            pass
+    miner_upfreq_complete_raw.labels(ip=ip, name=name).set(value)
+    _miner_upfreq_label_cache[ip] = name
+
+
+def remove_miner_upfreq_series(ip: str) -> None:
+    """Drop the raw Upfreq probe series for a miner."""
+    name = _miner_upfreq_label_cache.pop(ip, None)
+    if name is not None:
+        try:
+            miner_upfreq_complete_raw.remove(ip, name)
+        except (KeyError, ValueError):
+            pass
 
 
 def set_miner_pools(ip: str, name: str, pools) -> None:
@@ -936,7 +982,8 @@ def known_miner_ips() -> set:
             | set(_miner_psu_label_cache)
             | set(_miner_psu_v3_label_cache)
             | set(_miner_error_label_cache)
-            | set(_miner_role_label_cache))
+            | set(_miner_role_label_cache)
+            | set(_miner_upfreq_label_cache))
 
 
 def forget_miner(ip: str) -> bool:
@@ -971,6 +1018,7 @@ def forget_miner(ip: str) -> bool:
     remove_miner_psu_v3_series(ip)
     remove_miner_error_series(ip)
     remove_miner_role_series(ip)
+    remove_miner_upfreq_series(ip)
     _miner_label_cache.pop(ip, None)
     return known
 
