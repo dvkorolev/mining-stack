@@ -310,6 +310,14 @@ message": every call returns `delivered` / `not_delivered` / `unverified` and is
   `not_delivered` with a stated reason.
 - Do not filter in Alertmanager instead — all its receivers post to the same backend webhook, so
   filtering there would stop the alert being *recorded*, not just announced.
+- **Two audiences, one rule set (2026-10-20).** The person on call needs a small number of plain,
+  actionable alerts; nobody watches a wall of per-machine metrics. Agents can read detail. The
+  `component: farm` / `uplink` / `scheduler` / `system` rules are the **human-facing** set: short,
+  say what broke and where to look. `component: miner`, together with the error-event JSONL and the
+  alert annotations, is the **agent-facing** record: per-machine facts with labels, provenance and
+  reasons, recorded and queryable but not pushed. Do not "fix" a noisy human alert by adding machine
+  detail — decide which audience it belongs to. A per-machine alert that reaches a phone is a design
+  error; a farm alert that hides which machine is a design error in the other direction.
 
 ## Miner configuration
 
