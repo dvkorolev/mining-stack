@@ -16,7 +16,7 @@ build:
 PROMETHEUS_TEST_IMAGE ?= prom/prometheus:v3.14.0
 test-rules:
 	docker run --rm -v "$$(pwd)/docker/prometheus/rules:/rules:ro" --entrypoint sh $(PROMETHEUS_TEST_IMAGE) -c 'promtool check rules /rules/*.yml'
-	docker run --rm -v "$$(pwd)/docker/prometheus/rules:/rules:ro" -w /rules --entrypoint promtool $(PROMETHEUS_TEST_IMAGE) test rules tests/fan_speed_join.test.yml
+	docker run --rm -v "$$(pwd)/docker/prometheus/rules:/rules:ro" -w /rules --entrypoint sh $(PROMETHEUS_TEST_IMAGE) -c 'promtool test rules tests/*.test.yml'
 
 # Start services without rebuilding
 up:
